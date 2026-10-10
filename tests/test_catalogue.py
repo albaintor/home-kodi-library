@@ -32,7 +32,7 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
     assert page["total"] == 1
     detail = store.detail(page["items"][0]["id"])
     assert len(detail["editions"]) == 2
-    assert detail["formats"] == ["4K UHD", "Blu-ray"]
+    assert detail["formats"] == ["4K", "Blu-ray"]
     assert detail["watch_status"] == "unknown"
 
 
@@ -164,6 +164,33 @@ def test_sort_pagination_combined_filters_and_unknown_watch(store):
     assert store.media(watch_status="unknown")["total"] == 3
     with pytest.raises(ValueError):
         store.media(sort="title;DROP TABLE works")
+
+
+def test_cumulative_formats_and_legacy_4k_aliases(store):
+    import json
+
+    sid = source(store)
+    store.apply_snapshot(
+        sid,
+        [
+            Record("a", "movie", "Toutes options", formats=["4K", "HDR10+", "Dolby Atmos"]),
+            Record("b", "movie", "Sans Atmos", formats=["4K", "HDR10+"]),
+            Record("c", "movie", "Disque UHD", formats=["4K UHD", "Dolby Atmos"]),
+        ],
+    )
+    assert store.media(format=["4K", "HDR10+", "Dolby Atmos"])["total"] == 1
+    assert store.media(format=["4K UHD", "Dolby Atmos"])["total"] == 2
+    assert store.media(format="4K")["total"] == 3
+    assert "4K UHD" not in store.facets()["formats"]
+    with store.connect() as conn:
+        conn.execute(
+            "UPDATE works SET formats=? WHERE title=?",
+            (json.dumps(["4K UHD", "HDR10+", "Dolby Atmos"]), "Toutes options"),
+        )
+    assert store.media(format=["4K", "HDR10+"])["total"] == 2
+    assert "4K UHD" not in store.media(format="4K")["items"][0]["formats"]
+    with pytest.raises(ValueError):
+        store.media(format=["x"] * 21)
 
 
 def test_conflicting_external_ids_do_not_merge(store):
