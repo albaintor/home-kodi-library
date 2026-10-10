@@ -205,4 +205,20 @@ Les clients de ces plages accèdent directement au front et à l'API avec les dr
 
 Le Docker désactive la réécriture automatique de l'adresse client par Uvicorn (`--no-proxy-headers`). En accès direct, seule l'adresse du pair TCP compte ; `X-Forwarded-For`, `X-Real-IP` et `Forwarded` envoyés par le client ne l'autorisent pas. Selon le réseau Docker/NAS, le pair observé peut être une passerelle : **ne pas autoriser cette passerelle pour tous les clients**.
 
+### Docker/Synology masque l'adresse du PC
+
+Si `sudo docker compose exec library printenv LOCAL_AUTH_NETWORKS` affiche la bonne plage mais que `GET /api/v1/auth/session` est refusé avec une adresse comme `172.25.0.1` dans les logs, l'application reçoit l'adresse de la passerelle Docker. En accès direct au NAS Linux/Synology, utiliser le fichier autonome `compose.host.yaml` pour supprimer cette traduction d'adresse. Il ne se superpose pas à `compose.yaml` : en réseau `host`, le serveur écoute directement le port `PORT` du NAS (8099 par défaut), sans publication de port Docker.
+
+Ajouter à `.env` :
+
+```dotenv
+COMPOSE_FILE=compose.host.yaml:compose.dns.yaml
+LOCAL_AUTH_NETWORKS='["192.168.1.0/24"]'
+TRUSTED_PROXY_NETWORKS=[]
+```
+
+Puis lancer `sh ./rebuild.sh`. Le script et les commandes ordinaires `sudo docker compose ...` utilisent cette sélection de fichiers ; les prochaines mises à jour la conservent. Ouvrir ensuite directement `http://IP_DU_NAS:8099` et recharger la page. Les clients hors de la plage restent soumis au jeton. `PORT` et `BIND_ADDRESS` sont conservés, ainsi que les données et les paramètres de sécurité du conteneur. Si des volumes de pochettes ont été ajoutés dans `compose.yaml`, les reporter dans `compose.host.yaml` avant de changer de mode. Pour revenir au mode bridge, remplacer la ligne par `COMPOSE_FILE=compose.yaml:compose.dns.yaml` et relancer le script.
+
+Un reverse proxy masque lui aussi l'adresse du navigateur : le mode `host` ne remplace pas sa configuration. Si le site est ouvert via un domaine/proxy, tester d'abord l'URL directe ci-dessus, puis déclarer uniquement le proxy réellement utilisé comme décrit ci-dessous.
+
 Si un reverse proxy est réellement utilisé, déclarer uniquement son adresse exacte, par exemple `TRUSTED_PROXY_NETWORKS='["172.18.0.2/32"]'`, et le configurer pour remplacer ou compléter correctement `X-Forwarded-For` avec l'adresse de son client. Le back-end traverse la chaîne de droite à gauche jusqu'au premier pair non approuvé. Une chaîne absente, invalide ou composée uniquement de proxys approuvés impose le jeton. Les plages `/0` sont refusées. Ne pas déclarer un ensemble de clients ordinaires comme proxys approuvés. Avec un lancement Uvicorn personnalisé, conserver impérativement `--no-proxy-headers` ; en entrée HTTPS derrière proxy, configurer également `COOKIE_SECURE=true`.

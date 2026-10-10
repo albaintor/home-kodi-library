@@ -58,3 +58,31 @@ jobs:
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/api/v1/media)" = 401
       - if: always()
         run: docker logs library
+  docker-host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and start with host networking
+        run: |
+          docker build -t home-kodi-library:local .
+          sudo install -d -m 0700 -o 1000 -g 1000 data
+          cat > .env <<'EOF'
+          API_TOKEN=ci-test-token-00000000000000000000
+          COMPOSE_FILE=compose.host.yaml:compose.dns.yaml
+          PORT=18099
+          LOCAL_AUTH_NETWORKS=["127.0.0.1/32"]
+          EOF
+          docker compose up -d --no-build
+      - name: Verify custom port, health check and client address
+        run: |
+          container_id=$(docker compose ps -a -q library)
+          for attempt in $(seq 1 30); do
+            if [ "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy ]; then break; fi
+            sleep 1
+          done
+          test "$(docker inspect --format '{{.State.Health.Status}}' "$container_id")" = healthy
+          curl -fsS http://127.0.0.1:18099/api/v1/auth/session | python3 -c 'import json, sys; data=json.load(sys.stdin); assert data["access_method"] == "local" and data["role"] == "admin"'
+          curl -fsS http://127.0.0.1:18099/api/v1/status
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer invalid' http://127.0.0.1:18099/api/v1/media)" = 401
+      - if: always()
+        run: docker compose logs --tail=50 library

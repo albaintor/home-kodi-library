@@ -33,6 +33,13 @@ main() {
     fi
     docker_run compose version >/dev/null
 
+    # Let Compose read an explicit COMPOSE_FILE from .env, without sourcing it.
+    # Otherwise retain the existing bridge + DNS configuration.
+    if [ -z "${COMPOSE_FILE:-}" ] && ! grep -Eq '^[[:space:]]*(export[[:space:]]+)?COMPOSE_FILE[[:space:]]*=' .env; then
+        COMPOSE_FILE=compose.yaml:compose.dns.yaml
+        export COMPOSE_FILE
+    fi
+
     printf '\nRécupération de la dernière version…\n'
     git pull --ff-only
 
@@ -78,7 +85,12 @@ docker_run() {
 }
 
 compose_run() {
-    docker_run compose -f compose.yaml -f compose.dns.yaml "$@"
+    # sudo may filter COMPOSE_FILE, so pass a shell override explicitly when set.
+    if [ "$docker_with_sudo" -eq 1 ] && [ -n "${COMPOSE_FILE:-}" ]; then
+        sudo env COMPOSE_FILE="$COMPOSE_FILE" docker compose "$@"
+    else
+        docker_run compose "$@"
+    fi
 }
 
 # Parse the entire main function before git can update this script on disk.

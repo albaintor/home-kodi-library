@@ -1,0 +1,51 @@
+# Linux / Synology: preserve the client's TCP address for LOCAL_AUTH_NETWORKS.
+# Set COMPOSE_FILE=compose.host.yaml:compose.dns.yaml in .env.
+services:
+  library:
+    build: .
+    image: home-kodi-library:local
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    network_mode: host
+    command:
+      - uvicorn
+      - kodi_library.app:create_app
+      - --factory
+      - --host
+      - "${BIND_ADDRESS:-0.0.0.0}"
+      - --port
+      - "${PORT:-8099}"
+      - --workers
+      - "1"
+      - --no-proxy-headers
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      LIBRARY_BIND_ADDRESS: "${BIND_ADDRESS:-0.0.0.0}"
+      LIBRARY_PORT: "${PORT:-8099}"
+    volumes:
+      - ./data:/data
+      # Copy any optional read-only artwork mounts from compose.yaml here.
+      # - /volume1/media/posters:/artwork:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 90s
+    healthcheck:
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import os, urllib.request;
+          host = os.environ['LIBRARY_BIND_ADDRESS'];
+          host = {'0.0.0.0': '127.0.0.1', '::': '::1'}.get(host, host);
+          host = '[' + host + ']' if ':' in host else host;
+          urllib.request.urlopen('http://' + host + ':' + os.environ['LIBRARY_PORT'] + '/healthz', timeout=3)
