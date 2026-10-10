@@ -338,7 +338,9 @@ class Store:
         )
         playback = progress or (kodi_watch[0] if kodi_watch else {})
         genres = sorted({v for p, _ in entries for v in p.get("genres", [])}, key=fold)
-        fmts = sorted({canonical_format(v) for p, _ in entries for v in p.get("formats", [])}, key=fold)
+        fmts = sorted(
+            {canonical_format(v) for p, _ in entries for v in p.get("formats", [])}, key=fold
+        )
         collections = sorted({v for p, _ in entries for v in p.get("collections", [])}, key=fold)
         types = sorted({t for _, t in entries})
         search_text = " ".join(
