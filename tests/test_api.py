@@ -127,7 +127,9 @@ def test_api_pagination_detail_facets_and_artwork_auth(client, admin):
         client.get(f"/api/v1/media/{mid}", headers=admin).json()["editions"][0]["external_key"]
         == "one"
     )
-    assert client.get("/api/v1/facets", headers=admin).json()["formats"] == ["4K UHD"]
+    assert client.get("/api/v1/facets", headers=admin).json()["formats"] == ["4K"]
+    assert client.get("/api/v1/media?format=4K", headers=admin).json()["total"] == 1
+    assert client.get("/api/v1/media?format=4K&format=HDR10%2B", headers=admin).json()["total"] == 0
     assert client.get(page["items"][0]["artwork"]["poster"]).status_code == 401
     assert client.get("/api/v1/media/missing", headers=admin).status_code == 404
 
