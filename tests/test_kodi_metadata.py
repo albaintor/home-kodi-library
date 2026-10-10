@@ -55,7 +55,7 @@ def test_movies_versions_cast_and_streams_survive_each_schema(version_type, stor
             "INSERT INTO movie_view VALUES(?,?,?,?,?,?,?)",
             [
                 (1, 10, "Un film", "film.mkv", 10, 1, version_type),
-                (1, 10, "Un film", "longue.mkv", 11, 0, version_type),
+                (1, 10, "Un film", "longue.3D.SBS.mkv", 11, 0, version_type),
                 (1, 10, "Un film", "bonus.mkv", 12, 0, version_type + 1),
                 (2, 20, "Film sans version", "ancien.mkv", None, None, None),
             ],
@@ -145,9 +145,16 @@ def test_2d_and_unknown_stereo_values_do_not_advertise_3d(stereo):
 
 
 @pytest.mark.parametrize("stereo", ["left_right", " TOP_BOTTOM ", "block_lr", "block_rl"])
-def test_explicit_stereoscopic_layouts_advertise_3d(stereo):
-    metadata = stream_metadata([{"iStreamType": 0, "strStereoMode": stereo}])
-    assert metadata["formats"] == ["3D"]
+def test_stereoscopic_layout_requires_filename_confirmation(stereo):
+    rows = [{"iStreamType": 0, "strStereoMode": stereo}]
+    assert stream_metadata(rows)["formats"] == []
+    assert stream_metadata(rows, filename="/video/ordinary.mkv")["formats"] == []
+    assert stream_metadata(rows, filename="/video/Movie.3D.SBS.mkv")["formats"] == ["3D"]
+
+
+def test_hdr_detail_cannot_misclassify_kodi_video_as_3d():
+    rows = [{"iStreamType": 0, "strHdrDetail": "3D", "strStereoMode": "mono"}]
+    assert "3D" not in stream_metadata(rows, filename="movie.mkv")["formats"]
 
 
 def test_clz_audio_and_explicit_hdr_tags(clz_xml):
