@@ -46,7 +46,13 @@
         <label>Type<select id="kind"><option value="">Tous les médias</option><option value="movie">Films</option><option value="tvshow">Séries</option><option value="episode">Épisodes</option></select></label>
         <label>Source<select id="source-type"><option value="">Toutes les sources</option><option value="kodi">Kodi</option><option value="clz">Collection physique</option></select></label>
         <label>Genre<select id="genre"><option value="">Tous les genres</option></select></label>
-        <label>Format<select id="format"><option value="">Tous les formats</option></select></label>
+        <div class="format-picker" role="group" aria-label="Formats cumulables">
+          <label>Vidéo<select id="video-format" aria-label="Ajouter un format vidéo"><option value="">+ Format vidéo</option></select></label>
+          <label>Audio<select id="audio-format" aria-label="Ajouter un format audio"><option value="">+ Format audio</option></select></label>
+          <label>Support<select id="disc-format" aria-label="Ajouter un support"><option value="">+ Support</option></select></label>
+          <div id="selected-formats" class="selected-formats" aria-label="Formats sélectionnés" hidden></div>
+          <span class="format-help">Les formats sélectionnés se cumulent (ET).</span>
+        </div>
         <label>Collection<select id="collection"><option value="">Toutes les collections</option></select></label>
         <label>État<select id="watch-status"><option value="">Tous les états</option><option value="unwatched">Non vus</option><option value="in_progress">En cours</option><option value="watched">Vus</option><option value="unknown">Non renseigné</option></select></label>
         <label>Tri<select id="sort"><option value="date_added">Date d’ajout</option><option value="title">Titre</option><option value="year">Année</option><option value="rating">Note</option><option value="user_rating">Votre note</option><option value="last_played">Dernière lecture</option></select></label>
