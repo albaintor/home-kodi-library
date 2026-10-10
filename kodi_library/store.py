@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .connectors.base import Record
+from .people import person_view, youtube_url
 from .utils import fold, now
 
 SCHEMA = """
@@ -57,7 +58,25 @@ CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
  status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT
 );
-PRAGMA user_version = 1;
+CREATE TABLE IF NOT EXISTS personal (
+ work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
+ user_rating REAL, watched INTEGER
+);
+CREATE TABLE IF NOT EXISTS enrichment (
+ work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
+ payload TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS lists (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+ revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS list_items (
+ list_id TEXT NOT NULL REFERENCES lists(id) ON DELETE CASCADE,
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ position INTEGER NOT NULL, PRIMARY KEY(list_id,work_id)
+);
+CREATE INDEX IF NOT EXISTS list_order ON list_items(list_id,position);
+PRAGMA user_version = 2;
 """
 
 
@@ -74,7 +93,7 @@ class Store:
         self.path.parent.chmod(0o700)
         with self.connect() as conn:
             version = conn.execute("PRAGMA user_version").fetchone()[0]
-            if version > 1:
+            if version > 2:
                 raise RuntimeError(
                     "Catalogue schema is newer than this application; do not downgrade."
                 )
@@ -328,8 +347,15 @@ class Store:
         search_text += " " + " ".join(
             str(p.get("metadata", {}).get(n) or "")
             for p, _ in entries
-            for n in ("director", "show_title", "tags", "cast")
+            for n in ("director", "show_title", "tags", "cast", "people")
         )
+        enrichment = conn.execute(
+            "SELECT payload FROM enrichment WHERE work_id=?", (work_id,)
+        ).fetchone()
+        if enrichment:
+            search_text += " " + " ".join(
+                p["name"] for p in json.loads(enrichment[0]).get("people", [])
+            )
         posters = list(dict.fromkeys(v for p, _ in entries for v in p.get("poster", [])))
         fanarts = list(dict.fromkeys(v for p, _ in entries for v in p.get("fanart", [])))
         values = {
@@ -366,6 +392,13 @@ class Store:
             "fanart": encode(fanarts),
             "search_text": fold(search_text),
         }
+        personal = conn.execute("SELECT * FROM personal WHERE work_id=?", (work_id,)).fetchone()
+        if personal:
+            if personal["user_rating"] is not None:
+                values["user_rating"] = personal["user_rating"]
+            if personal["watched"] is not None:
+                values["watch_status"] = "watched" if personal["watched"] else "unwatched"
+                values["resume_seconds"] = 0
         conn.execute(
             "UPDATE works SET " + ",".join(f"{n}=?" for n in values) + " WHERE id=?",
             (*values.values(), work_id),
@@ -383,6 +416,9 @@ class Store:
 
     @staticmethod
     def _prune(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "UPDATE lists SET revision=revision+1 WHERE id IN (SELECT i.list_id FROM list_items i WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=i.work_id))"
+        )
         conn.execute(
             "DELETE FROM works_fts WHERE work_id IN (SELECT id FROM works w WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id))"
         )
@@ -461,6 +497,7 @@ class Store:
             "date_added": "date_added",
             "year": "year",
             "rating": "rating",
+            "user_rating": "user_rating",
             "last_played": "last_played",
         }
         if (
@@ -533,15 +570,221 @@ class Store:
                         },
                     }
                 )
-            cast = next(
-                (
-                    edition["metadata"]["cast"]
-                    for edition in editions
-                    if edition["metadata"].get("cast")
-                ),
-                [],
+            source_people = []
+            for edition in editions:
+                metadata = edition["metadata"]
+                source_people.extend(metadata.get("people", metadata.get("cast", [])))
+            cached = conn.execute("SELECT * FROM enrichment WHERE work_id=?", (work_id,)).fetchone()
+            enriched = json.loads(cached["payload"]) if cached else {}
+            # Preserve source roles, fill portraits/IDs from matching TMDB names.
+            people = []
+            seen = set()
+            for member in source_people + enriched.get("people", []):
+                key = (
+                    fold(member["name"]),
+                    member.get("category", "cast"),
+                )
+                if key in seen:
+                    if key[1] != "cast" and member.get("role"):
+                        previous = next(
+                            p for p in people if (fold(p["name"]), p.get("category", "cast")) == key
+                        )
+                        roles = list(
+                            dict.fromkeys(filter(None, [previous.get("role"), member["role"]]))
+                        )
+                        previous["role"] = " · ".join(roles)
+                    continue
+                seen.add(key)
+                match = next(
+                    (
+                        p
+                        for p in enriched.get("people", [])
+                        if fold(p["name"]) == key[0]
+                        and not (
+                            p.get("tmdb_id")
+                            and member.get("tmdb_id")
+                            and p["tmdb_id"] != member["tmdb_id"]
+                        )
+                    ),
+                    {},
+                )
+                merged = {**match, **member}
+                for field in ("imdb_id", "tmdb_id"):
+                    merged[field] = member.get(field) or match.get(field)
+                merged["photos"] = list(
+                    dict.fromkeys([*(member.get("photos") or []), *(match.get("photos") or [])])
+                )
+                people.append(merged)
+            people = [person_view(p, work_id, index) for index, p in enumerate(people)]
+            trailers = list(
+                dict.fromkeys(
+                    url
+                    for candidate in [
+                        *(t for e in editions for t in e["metadata"].get("trailers", [])),
+                        *enriched.get("trailers", []),
+                    ]
+                    if (url := youtube_url(candidate))
+                )
             )
-            return {**value, "identifiers": dict(ids), "editions": editions, "cast": cast}
+            personal = conn.execute(
+                "SELECT user_rating,watched FROM personal WHERE work_id=?", (work_id,)
+            ).fetchone()
+            return {
+                **value,
+                "identifiers": dict(ids),
+                "editions": editions,
+                "people": people,
+                "cast": [p for p in people if p["category"] == "cast"],
+                "trailers": trailers,
+                "personal": dict(personal) if personal else {},
+                "lists": self._lists(conn, work_id),
+                "enriched_at": cached["updated_at"] if cached else None,
+            }
+
+    def update_personal(self, work_id: str, changes: dict) -> bool:
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM works WHERE id=?", (work_id,)).fetchone():
+                return False
+            conn.execute("INSERT OR IGNORE INTO personal(work_id) VALUES(?)", (work_id,))
+            for name, value in changes.items():
+                if name not in ("user_rating", "watched"):
+                    raise ValueError("Unknown personal field.")
+                conn.execute(f"UPDATE personal SET {name}=? WHERE work_id=?", (value, work_id))
+            self._rebuild(conn, work_id)
+        return True
+
+    def save_enrichment(self, work_id: str, payload: dict) -> bool:
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM works WHERE id=?", (work_id,)).fetchone():
+                return False
+            conn.execute(
+                "INSERT INTO enrichment VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET payload=excluded.payload,updated_at=excluded.updated_at",
+                (work_id, encode(payload), now()),
+            )
+            self._rebuild(conn, work_id)
+        return True
+
+    @staticmethod
+    def _lists(conn, work_id=None):
+        where = (
+            " WHERE EXISTS(SELECT 1 FROM list_items i WHERE i.list_id=l.id AND i.work_id=?)"
+            if work_id
+            else ""
+        )
+        return [
+            dict(r)
+            for r in conn.execute(
+                "SELECT l.*,(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count FROM lists l"
+                + where
+                + " ORDER BY l.name COLLATE NOCASE,l.id",
+                (work_id,) if work_id else (),
+            )
+        ]
+
+    def lists(self):
+        with self.connect() as conn:
+            return self._lists(conn)
+
+    def save_list(self, data, list_id=None):
+        with self.connect() as conn:
+            if list_id:
+                result = conn.execute(
+                    "UPDATE lists SET name=?,description=?,revision=revision+1 WHERE id=?",
+                    (data["name"], data["description"], list_id),
+                )
+                if not result.rowcount:
+                    raise KeyError("Unknown list.")
+            else:
+                list_id = str(uuid4())
+                conn.execute(
+                    "INSERT INTO lists(id,name,description,created_at) VALUES(?,?,?,?)",
+                    (list_id, data["name"], data["description"], now()),
+                )
+            return next(item for item in self._lists(conn) if item["id"] == list_id)
+
+    def delete_list(self, list_id):
+        with self.connect() as conn:
+            if not conn.execute("DELETE FROM lists WHERE id=?", (list_id,)).rowcount:
+                raise KeyError("Unknown list.")
+
+    def change_list_item(self, list_id, work_id, *, remove=False):
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM lists WHERE id=?", (list_id,)).fetchone():
+                raise KeyError("Unknown list.")
+            if remove:
+                count = conn.execute(
+                    "DELETE FROM list_items WHERE list_id=? AND work_id=?", (list_id, work_id)
+                ).rowcount
+            else:
+                if not conn.execute("SELECT 1 FROM works WHERE id=?", (work_id,)).fetchone():
+                    raise KeyError("Unknown media.")
+                count = conn.execute(
+                    "INSERT OR IGNORE INTO list_items VALUES(?,?,COALESCE((SELECT MAX(position)+1 FROM list_items WHERE list_id=?),0))",
+                    (list_id, work_id, list_id),
+                ).rowcount
+            if count:
+                conn.execute("UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,))
+
+    def reorder_list(self, list_id, media_ids, revision):
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            row = conn.execute("SELECT revision FROM lists WHERE id=?", (list_id,)).fetchone()
+            if not row:
+                raise KeyError("Unknown list.")
+            if row[0] != revision:
+                raise RuntimeError("This list changed. Reload it before reordering.")
+            current = {
+                r[0]
+                for r in conn.execute("SELECT work_id FROM list_items WHERE list_id=?", (list_id,))
+            }
+            if len(media_ids) != len(set(media_ids)) or set(media_ids) != current:
+                raise ValueError("Supply every current media ID exactly once.")
+            conn.executemany(
+                "UPDATE list_items SET position=? WHERE list_id=? AND work_id=?",
+                ((index, list_id, mid) for index, mid in enumerate(media_ids)),
+            )
+            conn.execute("UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,))
+
+    def list_page(self, list_id, *, sort="position", order="asc", limit=60, offset=0):
+        columns = {
+            "position": "i.position",
+            "title": "w.sort_title",
+            "year": "w.year",
+            "rating": "w.rating",
+            "user_rating": "w.user_rating",
+            "date_added": "w.date_added",
+        }
+        if (
+            sort not in columns
+            or order not in ("asc", "desc")
+            or not 1 <= limit <= 200
+            or offset < 0
+        ):
+            raise ValueError("Invalid list sort or pagination.")
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            row = conn.execute("SELECT revision FROM lists WHERE id=?", (list_id,)).fetchone()
+            if not row:
+                raise KeyError("Unknown list.")
+            total = conn.execute(
+                "SELECT COUNT(*) FROM list_items WHERE list_id=?", (list_id,)
+            ).fetchone()[0]
+            column = columns[sort]
+            rows = conn.execute(
+                f"SELECT w.* FROM list_items i JOIN works w ON w.id=i.work_id WHERE i.list_id=? ORDER BY {column} IS NULL,{column} {order},w.id LIMIT ? OFFSET ?",
+                (list_id, limit, offset),
+            ).fetchall()
+            return {
+                "items": [self._summary(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + len(rows) < total,
+                "revision": row[0],
+            }
 
     def artwork(self, work_id: str, aspect: str) -> list[str]:
         if aspect not in ("poster", "fanart"):

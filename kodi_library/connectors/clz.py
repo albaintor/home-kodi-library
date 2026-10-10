@@ -1,6 +1,7 @@
 """Collectorz/CLZ Movies XML export, including the datasetversion 15 shape."""
 
 import hashlib
+import re
 from datetime import UTC, date, datetime
 from xml.etree.ElementTree import Element, ParseError
 
@@ -8,6 +9,7 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
 
 from ..media_formats import technical_formats
+from ..people import category, youtube_url
 from ..utils import formats, identifiers, integer, plain_text, positive
 from .base import ConnectorError, Record
 
@@ -25,6 +27,82 @@ def timestamp(node: Element, path: str) -> str | None:
         return datetime.fromtimestamp(int(text(node, path)), UTC).isoformat(timespec="seconds")
     except (ValueError, OverflowError, OSError):
         return None
+
+
+def credits(node: Element) -> list[dict]:
+    result = []
+    for group in ("cast", "crew"):
+        container = node.find(group)
+        if container is None:
+            continue
+        for order, member in enumerate(container):
+            name = next(
+                (
+                    text(member, p)
+                    for p in (
+                        "person/displayname",
+                        "person/name",
+                        "actor/displayname",
+                        "displayname",
+                        "name",
+                    )
+                    if text(member, p)
+                ),
+                "",
+            )
+            if not name:
+                name = " ".join(filter(None, (text(member, "firstname"), text(member, "lastname"))))
+            if not name:
+                continue
+            role = next(
+                (
+                    text(member, p)
+                    for p in (
+                        "role/displayname",
+                        "role",
+                        "character",
+                        "job/displayname",
+                        "job",
+                        "crewwork/displayname",
+                        "function/displayname",
+                    )
+                    if text(member, p)
+                ),
+                "",
+            )
+            imdb = next(
+                (
+                    text(member, p)
+                    for p in ("imdbnr", "imdbid", "person/imdbnr", "imdburl")
+                    if text(member, p)
+                ),
+                "",
+            )
+            imdb_match = re.search(r"nm\d+", imdb)
+            photos = [
+                text(member, p)
+                for p in (
+                    "thumbnail",
+                    "image",
+                    "picture",
+                    "thumb",
+                    "photo",
+                    "person/thumbnail",
+                    "person/image",
+                )
+                if text(member, p)
+            ]
+            result.append(
+                {
+                    "name": name,
+                    "role": role or None,
+                    "order": order,
+                    "category": "cast" if group == "cast" else category(role or "crew"),
+                    "imdb_id": imdb_match[0] if imdb_match else None,
+                    "photos": photos,
+                }
+            )
+    return result
 
 
 def parse_clz(data: bytes) -> list[Record]:
@@ -113,6 +191,14 @@ def parse_clz(data: bytes) -> list[Record]:
                 if v
             ],
             metadata={
+                "people": credits(node),
+                "trailers": list(
+                    dict.fromkeys(
+                        url
+                        for link in node.findall("links/link")
+                        if (url := youtube_url(text(link, "url")))
+                    )
+                ),
                 "seen_dates": sorted(seen_dates),
                 "barcode": text(node, "upc") or None,
                 "edition": text(node, "edition/displayname") or text(node, "edition") or None,

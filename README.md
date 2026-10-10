@@ -124,7 +124,7 @@ python -m venv .venv
 pip install -e '.[dev]'
 export DATA_DIR="$PWD/data"
 export API_TOKEN="$(openssl rand -hex 32)"
-uvicorn kodi_library.app:create_app --factory --port 8099
+uvicorn kodi_library.app:create_app --factory --port 8099 --no-proxy-headers
 ```
 
 ```bash
@@ -142,3 +142,46 @@ PYTHONPATH=. python tests/browser/check_catalogue.py
 ```
 
 Les tests utilisent un XML synthétique et des connexions simulées ; aucun export privé, mot de passe ni base Kodi ne figure dans le dépôt. La première validation réelle de MariaDB, de Docker sur le NAS et de hass_ingress reste à réaliser sur l'installation cible. Ce dépôt fournit un service Docker autonome, pas encore une intégration HA installable ni un add-on Supervisor.
+
+## Personnes, portraits et bandes-annonces
+
+La fiche distingue casting, réalisation, scénario, production, composition, photographie et autres fonctions. Kodi fournit les rôles, réalisateurs/scénaristes et portraits présents dans sa base. Les crédits/portraits exportés par CLZ et ses liens YouTube sont importés lorsqu'ils existent. L'export initial fourni contient des sections de casting vides : les images visibles sur CLZ Cloud ne sont pas incluses dans cet XML.
+
+Pour compléter automatiquement les films et séries depuis TMDB, renseigner dans `.env` le **API Read Access Token** de [votre compte TMDB](https://www.themoviedb.org/settings/api), puis recréer le conteneur :
+
+```dotenv
+TMDB_API_TOKEN=votre_jeton_de_lecture_TMDB
+```
+
+L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms possédant un identifiant ouvrent directement une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible.
+
+Les métadonnées restent dans SQLite pendant les redémarrages et synchronisations. Elles sont réutilisées pendant 30 jours, puis renouvelées à la prochaine ouverture. Le bouton **Rafraîchir les personnes et bandes-annonces** force leur renouvellement et invalide les images concernées dans le cache ; une panne conserve les informations précédentes. Les portraits utilisent le même proxy authentifié, cache 30 jours/512 MiB et règles de sécurité que les pochettes. Les clients API peuvent déclencher l'enrichissement sans utiliser le front. TMDB reste facultatif : la consultation des données importées/mises en cache fonctionne sans réseau ni jeton TMDB.
+
+## Notes, visionnage et listes
+
+La fiche permet de modifier **votre note sur 10** et le **statut vu/non vu**. Ces valeurs personnelles sont partagées par les utilisateurs de cette installation et conservées dans SQLite ; elles prennent priorité sur les imports. Une note vide ou « Depuis les sources » rétablit la valeur importée. La note publique IMDb/Kodi, les compteurs de lecture et les fichiers sources restent des informations importées : les éditions personnelles ne sont pas réécrites dans MariaDB ou CLZ. Aucun nouveau serveur de base de données n'est requis.
+
+**Mes listes** permet de créer, renommer et supprimer des listes, rechercher des médias à ajouter avec le bouton ＋, retirer des éléments et les déplacer avec ↑/↓ en mode **Ordre manuel, croissant**. Une fiche dispose également d'un bouton **＋ Ajouter à une liste**, avec création de liste directement depuis ce dialogue. Les tris par titre, année, date d'ajout, note publique et note personnelle sont des vues de la liste et ne modifient pas l'ordre manuel enregistré. Les listes ont une pagination et un numéro de révision pour éviter qu'une autre modification soit écrasée lors d'un réordonnancement. Elles sont indépendantes des collections/coffrets importés de CLZ.
+
+Les UUID des œuvres conservent les associations lors d'une synchronisation normale. Si un média disparaît de toutes les sources, il est retiré de ses listes ; supprimer une liste ne supprime aucun média. La mise à jour migre automatiquement SQLite du schéma 1 vers 2. Sauvegarder le volume `data` avant de revenir à une version antérieure : elle ne peut pas lire le schéma 2.
+
+## Chemins Kodi et lecture
+
+Les chemins complets des fichiers sont visibles dans la fiche, avec **Copier le chemin** (sur HTTP, un dialogue de copie remplace l'accès au presse-papiers). **Lire sur Kodi** contacte l'instance choisie depuis le back-end, et permet de sélectionner le fichier/version ; Kodi utilise ses propres accès au NAS.
+
+Un navigateur ne fournit pas de lecture SMB/NFS native : un lien vers ces protocoles dépend d'un gestionnaire installé sur le poste et de ses accès au partage. `file://` est aussi restreint depuis une page web. Aucun lien de lecture locale universel n'est proposé ; le chemin peut être ouvert dans un lecteur disposant des droits NAS. Cette version ne diffuse/transcode pas les fichiers vidéo via HTTP. [Gestionnaires de protocoles dans les navigateurs](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Player.Open Kodi](https://kodi.wiki/view/JSON-RPC_API/v13.11).
+
+## Accès local sans jeton
+
+Par défaut, l'authentification reste obligatoire. Pour autoriser explicitement votre réseau local en IPv4/IPv6, adapter ces plages dans `.env` :
+
+```dotenv
+LOCAL_AUTH_NETWORKS='["192.168.1.0/24"]'
+TRUSTED_PROXY_NETWORKS=[]
+```
+
+Les clients de ces plages accèdent directement au front et à l'API avec les droits administrateur, sans saisir de jeton. Les clients hors plage continuent d'utiliser `API_TOKEN`/`API_READ_TOKEN` (le premier reste obligatoire). Un Bearer explicitement incorrect est refusé, et un Bearer de lecture conserve ses droits restreints, même depuis le LAN. L'accès local ne crée pas de cookie réutilisable hors du réseau autorisé. Pour protéger les écritures du navigateur contre les requêtes provenant d'autres sites, le front récupère automatiquement un jeton **CSRF** via `GET /api/v1/auth/session` ; les clients locaux sans Bearer doivent le transmettre dans `X-CSRF-Token` pour écrire. Il ne remplace pas le jeton d'accès externe.
+
+Le Docker désactive la réécriture automatique de l'adresse client par Uvicorn (`--no-proxy-headers`). En accès direct, seule l'adresse du pair TCP compte ; `X-Forwarded-For`, `X-Real-IP` et `Forwarded` envoyés par le client ne l'autorisent pas. Selon le réseau Docker/NAS, le pair observé peut être une passerelle : **ne pas autoriser cette passerelle pour tous les clients**.
+
+Si un reverse proxy est réellement utilisé, déclarer uniquement son adresse exacte, par exemple `TRUSTED_PROXY_NETWORKS='["172.18.0.2/32"]'`, et le configurer pour remplacer ou compléter correctement `X-Forwarded-For` avec l'adresse de son client. Le back-end traverse la chaîne de droite à gauche jusqu'au premier pair non approuvé. Une chaîne absente, invalide ou composée uniquement de proxys approuvés impose le jeton. Les plages `/0` sont refusées. Ne pas déclarer un ensemble de clients ordinaires comme proxys approuvés. Avec un lancement Uvicorn personnalisé, conserver impérativement `--no-proxy-headers` ; en entrée HTTPS derrière proxy, configurer également `COOKIE_SECURE=true`.

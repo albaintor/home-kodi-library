@@ -4,6 +4,7 @@ import secrets
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from ipaddress import ip_address, ip_network
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -28,6 +29,37 @@ class Auth:
         self.settings = settings
         self.sessions: dict[str, tuple[float, Principal]] = {}
         self.attempts: dict[str, deque[float]] = defaultdict(deque)
+        self.local_networks = [ip_network(n) for n in settings.local_auth_networks]
+        self.proxy_networks = [ip_network(n) for n in settings.trusted_proxy_networks]
+        self.local_csrf = secrets.token_urlsafe(24)
+
+    def is_local(self, request: Request) -> bool:
+        def address(value):
+            ip = ip_address(value)
+            return getattr(ip, "ipv4_mapped", None) or ip
+
+        def trusted(ip):
+            return any(ip in network for network in self.proxy_networks)
+
+        try:
+            peer = address(request.client.host) if request.client else None
+            if peer is None:
+                return False
+            if trusted(peer):
+                forwarded = request.headers.getlist("x-forwarded-for")
+                # A trusted proxy must append/replace a validated client chain.
+                if len(forwarded) != 1 or not forwarded[0] or len(forwarded[0]) > 4096:
+                    return False
+                chain = [address(v.strip()) for v in forwarded[0].split(",")]
+                for candidate in reversed(chain):
+                    peer = candidate
+                    if not trusted(peer):
+                        break
+                else:
+                    return False
+            return any(peer in network for network in self.local_networks)
+        except ValueError:
+            return False
 
     def token_role(self, token: str) -> str | None:
         if secure_equal(token, self.settings.api_token):
@@ -74,6 +106,8 @@ class Auth:
             if session and session[0] > time.monotonic():
                 return session[1]
             self.sessions.pop(cookie, None)
+        if self.is_local(request):
+            return Principal("admin", csrf=self.local_csrf, via="local")
         raise HTTPException(401, "Authentication required.", headers={"WWW-Authenticate": "Bearer"})
 
 
@@ -86,7 +120,7 @@ def authenticated(
 def writable(request: Request, principal: Principal = Depends(authenticated)) -> Principal:
     if principal.role != "admin":
         raise HTTPException(403, "This token has read-only access.")
-    if principal.via == "session" and request.method not in ("GET", "HEAD", "OPTIONS"):
+    if principal.via in ("session", "local") and request.method not in ("GET", "HEAD", "OPTIONS"):
         csrf = request.headers.get("X-CSRF-Token", "")
         if not principal.csrf or not secure_equal(csrf, principal.csrf):
             raise HTTPException(403, "Missing or invalid CSRF token.")

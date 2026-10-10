@@ -26,6 +26,7 @@
     <header class="main-header">
       <div class="brand"><img class="brand-mark" src="static/cinema.svg" alt="" width="36" height="36"><span>KODI <b>LIBRARY</b></span></div>
       <nav aria-label="Actions">
+        <button id="lists-button" class="quiet">Mes listes</button>
         <a class="quiet" href="docs" target="_blank" rel="noopener">API</a>
         <button id="connections-button" class="quiet">Connexions</button>
         <button id="logout-button" class="icon-button" aria-label="Se déconnecter">↪</button>
@@ -47,7 +48,7 @@
         <label>Format<select id="format"><option value="">Tous les formats</option></select></label>
         <label>Collection<select id="collection"><option value="">Toutes les collections</option></select></label>
         <label>État<select id="watch-status"><option value="">Tous les états</option><option value="unwatched">Non vus</option><option value="in_progress">En cours</option><option value="watched">Vus</option><option value="unknown">Non renseigné</option></select></label>
-        <label>Tri<select id="sort"><option value="date_added">Date d’ajout</option><option value="title">Titre</option><option value="year">Année</option><option value="rating">Note</option><option value="last_played">Dernière lecture</option></select></label>
+        <label>Tri<select id="sort"><option value="date_added">Date d’ajout</option><option value="title">Titre</option><option value="year">Année</option><option value="rating">Note</option><option value="user_rating">Votre note</option><option value="last_played">Dernière lecture</option></select></label>
         <button id="sort-order" class="sort-order" aria-label="Inverser le sens du tri">↓ Décroissant</button>
       </section>
       <div class="results-heading"><span id="result-count" aria-live="polite"></span><button id="reset-filters" class="text-button" hidden>Effacer les filtres</button></div>
@@ -60,5 +61,7 @@
   <dialog id="detail-dialog" class="detail-dialog"><button class="dialog-close" data-close="detail-dialog" aria-label="Fermer la fiche">×</button><div id="detail-content"></div></dialog>
   <dialog id="connections-dialog" class="connections-dialog"><button class="dialog-close" data-close="connections-dialog" aria-label="Fermer les connexions">×</button><p class="eyebrow">VOTRE CATALOGUE</p><h2>Connexions</h2><p class="muted">Importez une collection ou connectez la base Kodi. Les lecteurs sont facultatifs.</p><div id="connection-content"></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="lists-dialog" class="lists-dialog"><button class="dialog-close" data-close="lists-dialog" aria-label="Fermer les listes">×</button><p class="eyebrow">VOTRE SÉLECTION</p><h2>Mes listes</h2><div id="lists-content"></div></dialog>
+  <dialog id="choose-list-dialog" class="small-dialog"><button class="dialog-close" data-close="choose-list-dialog" aria-label="Fermer l’ajout aux listes">×</button><h2>Ajouter à une liste</h2><div id="choose-list-content"></div></dialog>
 </body>
 </html>

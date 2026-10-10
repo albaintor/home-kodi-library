@@ -82,6 +82,13 @@ class Artwork:
             return path.read_bytes(), json.loads(meta.read_text())["content_type"]
         return None
 
+    def invalidate(self, candidates: list[str]) -> None:
+        with self.write_lock:
+            for url in candidates:
+                key = hashlib.sha256(url.encode()).hexdigest()
+                for suffix in (".bin", ".json"):
+                    (self.cache / (key + suffix)).unlink(missing_ok=True)
+
     @staticmethod
     def _image_type(data: bytes) -> str:
         if data.startswith(b"\xff\xd8\xff"):

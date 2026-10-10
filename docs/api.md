@@ -98,3 +98,35 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 Les erreurs applicatives ont la forme `{"error":{"code":"invalid_request","message":"…","details":[…]}}` ; `details` est facultatif et n'inclut pas les données soumises. Statuts principaux : 401, 403, 404, 409, 413, 422, 429, 502. Les erreurs inattendues sont journalisées côté serveur ; aucun secret n'est destiné à la réponse.
 
 L'API expose des UUID de catalogue stables lors des réimports tant que les clés de source sont conservées. Une suppression/recréation d'une source peut changer ces UUID. Les évolutions compatibles ajoutent des champs/routes à v1 ; une rupture de contrat devra utiliser v2. Consulter le schéma OpenAPI pour les champs, types et contraintes exacts.
+
+## Données personnelles et listes
+
+Toutes ces écritures exigent les droits administrateur ; Bearer externe, session avec CSRF, accès local avec CSRF ou secret Ingress. Les lectures sont aussi accessibles avec le jeton de lecture.
+
+| Méthode | Route `/api/v1` | Corps / résultat |
+|---|---|---|
+| PATCH | `/media/{id}/personal` | `{ "user_rating": 8.5, "watched": true }` → fiche mise à jour |
+| GET | `/lists` | Listes, descriptions, compteurs, révisions |
+| POST | `/lists` | `{ "name": "Films à voir", "description": "Priorités" }` → liste créée (201) |
+| PUT | `/lists/{id}` | Nom et description |
+| DELETE | `/lists/{id}` | Supprime uniquement la liste (204) |
+| GET | `/lists/{id}/items` | Page `items,total,limit,offset,has_more,revision` |
+| POST | `/lists/{id}/items` | `{ "media_id": "UUID" }` ; ajout idempotent en fin de liste (204) |
+| DELETE | `/lists/{id}/items/{media_id}` | Retire le média de la liste (204) |
+| PUT | `/lists/{id}/order` | `{ "media_ids": ["UUID2","UUID1"], "revision": 3 }` ; permutation complète (204) |
+
+`PATCH personal` laisse inchangés les champs omis ; `null` retire l'édition personnelle du champ et reprend sa valeur importée. `user_rating` accepte 0 à 10. `watched` accepte true/false/null. Les valeurs effectives apparaissent dans les pages, fiches et filtres ; le tri `user_rating` est disponible dans le catalogue. Les éditions conservent leurs métadonnées d'origine. Ces valeurs sont communes à l'installation, sans profils utilisateur.
+
+Les items de liste acceptent `sort=position|title|year|date_added|rating|user_rating`, `order=asc|desc`, `limit=1..200` et `offset>=0`. Un tri automatique ne réécrit pas `position`. Pour réordonner une liste paginée, lire tous les UUID dans une même révision puis envoyer chacun exactement une fois (maximum 10 000). Un changement concurrent donne 409 ; une permutation incomplète ou dupliquée donne 422. Les mutations, y compris la disparition d'un média de toutes les sources, changent la révision. La fiche comporte `personal` et `lists`.
+
+## Personnes et cache TMDB
+
+`MediaDetail.people` regroupe `name,role,order,category,imdb_id,tmdb_id,links,thumbnail`. `category` vaut `cast`, `director`, `writer`, `producer`, `composer`, `photography` ou `crew`. `cast` reste disponible pour les anciens clients. `links` contient les URL directes avec identifiants ou une `imdb_search` explicitement distincte. Les portraits sont exposés par une route relative authentifiée `GET /media/{id}/people/{index}/artwork` ; conserver le préfixe d'un éventuel Ingress.
+
+`trailers` contient des liens HTTPS YouTube validés (les liens plugin Kodi sont convertis). `tmdb_available` indique si le serveur dispose de son jeton TMDB. `enriched_at` donne la date du cache persistant. `POST /media/{id}/enrich` récupère les personnes/portraits/bandes-annonces de TMDB pour un film ou une série identifiés par IMDb/TMDB ; réutilise le cache pendant 30 jours. `POST /media/{id}/enrich?refresh=true` force le renouvellement et invalide les portraits concernés. Une erreur conserve le cache précédent. Aucune clé TMDB n'est fournie par le client ou révélée dans la réponse. Les épisodes ne sont pas encore enrichis individuellement.
+
+Les `GET` ne déclenchent pas de requêtes TMDB. Le front administrateur appelle automatiquement `POST enrich` à l'ouverture si nécessaire ; une application iOS peut utiliser les mêmes routes. Les clients de lecture consultent les informations importées ou déjà enrichies. Le champ `editions[].metadata.file` expose le chemin Kodi ; le lancement d'une version utilise `edition_id` dans `/players/{id}/play`.
+
+## Plages locales sans jeton d'accès
+
+Configurer `LOCAL_AUTH_NETWORKS` (JSON de CIDR) et, si nécessaire, `TRUSTED_PROXY_NETWORKS` dans l'environnement. Aucune plage n'est autorisée par défaut. `GET /auth/session` renvoie `access_method=local` et un CSRF pour les clients autorisés sans Bearer ; envoyer ce CSRF dans `X-CSRF-Token` pour les écritures. Le front le fait automatiquement. Le contrôle Bearer reste disponible indépendamment de l'interface et prioritaire sur l'autorisation locale. Consulter le README pour la configuration du proxy ; ne pas activer le traitement automatique des proxy headers dans Uvicorn.

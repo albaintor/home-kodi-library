@@ -24,6 +24,7 @@ class SortField(StrEnum):
     DATE_ADDED = "date_added"
     YEAR = "year"
     RATING = "rating"
+    USER_RATING = "user_rating"
     LAST_PLAYED = "last_played"
 
 
@@ -152,12 +153,63 @@ class CastMember(BaseModel):
     name: str
     role: str | None = None
     order: int | None = None
+    category: str = "cast"
+    imdb_id: str | None = None
+    tmdb_id: str | None = None
+    links: dict[str, str] = Field(default_factory=dict)
+    thumbnail: str | None = None
+
+
+class PersonalInput(StrictModel):
+    user_rating: float | None = Field(default=None, ge=0, le=10)
+    watched: bool | None = None
+
+
+class PersonalView(BaseModel):
+    user_rating: float | None = None
+    watched: bool | None = None
+
+
+class ListInput(StrictModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str = Field(default="", max_length=1000)
+
+    @field_validator("name")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip():
+            raise ValueError("List name must not be blank.")
+        return value.strip()
+
+
+class ListView(BaseModel):
+    id: str
+    name: str
+    description: str
+    revision: int
+    item_count: int
+    created_at: str
+
+
+class ListItemInput(StrictModel):
+    media_id: str
+
+
+class ListOrderInput(StrictModel):
+    media_ids: list[str] = Field(max_length=10000)
+    revision: int = Field(ge=0)
 
 
 class MediaDetail(MediaSummary):
     identifiers: dict[str, list[str]]
     editions: list[EditionView]
     cast: list[CastMember] = Field(default_factory=list)
+    people: list[CastMember] = Field(default_factory=list)
+    trailers: list[str] = Field(default_factory=list)
+    personal: PersonalView = Field(default_factory=PersonalView)
+    lists: list[ListView] = Field(default_factory=list)
+    tmdb_available: bool = False
+    enriched_at: str | None = None
 
 
 class MediaPage(BaseModel):
@@ -166,6 +218,10 @@ class MediaPage(BaseModel):
     limit: int
     offset: int
     has_more: bool
+
+
+class ListPage(MediaPage):
+    revision: int
 
 
 class Facets(BaseModel):
@@ -227,6 +283,7 @@ class SessionInput(StrictModel):
 class SessionView(BaseModel):
     role: Literal["admin", "read"]
     csrf_token: str | None = None
+    access_method: Literal["session", "bearer", "ingress", "local"] = "session"
 
 
 class CatalogueStatus(BaseModel):

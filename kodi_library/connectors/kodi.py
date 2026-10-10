@@ -17,6 +17,7 @@ from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
 
 from ..media_formats import stream_metadata
+from ..people import youtube_url
 from ..utils import date_value, identifiers, integer, number, plain_text, positive
 from .base import ConnectorError, Record
 
@@ -116,6 +117,9 @@ def normalize_row(
             else True,
             "show_title": row.get("strTitle") if kind == "episode" else None,
             "director": row.get("c15" if kind == "movie" else "c10" if kind == "episode" else ""),
+            "trailers": [trailer]
+            if kind == "movie" and (trailer := youtube_url(str(row.get("c19") or "")))
+            else [],
             "studio": row.get("c18" if kind == "movie" else "studio"),
             "rating_source": row.get("rating_type"),
             "total_episodes": int(number(row.get("totalCount"))) if kind == "tvshow" else None,
@@ -232,6 +236,8 @@ class KodiConnector:
             ("streamdetails", "idFile,iStreamType"),
             ("actor", "actor_id,name"),
             ("actor_link", "actor_id,media_id,media_type,role,cast_order"),
+            ("director_link", "actor_id,media_id,media_type"),
+            ("writer_link", "actor_id,media_id,media_type"),
         ):
             if table in tables:
                 cursor.execute(f"SELECT {columns} FROM `{table}` LIMIT 1")
@@ -266,9 +272,14 @@ class KodiConnector:
             for row in cursor.fetchall():
                 streams[int(row["idFile"])].append(row)
         casts: dict[tuple[str, int], list[dict]] = defaultdict(list)
+        portraits = defaultdict(list)
+        if "art" in tables:
+            cursor.execute("SELECT media_id,url FROM art WHERE media_type='actor' AND type='thumb'")
+            for row in cursor.fetchall():
+                portraits[int(row["media_id"])].extend(artwork_candidates(row["url"]))
         if {"actor", "actor_link"}.issubset(tables):
             cursor.execute(
-                "SELECT l.media_type,l.media_id,a.name,l.role,l.cast_order "
+                "SELECT l.media_type,l.media_id,a.actor_id,a.name,l.role,l.cast_order "
                 "FROM actor_link l JOIN actor a ON a.actor_id=l.actor_id "
                 "WHERE l.media_type IN ('movie','tvshow','episode') "
                 "ORDER BY l.cast_order IS NULL,l.cast_order,a.name"
@@ -280,6 +291,22 @@ class KodiConnector:
                             "name": str(row["name"]),
                             "role": row.get("role") or None,
                             "order": row.get("cast_order"),
+                            "category": "cast",
+                            "photos": portraits.get(int(row.get("actor_id") or 0), []),
+                        }
+                    )
+        crews: dict[tuple[str, int], list[dict]] = defaultdict(list)
+        for table, category in (("director_link", "director"), ("writer_link", "writer")):
+            if {"actor", table}.issubset(tables):
+                cursor.execute(
+                    f"SELECT l.media_type,l.media_id,a.actor_id,a.name FROM {table} l JOIN actor a ON a.actor_id=l.actor_id WHERE l.media_type IN ('movie','tvshow','episode') ORDER BY a.name"
+                )
+                for row in cursor.fetchall():
+                    crews[(row["media_type"], int(row["media_id"]))].append(
+                        {
+                            "name": row["name"],
+                            "category": category,
+                            "photos": portraits.get(int(row["actor_id"]), []),
                         }
                     )
         for kind, view, id_field in (
@@ -315,6 +342,16 @@ class KodiConnector:
             for row in cursor.fetchall():
                 identity = (kind, int(row[id_field]))
                 record = normalize_row(kind, row, artwork.get(identity), uniqueids.get(identity))
+                crew = crews.get(identity, [])
+                if not any(p["category"] == "director" for p in crew):
+                    crew = [
+                        *crew,
+                        *(
+                            {"name": name, "category": "director"}
+                            for name in genre_list(record.metadata.get("director"))
+                        ),
+                    ]
+                record.metadata["people"] = [*casts.get(identity, []), *crew]
                 file_id = record.metadata.get("file_id")
                 technical = stream_metadata(streams.get(file_id, []))
                 record.formats = technical.pop("formats")

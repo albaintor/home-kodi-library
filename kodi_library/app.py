@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -27,6 +28,7 @@ from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
+from .enrichment import enrich_tmdb
 from .models import (
     CatalogueStatus,
     ConnectionResult,
@@ -35,9 +37,15 @@ from .models import (
     JobView,
     Kind,
     KodiConnectionInput,
+    ListInput,
+    ListItemInput,
+    ListOrderInput,
+    ListPage,
+    ListView,
     MariaDBConnectionInput,
     MediaDetail,
     MediaPage,
+    PersonalInput,
     PlayerInput,
     PlayerView,
     PlayInput,
@@ -94,12 +102,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.store, app.state.auth, app.state.sync = store, Auth(settings), sync
     app.state.artwork = Artwork(settings)
+    enrichment_lock = asyncio.Lock()
     if settings.cors_origins:
         app.add_middleware(
             CORSMiddleware,
             allow_origins=settings.cors_origins,
             allow_credentials=True,
-            allow_methods=["GET", "POST", "PUT", "DELETE"],
+            allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
             allow_headers=["Authorization", "Content-Type", "X-CSRF-Token"],
         )
 
@@ -189,7 +198,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get(API + "/auth/session", response_model=SessionView, tags=["Authentication"])
     def session(principal: Principal = Depends(authenticated)):
-        return {"role": principal.role, "csrf_token": principal.csrf}
+        return {
+            "role": principal.role,
+            "csrf_token": principal.csrf,
+            "access_method": principal.via,
+        }
 
     @app.delete(API + "/auth/session", status_code=204, tags=["Authentication"])
     def logout(request: Request, response: Response, principal: Principal = Depends(authenticated)):
@@ -267,8 +280,159 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def media_detail(media_id: str):
         if value := store.detail(media_id):
-            return value
+            return {**value, "tmdb_available": bool(settings.tmdb_api_token)}
         raise HTTPException(404, "Unknown media.")
+
+    @app.patch(
+        API + "/media/{media_id}/personal",
+        response_model=MediaDetail,
+        tags=["Personal"],
+        dependencies=[Depends(writable)],
+    )
+    def edit_personal(media_id: str, data: PersonalInput):
+        if not store.update_personal(media_id, data.model_dump(exclude_unset=True)):
+            raise HTTPException(404, "Unknown media.")
+        return media_detail(media_id)
+
+    @app.post(
+        API + "/media/{media_id}/enrich",
+        response_model=MediaDetail,
+        tags=["Enrichment"],
+        dependencies=[Depends(writable)],
+    )
+    async def enrich_media(media_id: str, refresh: bool = False):
+        async with enrichment_lock:
+            detail = await asyncio.to_thread(store.detail, media_id)
+            if not detail:
+                raise HTTPException(404, "Unknown media.")
+            updated = detail.get("enriched_at")
+            if (
+                not refresh
+                and updated
+                and datetime.fromisoformat(updated) > datetime.now(UTC) - timedelta(days=30)
+            ):
+                return {**detail, "tmdb_available": bool(settings.tmdb_api_token)}
+            try:
+                payload = await enrich_tmdb(detail, settings.tmdb_api_token)
+            except ConnectorError as exc:
+                raise HTTPException(502, str(exc)) from exc
+            if not await asyncio.to_thread(store.save_enrichment, media_id, payload):
+                raise HTTPException(404, "Media was removed during enrichment.")
+            if refresh:
+                photos = [
+                    url
+                    for member in [*detail["people"], *payload.get("people", [])]
+                    for url in member.get("photos") or []
+                ]
+                await asyncio.to_thread(app.state.artwork.invalidate, photos)
+            return media_detail(media_id)
+
+    @app.get(
+        API + "/media/{media_id}/people/{index}/artwork",
+        tags=["Enrichment"],
+        dependencies=[Depends(authenticated)],
+    )
+    async def person_artwork(media_id: str, index: int):
+        detail = await asyncio.to_thread(store.detail, media_id)
+        if not detail or not 0 <= index < len(detail["people"]):
+            raise HTTPException(404, "Unknown credit.")
+        try:
+            data, content_type = await app.state.artwork.get(
+                detail["people"][index].get("photos") or []
+            )
+            return Response(data, media_type=content_type)
+        except ArtworkError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    def list_error(operation):
+        try:
+            return operation()
+        except KeyError as exc:
+            raise HTTPException(404, str(exc.args[0])) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get(
+        API + "/lists",
+        response_model=list[ListView],
+        tags=["Lists"],
+        dependencies=[Depends(authenticated)],
+    )
+    def lists():
+        return store.lists()
+
+    @app.post(
+        API + "/lists",
+        response_model=ListView,
+        status_code=201,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def create_list(data: ListInput):
+        return store.save_list(data.model_dump())
+
+    @app.put(
+        API + "/lists/{list_id}",
+        response_model=ListView,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def update_list(list_id: str, data: ListInput):
+        return list_error(lambda: store.save_list(data.model_dump(), list_id))
+
+    @app.delete(
+        API + "/lists/{list_id}", status_code=204, tags=["Lists"], dependencies=[Depends(writable)]
+    )
+    def delete_list(list_id: str):
+        list_error(lambda: store.delete_list(list_id))
+
+    @app.get(
+        API + "/lists/{list_id}/items",
+        response_model=ListPage,
+        tags=["Lists"],
+        dependencies=[Depends(authenticated)],
+    )
+    def list_items(
+        list_id: str,
+        sort: Literal[
+            "position", "title", "year", "rating", "user_rating", "date_added"
+        ] = "position",
+        order: Literal["asc", "desc"] = "asc",
+        limit: int = Query(60, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+    ):
+        return list_error(
+            lambda: store.list_page(list_id, sort=sort, order=order, limit=limit, offset=offset)
+        )
+
+    @app.post(
+        API + "/lists/{list_id}/items",
+        status_code=204,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def add_list_item(list_id: str, data: ListItemInput):
+        list_error(lambda: store.change_list_item(list_id, data.media_id))
+
+    @app.delete(
+        API + "/lists/{list_id}/items/{media_id}",
+        status_code=204,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def remove_list_item(list_id: str, media_id: str):
+        list_error(lambda: store.change_list_item(list_id, media_id, remove=True))
+
+    @app.put(
+        API + "/lists/{list_id}/order",
+        status_code=204,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def order_list(list_id: str, data: ListOrderInput):
+        list_error(lambda: store.reorder_list(list_id, data.media_ids, data.revision))
 
     @app.get(
         API + "/media/{media_id}/artwork/{aspect}",

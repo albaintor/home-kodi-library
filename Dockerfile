@@ -15,4 +15,4 @@ RUN chmod 755 /app \
 USER library
 EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
-CMD ["uvicorn", "kodi_library.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+CMD ["uvicorn", "kodi_library.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"]

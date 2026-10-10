@@ -29,7 +29,7 @@ Les nombres de lectures sont le maximum connu entre sources/éditions, pas leur 
 
 ## SQLite et sauvegardes
 
-Le volume `/data` contient `catalogue.db` (SQLite WAL) et le cache `artwork/`. Un seul processus serveur, accès indexés, FTS5, transactions atomiques, délai d'attente des verrous. Le numéro de schéma est versionné avec `PRAGMA user_version` (v1) ; un schéma plus récent provoque un refus de démarrage.
+Le volume `/data` contient `catalogue.db` (SQLite WAL) et le cache `artwork/`. Un seul processus serveur, accès indexés, FTS5, transactions atomiques, délai d'attente des verrous. Le numéro de schéma est versionné avec `PRAGMA user_version` (v2, migration automatique depuis v1) ; un schéma plus récent provoque un refus de démarrage.
 
 Les mots de passe des sources/cibles sont stockés dans la base locale, en clair au repos, protégés par les permissions du volume et expurgés des réponses. Le dossier est privé et le fichier SQLite utilise le mode 0600. Protéger et sauvegarder ce volume comme un fichier de configuration contenant des secrets.
 
@@ -61,4 +61,12 @@ Les schémas avec versions de films n'utilisent pas tous le même type numériqu
 
 `actor` et `actor_link` fournissent les interprètes, rôles et ordre du casting. `streamdetails` fournit définition vidéo, codecs, type HDR, stéréoscopie, pistes audio et langues par fichier. Les champs HDR facultatifs restent inconnus lorsqu'ils sont absents. Le codec TrueHD seul ne prouve pas Atmos ; CLZ peut compléter l'œuvre avec ses pistes explicitement intitulées Dolby Atmos. L'export CLZ initial fourni ne contient pas de casting renseigné. Aucune base supplémentaire ni migration SQLite n'est nécessaire pour ces métadonnées, enregistrées dans les éditions.
 
-Les séries CLZ sont des éditions de collection ; leurs listes d'épisodes éventuelles ne sont pas importées comme épisodes Kodi. La lecture concerne les fichiers Kodi, pas la lecture automatique d'un disque physique. Ni réveil de machine, ni modification du statut vu, ni utilisateurs multiples ne sont encore implémentés.
+Les séries CLZ sont des éditions de collection ; leurs listes d'épisodes éventuelles ne sont pas importées comme épisodes Kodi. La lecture concerne les fichiers Kodi, pas la lecture automatique d'un disque physique. Le réveil de machine et les profils utilisateur distincts ne sont pas encore implémentés.
+
+## Données propres à cette installation
+
+`personal` conserve les notes et statuts vus personnels par UUID d’œuvre ; `null` signifie reprendre la donnée importée. La consolidation dans `works` applique ces choix à chaque synchronisation. Ils ne sont pas écrits dans les sources Kodi/CLZ.
+
+`lists` et `list_items` conservent les sélections, positions manuelles et révisions. Les tris d’affichage sont indépendants des positions enregistrées. L’effacement d’une œuvre sans source restante supprime ses associations et incrémente les révisions des listes concernées.
+
+`enrichment` conserve les crédits et liens TMDB, avec horodatage, séparément des éditions. Les identifiants exacts IMDb/TMDB évitent la recherche approximative par titre. Les données importées ont priorité pour les rôles ; TMDB complète les portraits et identifiants par nom dans les crédits du même média. Les personnes et fonctions sont incluses dans la recherche FTS. Les liens et les URL de portrait exposées par la fiche sont construits par le serveur. Les images utilisent le proxy/cache commun et ses règles contre les URL privées.

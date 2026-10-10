@@ -100,6 +100,8 @@ def test_movies_versions_cast_and_streams_survive_each_schema(version_type, stor
         "name": "Camille Exemple",
         "role": "La capitaine",
         "order": 0,
+        "category": "cast",
+        "photos": [],
     }
     if version_type is not None:
         alternative = next(r for r in movies if r.external_key == "movie:1:11")
@@ -160,5 +162,33 @@ def test_cast_is_available_in_api(client, admin):
     item = client.get("/api/v1/media?q=Camille", headers=admin).json()["items"][0]
     response = client.get(f"/api/v1/media/{item['id']}", headers=admin)
     assert response.status_code == 200
-    assert response.json()["cast"] == [{"name": "Camille Exemple", "role": "Pilote", "order": 0}]
+    assert response.json()["cast"][0]["name"] == "Camille Exemple"
+    assert response.json()["cast"][0]["role"] == "Pilote"
+    assert "imdb_search" in response.json()["cast"][0]["links"]
     assert set(response.json()["formats"]) == {"4K", "HDR10+"}
+
+
+def test_kodi_portraits_directors_writers_and_youtube_trailer():
+    db = sqlite3.connect(":memory:")
+    db.row_factory = sqlite3.Row
+    db.executescript("""
+    CREATE TABLE movie_view(idMovie INTEGER,idFile INTEGER,c00 TEXT,c19 TEXT);
+    INSERT INTO movie_view VALUES(1,10,'Un film','plugin://plugin.video.youtube/play/?video_id=C6PbWhWGUrY');
+    CREATE TABLE actor(actor_id INTEGER,name TEXT);
+    INSERT INTO actor VALUES(4,'Camille Exemple');
+    CREATE TABLE actor_link(actor_id INTEGER,media_id INTEGER,media_type TEXT,role TEXT,cast_order INTEGER);
+    INSERT INTO actor_link VALUES(4,1,'movie','Pilote',0);
+    CREATE TABLE director_link(actor_id INTEGER,media_id INTEGER,media_type TEXT);
+    INSERT INTO director_link VALUES(4,1,'movie');
+    CREATE TABLE writer_link(actor_id INTEGER,media_id INTEGER,media_type TEXT);
+    INSERT INTO writer_link VALUES(4,1,'movie');
+    CREATE TABLE art(media_id INTEGER,media_type TEXT,type TEXT,url TEXT);
+    INSERT INTO art VALUES(4,'actor','thumb','image://https%3A%2F%2Fexample.org%2Fportrait.jpg/');
+    """)
+    record = KodiConnector({})._snapshot(SnapshotCursor(db))[0]
+    assert [p["category"] for p in record.metadata["people"]] == ["cast", "director", "writer"]
+    assert all(
+        p["photos"] == ["https://example.org/portrait.jpg"] for p in record.metadata["people"]
+    )
+    assert record.metadata["trailers"] == ["https://www.youtube.com/watch?v=C6PbWhWGUrY"]
+    db.close()
