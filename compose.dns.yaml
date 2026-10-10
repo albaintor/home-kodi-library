@@ -1,0 +1,7 @@
+# Optional explicit DNS servers for the running container.
+# Usage: docker compose -f compose.yaml -f compose.dns.yaml up -d --no-build
+services:
+  library:
+    dns:
+      - "${DNS_PRIMARY:-1.1.1.1}"
+      - "${DNS_SECONDARY:-8.8.8.8}"

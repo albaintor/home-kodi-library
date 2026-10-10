@@ -75,6 +75,30 @@ sudo docker run --rm --dns 1.1.1.1 --dns 8.8.8.8 python:3.12-slim python -c 'imp
 
 Le dernier test utilise des DNS publics pour identifier un éventuel problème de DNS Docker. S'il réussit seul, les paramètres DNS du NAS/Docker doivent être corrigés ; le DNS configuré au niveau du service pourra aussi être nécessaire pour télécharger les affiches en fonctionnement.
 
+
+## Si les pochettes distantes ne s'affichent pas
+
+Les URL de pochettes CLZ sont importées depuis l'export XML et téléchargées par le conteneur. Une correction DNS de **construction** (`build.network: host` ou `docker build --network=host`) ne configure pas les DNS du conteneur en fonctionnement.
+
+Si la résolution DNS Docker échoue, une variante optionnelle permet de choisir des DNS explicites :
+
+```bash
+git pull --ff-only
+sudo docker compose -f compose.yaml -f compose.dns.yaml up -d --no-build --force-recreate library
+```
+
+Elle utilise `1.1.1.1` et `8.8.8.8` par défaut. Pour utiliser votre routeur/résolveur et conserver la résolution des noms de machines locaux, renseigner `DNS_PRIMARY` et `DNS_SECONDARY` dans `.env`. Conserver `-f compose.dns.yaml` lors des prochains `up`/recréations pour conserver cette configuration. On peut aussi combiner ce fichier avec `compose.build-host.yaml` lors des reconstructions.
+
+Tester une URL réelle de l'export CLZ depuis le conteneur :
+
+```bash
+sudo docker compose exec library python -c 'import urllib.request; u="https://clzmovies.r.sizr.io/core/covers/lg/f4/f4_1259989_0_DungeonsDragonsHonorAmongThiev.jpg"; r=urllib.request.urlopen(u, timeout=15); print(r.status, r.headers.get("Content-Type"), r.geturl()); r.close()'
+```
+
+Un résultat `200 image/jpeg` (ou un autre type d'image) indique que le téléchargement direct fonctionne. Une erreur de résolution, de certificat ou un code HTTP apporte la cause du blocage. Cette commande sert au diagnostic réseau ; le proxy d'images de l'application applique en plus ses contrôles sur les URL.
+
+Pour les pochettes Kodi utilisant un chemin SMB/NFS/local, utiliser le mapping `ARTWORK_MOUNTS` décrit dans [le modèle](docs/model.md), car une configuration DNS seule ne donne pas accès aux fichiers.
+
 ## Depuis Home Assistant et depuis iOS
 
 - [Accès Home Assistant avec hass_ingress](docs/home-assistant.md), y compris à distance depuis la même URL Home Assistant.
