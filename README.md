@@ -44,6 +44,19 @@ Pour MariaDB, utiliser un compte avec `SELECT` sur la base `MyVideos…`. Rensei
 
 Après une mise à jour ajoutant des métadonnées, utiliser **Connexions → Synchroniser** pour Kodi et réimporter l'XML dans la **collection CLZ existante**. Les badges HDR et Atmos utilisent uniquement les indications explicites de la source ; un disque UHD ou une piste TrueHD ne suffit pas à annoncer ces technologies.
 
+### Mises à jour suivantes
+
+Le script `rebuild.sh` récupère `main` par `git pull --ff-only`, construit l'image avec le réseau de l'hôte (installation Python), puis recrée `library` en conservant `compose.dns.yaml` et les paramètres DNS de `.env`. Il attend jusqu'à 120 secondes la sonde de santé du conteneur et affiche les journaux si le démarrage échoue.
+
+```bash
+# Une fois, pour récupérer le script :
+git pull --ff-only
+# Puis, pour chaque mise à jour :
+sh ./rebuild.sh
+```
+
+Lancer le script avec l'utilisateur propriétaire du dépôt ; il utilise automatiquement `sudo` pour Docker si nécessaire. Ne pas lancer tout le script avec `sudo`, afin de conserver les permissions Git du dépôt. `.env` et `data/` sont conservés. Un conflit Git ou une erreur de construction arrête le script avant de recréer le conteneur ; aucune commande `down`, réinitialisation Git ou suppression de données/images n'est exécutée. Le script utilise les fichiers Compose indiqués ci-dessus ; ajouter vos éventuels fichiers supplémentaires dans `compose_run` si votre installation en nécessite.
+
 Les posters HTTP(S) publics sont téléchargés et mis en cache. Les images sur SMB/NFS ou un chemin local doivent être montées en lecture seule et déclarées dans `ARTWORK_MOUNTS` ; voir [le modèle et les images](docs/model.md). Les affiches indisponibles laissent une vignette lisible.
 
 
