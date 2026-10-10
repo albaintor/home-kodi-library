@@ -160,15 +160,19 @@ Les tests utilisent un XML synthétique et des connexions simulées ; aucun expo
 
 La fiche distingue casting, réalisation, scénario, production, composition, photographie et autres fonctions. Kodi fournit les rôles, réalisateurs/scénaristes et portraits présents dans sa base. Les crédits/portraits exportés par CLZ et ses liens YouTube sont importés lorsqu'ils existent. L'export initial fourni contient des sections de casting vides : les images visibles sur CLZ Cloud ne sont pas incluses dans cet XML.
 
-Pour compléter automatiquement les films et séries depuis TMDB, renseigner dans `.env` le **API Read Access Token** de [votre compte TMDB](https://www.themoviedb.org/settings/api), puis recréer le conteneur :
+Pour compléter automatiquement les films et séries depuis TMDB, renseigner dans `.env` le **API Read Access Token** de [votre compte TMDB](https://www.themoviedb.org/settings/api), puis exécuter `sh ./rebuild.sh`. La **clé API v3** est également acceptée dans ce champ. Le mot de passe du compte ne convient pas.
 
 ```dotenv
 TMDB_API_TOKEN=votre_jeton_de_lecture_TMDB
 ```
 
-L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms possédant un identifiant ouvrent directement une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible.
+Dans **Connexions → Métadonnées et portraits · TMDB**, l'interface indique si TMDB est configuré et propose **Tester la connexion TMDB**. Les erreurs de clé refusée, de réseau ou de limite de requêtes sont explicites. L'absence de TMDB est aussi indiquée dans chaque fiche. Activer TMDB ne nécessite aucune réimportation du catalogue : rouvrir la fiche suffit lorsque son identifiant IMDb/TMDB existe déjà.
 
-Les métadonnées restent dans SQLite pendant les redémarrages et synchronisations. Elles sont réutilisées pendant 30 jours, puis renouvelées à la prochaine ouverture. Le bouton **Rafraîchir les personnes et bandes-annonces** force leur renouvellement et invalide les images concernées dans le cache ; une panne conserve les informations précédentes. Les portraits utilisent le même proxy authentifié, cache 30 jours/512 MiB et règles de sécurité que les pochettes. Les clients API peuvent déclencher l'enrichissement sans utiliser le front. TMDB reste facultatif : la consultation des données importées/mises en cache fonctionne sans réseau ni jeton TMDB.
+L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms **et portraits** ouvrent une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible. La section bande-annonce se situe avant le casting et propose une recherche YouTube si aucune vidéo n'a été fournie.
+
+Les métadonnées restent dans SQLite pendant les redémarrages et synchronisations. Elles sont réutilisées pendant 30 jours, puis renouvelées à la prochaine ouverture. Le bouton **Rafraîchir les métadonnées TMDB** force leur renouvellement et invalide les images concernées dans le cache ; une panne conserve les informations précédentes. Les portraits utilisent le même proxy authentifié, cache 30 jours/512 MiB et règles de sécurité que les pochettes. Les clients API peuvent déclencher l'enrichissement sans utiliser le front. TMDB reste facultatif : la consultation des données importées/mises en cache fonctionne sans réseau ni jeton TMDB.
+
+Le navigateur mémorise la recherche, les filtres, le tri et son sens, le mode d'affichage et le masquage des filtres. Les facettes retirées du catalogue sont ignorées au rechargement. Le défilement du catalogue est bloqué pendant l'ouverture d'une fiche ou d'une liste et retrouve sa position à la fermeture ; le défilement reste indépendant dans les dialogues imbriqués.
 
 ## Notes, visionnage et listes
 
@@ -180,7 +184,9 @@ Les UUID des œuvres conservent les associations lors d'une synchronisation norm
 
 ## Chemins Kodi et lecture
 
-Les chemins complets des fichiers sont visibles dans la fiche, avec **Copier le chemin** (sur HTTP, un dialogue de copie remplace l'accès au presse-papiers). **Lire sur Kodi** contacte l'instance choisie depuis le back-end, et permet de sélectionner le fichier/version ; Kodi utilise ses propres accès au NAS.
+Les chemins complets des fichiers sont visibles dans la fiche, avec **Copier le chemin** (sur HTTP, un dialogue de copie remplace l'accès au presse-papiers). **Lire sur Kodi** contacte l'instance choisie depuis le back-end, et permet de sélectionner le fichier/version ; la sélection explicite ouvre ce chemin exact, même pour une version par défaut. Kodi utilise ses propres accès au NAS.
+
+Sans instance associée à la source, la fiche propose **Configurer une instance Kodi**. Dans la fiche, **Tester cette instance Kodi** vérifie l'API HTTP et les droits de lecture ; ce test est aussi disponible sur les instances enregistrées dans **Connexions**. Les erreurs de lancement restent visibles dans la fiche. Un envoi réussi signifie que Kodi a accepté la commande ; l'accès au fichier dépend encore de la configuration et des identifiants NAS de Kodi.
 
 Un navigateur ne fournit pas de lecture SMB/NFS native : un lien vers ces protocoles dépend d'un gestionnaire installé sur le poste et de ses accès au partage. `file://` est aussi restreint depuis une page web. Aucun lien de lecture locale universel n'est proposé ; le chemin peut être ouvert dans un lecteur disposant des droits NAS. Cette version ne diffuse/transcode pas les fichiers vidéo via HTTP. [Gestionnaires de protocoles dans les navigateurs](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Player.Open Kodi](https://kodi.wiki/view/JSON-RPC_API/v13.11).
 

@@ -9,9 +9,56 @@ from conftest import READ
 
 from kodi_library.connectors.base import ConnectorError
 from kodi_library.connectors.kodi import KodiConnector
+from kodi_library.enrichment import probe_tmdb
 from kodi_library.players import probe
 
 MARIADB = {"config": {"host": "nas", "username": "reader", "password": "private-secret"}}
+
+
+def test_tmdb_status_and_probe_are_explicit_and_admin_only(client, admin):
+    assert client.get("/api/v1/status", headers=admin).json()["tmdb_available"] is False
+    path = "/api/v1/connections/tmdb/test"
+    assert client.post(path).status_code == 401
+    assert client.post(path, headers={"Authorization": f"Bearer {READ}"}).status_code == 403
+    assert client.post(path, headers=admin).status_code == 422
+    with patch("kodi_library.app.probe_tmdb", new_callable=AsyncMock) as tested:
+        assert client.post(path, headers=admin).status_code == 422
+        tested.assert_not_called()
+
+
+@pytest.mark.parametrize("token", ["read-access-token-private", "a" * 32])
+def test_tmdb_probe_supports_both_credentials_and_keeps_errors_private(token):
+    calls = []
+    code = 200
+
+    def upstream(request):
+        calls.append(request)
+        return httpx.Response(
+            code,
+            json={"images": {"secure_base_url": "https://image.tmdb.org/t/p/"}, "secret": token},
+        )
+
+    original = httpx.AsyncClient
+    with patch(
+        "kodi_library.enrichment.httpx.AsyncClient",
+        side_effect=lambda **kwargs: original(transport=httpx.MockTransport(upstream), **kwargs),
+    ):
+        asyncio.run(probe_tmdb(token))
+        if len(token) == 32:
+            assert calls[0].url.params["api_key"] == token
+            assert "authorization" not in calls[0].headers
+        else:
+            assert calls[0].headers["authorization"] == "Bearer " + token
+        for http_code, fragment in [
+            (401, "refuse"),
+            (403, "refuse"),
+            (429, "limite"),
+            (503, "indisponible"),
+        ]:
+            code = http_code
+            with pytest.raises(ConnectorError, match=fragment) as error:
+                asyncio.run(probe_tmdb(token))
+            assert token not in str(error.value)
 
 
 def test_mariadb_probe_does_not_save_a_source(client, admin):

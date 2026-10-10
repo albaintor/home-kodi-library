@@ -1,6 +1,7 @@
 """Optional TMDB credits, portraits and trailers, matched only by known IDs."""
 
 import re
+from contextlib import asynccontextmanager
 
 import httpx
 
@@ -8,18 +9,17 @@ from .connectors.base import ConnectorError
 from .people import category, youtube_url
 
 
-async def enrich_tmdb(detail: dict, token: str) -> dict:
+@asynccontextmanager
+async def tmdb_connection(token: str):
+    token = token.strip().removeprefix("Bearer ").strip()
     if not token:
-        raise ConnectorError("Configure TMDB_API_TOKEN to enrich credits and portraits.")
-    kind = {"movie": "movie", "tvshow": "tv"}.get(detail["kind"])
-    if not kind:
-        raise ConnectorError("TMDB enrichment currently supports movies and TV shows.")
-    ids = detail["identifiers"]
-    tmdb = ids.get("tmdb", [])
+        raise ConnectorError("Renseignez TMDB_API_TOKEN dans .env puis recréez le conteneur.")
+    api_key = bool(re.fullmatch(r"[a-fA-F0-9]{32}", token))
     try:
         async with httpx.AsyncClient(
             base_url="https://api.themoviedb.org/3/",
-            headers={"Authorization": "Bearer " + token},
+            headers={} if api_key else {"Authorization": "Bearer " + token},
+            params={"api_key": token} if api_key else {},
             timeout=20,
             trust_env=False,
         ) as client:
@@ -29,16 +29,52 @@ async def enrich_tmdb(detail: dict, token: str) -> dict:
                 response.raise_for_status()
                 return response.json()
 
+            yield get
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code in (401, 403):
+            message = "TMDB refuse la clé. Vérifiez le jeton de lecture API ou la clé API v3 dans TMDB_API_TOKEN."
+        elif exc.response.status_code == 404:
+            message = "Ce média est introuvable sur TMDB avec ses identifiants importés."
+        elif exc.response.status_code == 429:
+            message = "TMDB limite temporairement les requêtes. Réessayez dans quelques instants."
+        else:
+            message = "TMDB est temporairement indisponible. Réessayez plus tard."
+        raise ConnectorError(message) from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise ConnectorError(
+            "Connexion TMDB impossible. Vérifiez l'accès Internet et les DNS du conteneur."
+        ) from exc
+
+
+async def probe_tmdb(token: str) -> None:
+    async with tmdb_connection(token) as get:
+        data = await get("configuration")
+        if not isinstance(data, dict) or not isinstance(data.get("images"), dict):
+            raise ConnectorError("TMDB n'a pas renvoyé une configuration valide.")
+
+
+async def enrich_tmdb(detail: dict, token: str) -> dict:
+    kind = {"movie": "movie", "tvshow": "tv"}.get(detail["kind"])
+    if not kind:
+        raise ConnectorError("TMDB enrichment currently supports movies and TV shows.")
+    ids = detail["identifiers"]
+    tmdb = ids.get("tmdb", [])
+    try:
+        async with tmdb_connection(token) as get:
             if len(tmdb) == 1 and re.fullmatch(r"\d+", tmdb[0]):
                 tmdb_id = tmdb[0]
             else:
                 imdb = ids.get("imdb", [])
                 if len(imdb) != 1 or not re.fullmatch(r"tt\d+", imdb[0]):
-                    raise ConnectorError("A unique IMDb or TMDB identifier is required.")
+                    raise ConnectorError(
+                        "Un identifiant IMDb ou TMDB unique est nécessaire. Synchronisez la source Kodi ou réimportez CLZ si cet identifiant manque."
+                    )
                 found = await get("find/" + imdb[0], external_source="imdb_id")
                 matches = found.get("movie_results" if kind == "movie" else "tv_results", [])
                 if len(matches) != 1:
-                    raise ConnectorError("TMDB could not uniquely match this media's IMDb ID.")
+                    raise ConnectorError(
+                        "TMDB ne trouve pas de correspondance unique avec l'identifiant IMDb de ce média."
+                    )
                 tmdb_id = str(matches[0]["id"])
             data = await get(
                 f"{kind}/{tmdb_id}",

@@ -21,6 +21,7 @@ Ingress transmet un secret distinct dans `X-Kodi-Library-Ingress-Token`. Un simp
 | GET | `/facets` | Genres, formats, collections, années, sources |
 | POST | `/connections/mariadb/test` | Test en lecture seule d'une configuration MariaDB sans enregistrement |
 | POST | `/connections/kodi/test` | Test HTTP/JSON-RPC, version Kodi et autorisation de lecture sans enregistrement |
+| POST | `/connections/tmdb/test` | Test de la clé TMDB configurée sur le serveur, sans corps ni secret côté client |
 | GET/POST | `/sources` | Liste / création d'une source |
 | PUT/DELETE | `/sources/{id}` | Modification / retrait de la source et de ses éditions |
 | POST | `/sources/{id}/sync` | Synchronisation Kodi, tâche retournée avec HTTP 202 |
@@ -124,6 +125,8 @@ Les items de liste acceptent `sort=position|title|year|date_added|rating|user_ra
 `MediaDetail.people` regroupe `name,role,order,category,imdb_id,tmdb_id,links,thumbnail`. `category` vaut `cast`, `director`, `writer`, `producer`, `composer`, `photography` ou `crew`. `cast` reste disponible pour les anciens clients. `links` contient les URL directes avec identifiants ou une `imdb_search` explicitement distincte. Les portraits sont exposés par une route relative authentifiée `GET /media/{id}/people/{index}/artwork` ; conserver le préfixe d'un éventuel Ingress.
 
 `trailers` contient des liens HTTPS YouTube validés (les liens plugin Kodi sont convertis). `tmdb_available` indique si le serveur dispose de son jeton TMDB. `enriched_at` donne la date du cache persistant. `POST /media/{id}/enrich` récupère les personnes/portraits/bandes-annonces de TMDB pour un film ou une série identifiés par IMDb/TMDB ; réutilise le cache pendant 30 jours. `POST /media/{id}/enrich?refresh=true` force le renouvellement et invalide les portraits concernés. Une erreur conserve le cache précédent. Aucune clé TMDB n'est fournie par le client ou révélée dans la réponse. Les épisodes ne sont pas encore enrichis individuellement.
+
+`GET /status` expose également `tmdb_available`. `POST /connections/tmdb/test` exige les droits d'écriture ; `422` signifie que la clé n'est pas configurée, `502` une erreur TMDB/réseau, `200` un accès vérifié. `TMDB_API_TOKEN` accepte le jeton de lecture Bearer ou la clé v3. Avec un `edition_id` explicite, `/players/{id}/play` transmet à Kodi le chemin de ce fichier lorsqu'il est disponible ; la vérification des identifiants de bibliothèque reste préalable.
 
 Les `GET` ne déclenchent pas de requêtes TMDB. Le front administrateur appelle automatiquement `POST enrich` à l'ouverture si nécessaire ; une application iOS peut utiliser les mêmes routes. Les clients de lecture consultent les informations importées ou déjà enrichies. Le champ `editions[].metadata.file` expose le chemin Kodi ; le lancement d'une version utilise `edition_id` dans `/players/{id}/play`.
 

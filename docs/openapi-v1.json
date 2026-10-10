@@ -2936,6 +2936,112 @@
         ]
       }
     },
+    "/api/v1/connections/tmdb/test": {
+      "post": {
+        "tags": [
+          "Connections"
+        ],
+        "summary": "Test Tmdb",
+        "operationId": "test_tmdb_api_v1_connections_tmdb_test_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConnectionResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Request Entity Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerToken": []
+          }
+        ]
+      }
+    },
     "/api/v1/sources/{source_id}": {
       "put": {
         "tags": [
@@ -4301,6 +4407,11 @@
             },
             "type": "array",
             "title": "Sources"
+          },
+          "tmdb_available": {
+            "type": "boolean",
+            "title": "Tmdb Available",
+            "default": false
           }
         },
         "type": "object",
@@ -4326,7 +4437,8 @@
             "type": "string",
             "enum": [
               "mariadb",
-              "kodi"
+              "kodi",
+              "tmdb"
             ],
             "title": "Kind"
           },

@@ -90,3 +90,56 @@ def test_play_uses_selected_file_and_rejects_wrong_library():
         with pytest.raises(ConnectorError, match="different library"):
             asyncio.run(play(player, detail, None, False))
         assert requests[-1]["method"] == "VideoLibrary.GetMovieDetails"
+
+
+@pytest.mark.parametrize("kind,id_name", [("movie", "movieid"), ("episode", "episodeid")])
+def test_explicit_default_file_plays_without_a_version_picker(kind, id_name):
+    calls = []
+
+    def handle(request):
+        value = json.loads(request.content)
+        calls.append(value)
+        result = (
+            {
+                "moviedetails" if kind == "movie" else "episodedetails": {
+                    "uniqueid": {"imdb": "tt1234567"}
+                }
+            }
+            if value["method"].startswith("VideoLibrary.")
+            else "OK"
+        )
+        return httpx.Response(200, json={"result": result})
+
+    original = httpx.AsyncClient
+    player = {"id": "p", "source_id": "s", "config": {"host": "kodi", "port": 8080}}
+    detail = {
+        "id": "m",
+        "kind": kind,
+        "editions": [
+            {
+                "id": "e",
+                "source_id": "s",
+                "source_type": "kodi",
+                "identifiers": {"imdb": "tt1234567"},
+                "metadata": {
+                    "kodi_id": 42,
+                    "is_default": True,
+                    "file": "smb://nas/media/selected.mkv",
+                },
+            }
+        ],
+    }
+    with patch(
+        "kodi_library.players.httpx.AsyncClient",
+        side_effect=lambda **kwargs: original(transport=httpx.MockTransport(handle), **kwargs),
+    ):
+        asyncio.run(play(player, detail, "e", False))
+        assert calls[-1]["params"] == {
+            "item": {"file": "smb://nas/media/selected.mkv"},
+            "options": {"resume": False},
+        }
+        asyncio.run(play(player, detail, None, True))
+        assert calls[-1]["params"]["item"] == {id_name: 42}
+        detail["editions"][0]["metadata"].pop("kodi_id")
+        with pytest.raises(ConnectorError, match="Synchronisez"):
+            asyncio.run(play(player, detail, "e", True))

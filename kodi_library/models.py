@@ -82,7 +82,7 @@ class KodiConnectionInput(StrictModel):
 
 class ConnectionResult(BaseModel):
     success: Literal[True] = True
-    kind: Literal["mariadb", "kodi"]
+    kind: Literal["mariadb", "kodi", "tmdb"]
     message: str
     database: str | None = None
     available_media: list[str] = Field(default_factory=list)
@@ -293,3 +293,4 @@ class CatalogueStatus(BaseModel):
     editions: int
     counts: dict[str, int]
     sources: list[SourceView]
+    tmdb_available: bool = False

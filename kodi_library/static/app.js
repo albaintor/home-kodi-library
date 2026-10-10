@@ -4,7 +4,31 @@ const stateLabels = {watched:'Vu',unwatched:'Non vu',in_progress:'En cours',unkn
 const kindLabels = {movie:'Film',tvshow:'Série',episode:'Épisode'};
 const baseURL = new URL('.', window.location.href);
 const url = (path) => new URL(path.replace(/^\/+/, ''), baseURL).href;
-const state = {csrf:null,role:'read',view:localStorage.getItem('kodi_library_view') || 'grid',order:'desc',limit:60,recent:false,facets:null,players:[],seq:0,controller:null,detail:null,detailSeq:0,listId:null,listItems:[],listRevision:0,listSort:'position',listOrder:'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const preferenceKey = `kodi_library_preferences_v1:${baseURL.pathname}`;
+function readStorage(key) { try { return localStorage.getItem(key); } catch { return null; } }
+function writeStorage(key,value) { try { localStorage.setItem(key,value); } catch { /* Browsing also works when storage is unavailable. */ } }
+let preferences;
+try { preferences=JSON.parse(readStorage(preferenceKey)) || {}; } catch { preferences={}; }
+if(typeof preferences!=='object'||Array.isArray(preferences)) preferences={};
+const filterIds = ['search','kind','source-type','genre','format','collection','watch-status','sort'];
+let filtersRestored=false;
+const savedView = ['grid','list'].includes(preferences.view)?preferences.view:readStorage('kodi_library_view');
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+function savePreferences() {
+  if(!filtersRestored)return;
+  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
+}
+function restoreFilters() {
+  if(filtersRestored)return;
+  for(const id of filterIds){
+    const value=preferences.filters?.[id];
+    if(typeof value==='string'&&(id==='search'||[...$(id).options].some(option=>option.value===value)))$(id).value=value;
+  }
+  $('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';
+  $('filters').hidden=preferences.filtersHidden===true;
+  $('toggle-filters').setAttribute('aria-expanded',!$('filters').hidden);
+  filtersRestored=true;
+}
 const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries=>{
   if(entries.some(entry=>entry.isIntersecting)&&!state.loading&&!state.loadError&&state.hasMore&&!$('app').hidden&&!document.querySelector('dialog[open]')) loadMedia({append:true});
 },{rootMargin:'600px 0px'}) : null;
@@ -39,7 +63,10 @@ function formatBadges(values, compact=false) {
 }
 const personCategories = {cast:'Casting',director:'Réalisation',writer:'Scénario',producer:'Production',composer:'Musique · Composition',photography:'Photographie',crew:'Autres fonctions'};
 function castMarkup(people=[]) {
-  const members=list=>`<ul class="cast-grid">${list.map(member=>`<li class="cast-member"><span class="person-photo"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="${esc(member.name)}" loading="lazy">`:''}</span><span><strong>${esc(member.name)}</strong>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(member.links||{}).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`).join('')}</ul>`;
+  const members=list=>`<ul class="cast-grid">${list.map(member=>{
+    const links=member.links||{};const link=links.tmdb||links.imdb||links.imdb_search||`https://www.themoviedb.org/search/person?query=${encodeURIComponent(member.name)}`;
+    return `<li class="cast-member"><a class="person-photo" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="Voir la fiche de ${esc(member.name)}"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="" loading="lazy">`:''}</a><span><a class="person-name" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><strong>${esc(member.name)} ↗</strong></a>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(links).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`;
+  }).join('')}</ul>`;
   return Object.entries(personCategories).map(([category,label])=>{
     const group=people.filter(p=>(p.category||'cast')===category); if(!group.length)return '';
     return `<section class="detail-section credits-section"><p class="section-label">${label.toUpperCase()} · ${group.length}</p>${members(group.slice(0,8))}${group.length>8?`<details class="cast-more"><summary>Voir les ${group.length-8} autres personnes</summary>${members(group.slice(8))}</details>`:''}</section>`;
@@ -57,7 +84,22 @@ function networkMarkup(item) {
 }
 function trailerMarkup(item) {
   const trailers=item.trailers||[];
-  return `<section class="detail-section"><p class="section-label">BANDE-ANNONCE</p><div class="detail-actions">${trailers.length?trailers.map((link,index)=>`<a class="secondary external-button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">▶ Bande-annonce${trailers.length>1?' '+(index+1):''} · YouTube ↗</a>`).join(''):`<a href="https://www.youtube.com/results?search_query=${encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce')}" target="_blank" rel="noopener noreferrer">Chercher une bande-annonce sur YouTube ↗</a>`}</div></section>`;
+  return `<section class="detail-section"><p class="section-label">BANDE-ANNONCE</p>${!trailers.length?'<p class="hint">Aucune bande-annonce disponible dans les métadonnées actuelles.</p>':''}<div class="detail-actions">${trailers.length?trailers.map((link,index)=>`<a class="secondary external-button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">▶ Bande-annonce${trailers.length>1?' '+(index+1):''} · YouTube ↗</a>`).join(''):`<a class="secondary external-button" href="https://www.youtube.com/results?search_query=${encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce')}" target="_blank" rel="noopener noreferrer">Chercher sur YouTube ↗</a>`}</div></section>`;
+}
+function metadataMarkup(item) {
+  if(item.kind==='episode')return '';
+  const configured=item.tmdb_available;
+  return `<section class="detail-section metadata-status"><p class="section-label">CASTING, PORTRAITS ET BANDES-ANNONCES · TMDB</p><p id="enrichment-status" class="hint" role="status">${item.enriched_at?`Métadonnées TMDB mises en cache le ${date(item.enriched_at)}.`:configured?'Les métadonnées disponibles sur TMDB sont récupérées à l’ouverture de cette fiche.':'TMDB n’est pas configuré. Les personnes et vidéos affichées proviennent uniquement de Kodi ou CLZ.'}</p>${state.role==='admin'?configured?'<button id="refresh-metadata" class="secondary">↻ Rafraîchir les métadonnées TMDB</button>':'<button class="secondary" data-action="connections">Configurer TMDB</button>':configured?'<p class="hint">Un administrateur peut récupérer ou rafraîchir les métadonnées de cette fiche.</p>':''}</section>`;
+}
+function playbackMarkup(item) {
+  if(!item.editions.some(e=>e.source_type==='kodi'))return '';
+  if(item.kind==='tvshow')return '';
+  const players=state.players.filter(p=>item.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
+  let controls;
+  if(state.role!=='admin')controls='<p class="hint">Connectez-vous avec un accès administrateur pour lancer la lecture.</p>';
+  else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier pour lancer la lecture.</p><button class="secondary" data-action="connections">+ Configurer une instance Kodi</button>';
+  else controls=`<div class="play-row"><select id="play-target" aria-label="Instance Kodi">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select><button id="play-button" class="primary">▶ Lire sur Kodi</button></div><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="test-play-target" class="secondary">Tester cette instance Kodi</button><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
+  return `<section class="detail-section" id="playback-section"><p class="section-label">LIRE SUR KODI</p>${controls}<p class="hint">Kodi doit être démarré, avec le contrôle HTTP activé, et disposer de ses propres accès au fichier sur le NAS.</p></section>`;
 }
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
@@ -97,6 +139,7 @@ function renderCards(items, append=false) {
 }
 async function loadMedia({append=false}={}) {
   if(append&&(state.loading||!state.hasMore)) return;
+  if(!append)savePreferences();
   if(!append) {
     ++state.seq; state.controller?.abort(); state.items=[]; state.ids=new Set(); state.nextOffset=0; state.total=0; state.hasMore=false;
     $('results').replaceChildren();
@@ -131,7 +174,9 @@ function fillSelect(id, values, label) {
 async function refresh() {
   const [facets,status,players]=await Promise.all([api('facets'),api('status'),api('players')]);
   state.facets=facets; state.players=players;
+  state.tmdbAvailable=status.tmdb_available===true;
   fillSelect('genre',facets.genres,'Tous les genres'); fillSelect('format',facets.formats,'Tous les formats'); fillSelect('collection',facets.collections,'Toutes les collections');
+  restoreFilters();
   $('catalogue-status').textContent=`${status.works.toLocaleString('fr-FR')} titres · ${status.editions.toLocaleString('fr-FR')} fichiers et éditions · ${status.sources.length} source${status.sources.length>1?'s':''}`;
   const latest=status.sources.map(s=>s.last_sync).filter(Boolean).sort().at(-1);
   $('sync-status').textContent=latest?`Dernière mise à jour : ${date(latest)}`:'Aucune source importée';
@@ -145,8 +190,27 @@ async function initialize() {
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
 function reset() { ['search','kind','source-type','genre','format','collection','watch-status'].forEach(id=>$(id).value=''); state.recent=false; loadMedia(); }
-function setView(view, render=true) { state.view=view; localStorage.setItem('kodi_library_view',view); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
-function showDialog(id) { if (!$(id).open) $(id).showModal(); }
+function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
+let pagePosition=null;
+function lockPage() {
+  if(pagePosition)return;
+  pagePosition={x:window.scrollX,y:window.scrollY};
+  document.body.style.top=`-${pagePosition.y}px`;
+  document.body.style.left=`-${pagePosition.x}px`;
+  document.documentElement.classList.add('modal-open');
+  moreObserver?.disconnect();
+}
+function releasePage() {
+  if(document.querySelector('dialog[open]'))return;
+  if(pagePosition){
+    const position=pagePosition;pagePosition=null;
+    document.documentElement.classList.remove('modal-open');
+    document.body.style.top='';document.body.style.left='';
+    window.scrollTo(position.x,position.y);
+  }
+  observeMore();
+}
+function showDialog(id) { if (!$(id).open) {lockPage();$(id).showModal();} }
 function editionMarkup(e) {
   const m=e.metadata;
   const fields=[['Format',m.formats?.join(', ')],['Vidéo',m.video_streams?.map(v=>[v.width&&v.height?`${v.width} × ${v.height}`:'',v.codec,v.hdr_type,v.hdr_detail,v.stereo_mode].filter(Boolean).join(' · ')).join(' / ')],['Édition',m.edition||m.version],['Code-barres',m.barcode],['Disques',m.disc_count],['Quantité',m.quantity],['Coffret',m.boxset],['Collection',m.collections?.join(', ')],['Régions',m.regions?.join(', ')],['Audio',m.audio_tracks?.join(', ')],['Sous-titres',m.subtitles?.join(', ')],['Dernier visionnage',e.last_played?date(e.last_played):null],['Historique CLZ',m.seen_dates?.map(date).join(', ')],['Lectures',e.play_count],['Reprise',e.resume_seconds?`${Math.floor(e.resume_seconds/60)} min`:null],['Fichier',m.file],['Ajout',e.date_added?date(e.date_added):null],['Identifiants',Object.entries(e.identifiers).map(([k,v])=>`${k}: ${v}`).join(' · ')]];
@@ -159,16 +223,15 @@ function tmdbAttribution(item) {
 }
 function updatePlayEdition() {
   const target=$('play-target'); const selector=$('play-edition');if(!target||!selector)return;
-  const player=state.players.find(p=>p.id===target.value);
+  const player=state.players.find(p=>p.id===target.value);if(!player)return;
   const editions=state.detail.editions.filter(e=>e.source_type==='kodi'&&e.source_id===player.source_id).sort((a,b)=>Number(!a.metadata.is_default)-Number(!b.metadata.is_default));
   selector.innerHTML=editions.map(e=>`<option value="${esc(e.id)}">${esc(e.metadata.version||e.metadata.file?.split('/').pop()||'Fichier Kodi')}${e.metadata.is_default?' · Par défaut':''}</option>`).join('');
 }
 function renderDetail(item) {
+    const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
     state.detail=item;
-    const playablePlayers=state.players.filter(p=>item.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
-    const playable=item.kind!=='tvshow'&&playablePlayers.length&&state.role==='admin';
-    $('detail-content').innerHTML=`<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score">★ ${Number(item.rating).toFixed(1)}</span>`:''}${item.user_rating!=null?`<span>Votre note : ${item.user_rating}/10</span>`:''}</div><div class="format-badges">${formatBadges(item.formats)}</div><span class="status-chip ${esc(item.watch_status)}">${esc(stateLabels[item.watch_status])}</span><div class="card-meta">${badges(item)}</div>${state.role==='admin'?'<button id="add-to-list" class="secondary">+ Ajouter à une liste</button>':''}${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>esc(l.name)).join(', ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${personalMarkup(item)}${networkMarkup(item)}${castMarkup(item.people||item.cast)}${trailerMarkup(item)}${item.tmdb_available&&state.role==='admin'&&item.kind!=='episode'?`<section class="detail-section"><button id="refresh-metadata" class="secondary">↻ Rafraîchir les personnes et bandes-annonces</button><p id="enrichment-status" class="hint" role="status">${item.enriched_at?`Métadonnées TMDB mises en cache le ${date(item.enriched_at)}.`:'Métadonnées TMDB disponibles.'}</p><p class="hint"><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer">TMDB</a> · This product uses the TMDB API but is not endorsed or certified by TMDB.</p></section>`:''}${playable?`<section class="detail-section"><p class="section-label">LECTURE SUR KODI</p><div class="play-row"><select id="play-target" aria-label="Instance Kodi">${playablePlayers.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select><button id="play-button" class="primary">▶ Lire sur Kodi</button></div><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><p class="hint">L’instance Kodi sélectionnée doit être démarrée.</p></section>`:''}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
-    attachImageFallbacks($('detail-content'));updatePlayEdition();
+    $('detail-content').innerHTML=`<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score">★ ${Number(item.rating).toFixed(1)}</span>`:''}${item.user_rating!=null?`<span>Votre note : ${item.user_rating}/10</span>`:''}</div><div class="format-badges">${formatBadges(item.formats)}</div><span class="status-chip ${esc(item.watch_status)}">${esc(stateLabels[item.watch_status])}</span><div class="card-meta">${badges(item)}</div><div class="detail-actions"><a class="secondary external-button" href="${esc(item.trailers?.[0]||'https://www.youtube.com/results?search_query='+encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce'))}" target="_blank" rel="noopener noreferrer">▶ ${item.trailers?.length?'Bande-annonce · YouTube':'Chercher une bande-annonce' } ↗</a></div>${state.role==='admin'?'<button id="add-to-list" class="secondary">+ Ajouter à une liste</button>':''}${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>esc(l.name)).join(', ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${playbackMarkup(item)}${personalMarkup(item)}${trailerMarkup(item)}${metadataMarkup(item)}${networkMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
+    attachImageFallbacks($('detail-content'));updatePlayEdition();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
   const seq=++state.detailSeq;
@@ -202,9 +265,9 @@ async function pollJob(job) {
 }
 async function connections() {
   try {
-    const sources=await api('sources'); state.facets.sources=sources; state.players=await api('players');
+    const [sources,players,status]=await Promise.all([api('sources'),api('players'),api('status')]);state.facets.sources=sources;state.players=players;state.tmdbAvailable=status.tmdb_available===true;
     const clz=sources.filter(s=>s.type==='clz'); const kodi=sources.filter(s=>s.type==='kodi');
-    $('connection-content').innerHTML=`<h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Ce formulaire contacte MariaDB, pas l’API HTTP de Kodi. Un compte SELECT suffit ; Kodi peut être arrêté. La connexion est testée avant tout nouvel ajout.</p><button class="secondary wide" type="button" data-test-connection="kodi-form">Tester la connexion MariaDB</button><p id="kodi-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p></div><div class="connection-actions"><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Ce formulaire contacte l’API HTTP de Kodi, pas MariaDB. Kodi doit être démarré, avec le contrôle distant HTTP activé, et utiliser la base MyVideos choisie.</p><button class="secondary wide" type="button" data-test-connection="player-form">Tester la connexion Kodi</button><p id="player-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
+    $('connection-content').innerHTML=`<h3 class="connection-subheading">Métadonnées et portraits · TMDB</h3><section class="metadata-status"><p>${state.tmdbAvailable?'TMDB est configuré. Les fiches récupèrent automatiquement le casting, les portraits et les bandes-annonces disponibles.':'TMDB n’est pas configuré. Renseignez TMDB_API_TOKEN dans .env, puis relancez rebuild.sh.'}</p><p class="hint">Utilisez le jeton de lecture API ou la clé API v3 depuis <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">les paramètres API de votre compte TMDB ↗</a>. Le secret reste sur le serveur. Il n’est pas nécessaire de réimporter la bibliothèque pour activer TMDB.</p><button id="test-tmdb" class="secondary" ${state.tmdbAvailable?'':'disabled'}>Tester la connexion TMDB</button><p id="tmdb-test-result" class="hint play-status" role="status"></p></section><h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Ce formulaire contacte MariaDB, pas l’API HTTP de Kodi. Un compte SELECT suffit ; Kodi peut être arrêté. La connexion est testée avant tout nouvel ajout.</p><button class="secondary wide" type="button" data-test-connection="kodi-form">Tester la connexion MariaDB</button><p id="kodi-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p><p id="player-result-${esc(p.id)}" class="hint play-status" role="status"></p></div><div class="connection-actions"><button data-test-player="${esc(p.id)}">Tester</button><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Ce formulaire contacte l’API HTTP de Kodi, pas MariaDB. Kodi doit être démarré, avec le contrôle distant HTTP activé, et utiliser la base MyVideos choisie.</p><button class="secondary wide" type="button" data-test-connection="player-form">Tester la connexion Kodi</button><p id="player-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
     showDialog('connections-dialog');
   } catch(e) {toast(e.message);}
 }
@@ -271,6 +334,9 @@ document.addEventListener('click',async event=>{
   if(button.dataset.genre) {$('genre').value=button.dataset.genre; $('detail-dialog').close();  loadMedia();}
   if(button.dataset.action==='connections') connections(); if(button.dataset.action==='reset') reset();
   if(button.dataset.quick) {state.recent=button.dataset.quick==='recent'; $('watch-status').value=['all','recent'].includes(button.dataset.quick)?'':button.dataset.quick;  if(state.recent){$('sort').value='date_added';state.order='desc';$('sort-order').textContent='↓ Décroissant';}loadMedia();}
+  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.testPlayer&&!['play-button','test-play-target','test-tmdb'].includes(button.id))return;
+  const result=['play-button','test-play-target'].includes(button.id)?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
+  if(result){result.className='hint play-status';result.textContent=button.id==='play-button'?'Envoi de la lecture à Kodi…':'Vérification de la connexion…';}
   try {
     if(button.dataset.testConnection) {const form=$(button.dataset.testConnection); const fields=['host','port',...(form.getAttribute('id')==='kodi-form'?['username']:[])];if(fields.every(name=>form.elements.namedItem(name).reportValidity())) await testConnection(form);}
     if(button.dataset.sync) {button.disabled=true; await pollJob(await api(`sources/${button.dataset.sync}/sync`,{method:'POST'}));}
@@ -278,22 +344,29 @@ document.addEventListener('click',async event=>{
     if(button.dataset.removePlayer && confirm('Retirer cette instance Kodi ?')) {await api(`players/${button.dataset.removePlayer}`,{method:'DELETE'});await connections();}
     if(button.dataset.editSource) {const s=state.facets.sources.find(s=>s.id===button.dataset.editSource); fillForm('kodi-form',{id:s.id,name:s.name,...s.config});}
     if(button.dataset.editPlayer) {const p=state.players.find(p=>p.id===button.dataset.editPlayer); fillForm('player-form',p);}
-    if(button.id==='play-button') {button.disabled=true; await api(`players/${$('play-target').value}/play`,{method:'POST',body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})});toast('Lecture envoyée à Kodi.');}
-  }catch(e){toast(e.message);}finally{button.disabled=false;}
+    if(button.id==='test-tmdb'){button.disabled=true;const tested=await api('connections/tmdb/test',{method:'POST'});result.textContent=tested.message;result.className='success-text play-status';}
+    if(button.dataset.testPlayer||button.id==='test-play-target'){
+      button.disabled=true;const p=state.players.find(p=>p.id===(button.dataset.testPlayer||$('play-target').value));
+      if(!p)throw new Error('Choisissez une instance Kodi.');
+      const tested=await api('connections/kodi/test',{method:'POST',body:JSON.stringify({player_id:p.id,host:p.host,port:p.port,username:p.username,tls:p.tls})});
+      result.textContent=tested.message;result.className='success-text play-status';
+    }
+    if(button.id==='play-button') {button.disabled=true; await api(`players/${$('play-target').value}/play`,{method:'POST',body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})});result.textContent='Lecture envoyée à Kodi. Si elle ne démarre pas, vérifiez sur Kodi ses accès au fichier du NAS.';result.className='success-text play-status';toast('Lecture envoyée à Kodi.');}
+  }catch(e){if(result){result.textContent=e.message;result.className='error-text play-status';}toast(e.message);}finally{button.disabled=false;}
 });
 $('connections-button').addEventListener('click',connections);
 $('lists-button').addEventListener('click',()=>openLists());
 $('logout-button').addEventListener('click',async()=>{try{await api('auth/session',{method:'DELETE'});showLogin();}catch(e){toast(e.message);}});
 $('grid-view').addEventListener('click',()=>setView('grid')); $('list-view').addEventListener('click',()=>setView('list'));
-$('toggle-filters').addEventListener('click',()=>{const hidden=!$('filters').hidden;$('filters').hidden=hidden;$('toggle-filters').setAttribute('aria-expanded',!hidden);});
+$('toggle-filters').addEventListener('click',()=>{const hidden=!$('filters').hidden;$('filters').hidden=hidden;$('toggle-filters').setAttribute('aria-expanded',!hidden);savePreferences();});
 $('reset-filters').addEventListener('click',reset);
-let searchTimer; $('search').addEventListener('input',()=>{clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
+let searchTimer; $('search').addEventListener('input',()=>{savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
 ['kind','source-type','genre','format','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
 $('sort-order').addEventListener('click',()=>{state.order=state.order==='asc'?'desc':'asc';$('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';loadMedia();});
 $('load-more').addEventListener('click',()=>loadMedia({append:state.items.length>0}));
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName)&&!$('app').hidden&&!document.querySelector('dialog[open]')){event.preventDefault();$('search').focus();}});
 for(const dialog of document.querySelectorAll('dialog')) {
-  dialog.addEventListener('close',observeMore);
+  dialog.addEventListener('close',releasePage);
   dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
 }
 async function enrichDetail(force) {
@@ -324,6 +397,7 @@ async function chooseList() {
 async function openLists(selected=state.listId) {
   try {
     const lists=await api('lists');state.listId=lists.some(l=>l.id===selected)?selected:lists[0]?.id;
+    savePreferences();
     const current=lists.find(l=>l.id===state.listId);const admin=state.role==='admin';
     $('lists-content').innerHTML=`<div class="list-toolbar"><label>Liste<select id="selected-list">${lists.map(l=>`<option data-name="${esc(l.name)}" value="${esc(l.id)}" ${l.id===state.listId?'selected':''}>${esc(l.name)} · ${l.item_count}</option>`).join('')||'<option>Aucune liste</option>'}</select></label>${admin?'<button id="new-list-toggle" class="secondary">+ Nouvelle liste</button>':''}</div>${admin?'<form id="new-list-form" class="inline-form" hidden><label>Nom de la liste<input name="name" required maxlength="120" placeholder="Films à voir"></label><button class="primary" type="submit">Créer la liste</button></form>':''}${current?`<div class="list-toolbar"><p class="hint">${esc(current.description||'Votre sélection, dans l’ordre que vous choisissez.')}</p>${admin?'<button id="rename-list" class="text-button">Renommer</button><button id="delete-list" class="text-button">Supprimer</button>':''}</div><div class="list-toolbar"><label>Tri<select id="list-sort"><option value="position">Ordre manuel</option><option value="title">Titre</option><option value="year">Année</option><option value="date_added">Date d’ajout</option><option value="rating">Note</option><option value="user_rating">Votre note</option></select></label><button id="list-sort-order" class="secondary">${state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant'}</button>${admin?'<button id="list-add-button" class="primary">+ Ajouter des médias</button>':''}</div>${admin?'<section id="list-search-area" class="list-search-area" hidden><label>Rechercher dans le catalogue<input id="list-search" type="search" placeholder="Titre, personne, genre…" autocomplete="off"></label><div id="list-search-results" aria-live="polite"></div></section>':''}<p id="list-count" class="hint"></p><div id="list-items" class="saved-list-items" aria-live="polite"></div><button id="list-load-more" class="secondary" hidden>Charger la suite</button>`:'<p class="empty-state">Créez une liste pour organiser vos prochains visionnages.</p>'}`;
     showDialog('lists-dialog');
@@ -400,6 +474,7 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button');if(!button)return;
+  if(!['refresh-metadata','add-to-list','new-list-toggle','list-add-button','rename-list','delete-list','list-load-more','list-sort-order'].includes(button.id)&&!button.dataset.chooseList&&!button.dataset.addListMedia&&!button.dataset.removeListMedia&&!button.dataset.moveList&&!button.dataset.copyFile)return;
   try {
     if(button.id==='refresh-metadata')await enrichDetail(true);
     if(button.id==='add-to-list')await chooseList();
@@ -416,7 +491,7 @@ document.addEventListener('click',async event=>{
     }
     if(button.id==='delete-list'&&confirm('Supprimer cette liste ? Les médias restent dans le catalogue.')){await api(`lists/${state.listId}`,{method:'DELETE'});await openLists();}
     if(button.id==='list-load-more'){button.disabled=true;await loadList({append:true});}
-    if(button.id==='list-sort-order'){state.listOrder=state.listOrder==='asc'?'desc':'asc';button.textContent=state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant';await loadList();}
+    if(button.id==='list-sort-order'){state.listOrder=state.listOrder==='asc'?'desc':'asc';button.textContent=state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant';savePreferences();await loadList();}
     if(button.dataset.addListMedia){button.disabled=true;await api(`lists/${state.listId}/items`,{method:'POST',body:JSON.stringify({media_id:button.dataset.addListMedia})});await loadList();await searchList();}
     if(button.dataset.removeListMedia){button.disabled=true;await api(`lists/${state.listId}/items/${button.dataset.removeListMedia}`,{method:'DELETE'});await loadList();if($('list-search')?.value)await searchList();}
     if(button.dataset.moveList){button.disabled=true;await moveList(button.dataset.moveList,Number(button.dataset.direction));}
@@ -428,9 +503,9 @@ document.addEventListener('click',async event=>{
   }catch(e){toast(e.message);}finally{button.disabled=false;}
 });
 document.addEventListener('change',event=>{
-  if(event.target.id==='play-target')updatePlayEdition();
+  if(event.target.id==='play-target'){updatePlayEdition();if($('play-status'))$('play-status').textContent='';}
   if(event.target.id==='selected-list')openLists(event.target.value);
-  if(event.target.id==='list-sort'){state.listSort=event.target.value;loadList();}
+  if(event.target.id==='list-sort'){state.listSort=event.target.value;savePreferences();loadList();}
 });
 let listSearchTimer;
 document.addEventListener('input',event=>{if(event.target.id==='list-search'){clearTimeout(listSearchTimer);listSearchTimer=setTimeout(searchList,250);}});

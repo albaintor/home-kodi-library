@@ -28,7 +28,7 @@ from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
-from .enrichment import enrich_tmdb
+from .enrichment import enrich_tmdb, probe_tmdb
 from .models import (
     CatalogueStatus,
     ConnectionResult,
@@ -220,7 +220,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(authenticated)],
     )
     def status():
-        return {"version": __version__, "api_version": "v1", **store.status()}
+        return {
+            "version": __version__,
+            "api_version": "v1",
+            **store.status(),
+            "tmdb_available": bool(settings.tmdb_api_token.strip()),
+        }
 
     @app.get(
         API + "/media",
@@ -280,7 +285,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def media_detail(media_id: str):
         if value := store.detail(media_id):
-            return {**value, "tmdb_available": bool(settings.tmdb_api_token)}
+            return {**value, "tmdb_available": bool(settings.tmdb_api_token.strip())}
         raise HTTPException(404, "Unknown media.")
 
     @app.patch(
@@ -311,7 +316,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 and updated
                 and datetime.fromisoformat(updated) > datetime.now(UTC) - timedelta(days=30)
             ):
-                return {**detail, "tmdb_available": bool(settings.tmdb_api_token)}
+                return {**detail, "tmdb_available": bool(settings.tmdb_api_token.strip())}
             try:
                 payload = await enrich_tmdb(detail, settings.tmdb_api_token)
             except ConnectorError as exc:
@@ -506,6 +511,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def sources():
         return store.sources()
+
+    @app.post(
+        API + "/connections/tmdb/test",
+        response_model=ConnectionResult,
+        tags=["Connections"],
+        dependencies=[Depends(writable)],
+    )
+    async def test_tmdb():
+        if not settings.tmdb_api_token.strip():
+            raise HTTPException(
+                422, "Renseignez TMDB_API_TOKEN dans .env puis recréez le conteneur."
+            )
+        try:
+            await probe_tmdb(settings.tmdb_api_token)
+        except ConnectorError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {
+            "kind": "tmdb",
+            "message": "Connexion TMDB réussie : accès à l'API vérifié. Ouvrez une fiche pour récupérer le casting et les bandes-annonces disponibles.",
+        }
 
     @app.post(
         API + "/sources",

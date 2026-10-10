@@ -34,6 +34,7 @@ def main():
                     "movie",
                     f"Film de démonstration {index:03}",
                     genres=["Drame" if index < 80 else "Aventure"],
+                    collections=["Collection de démonstration"],
                     identifiers={"imdb": f"tt123{index:04d}"},
                     year=2025,
                     runtime_minutes=125,
@@ -58,7 +59,7 @@ def main():
                 for index in range(150)
             ],
         )
-        store.save_player(
+        player = store.save_player(
             {
                 "name": "Kodi Salon",
                 "source_id": source["id"],
@@ -68,15 +69,14 @@ def main():
                 "username": "",
             }
         )
-        app = create_app(
-            Settings(
-                data_dir=data,
-                api_token="browser-test-admin-token-000000000",
-                ingress_token="browser-test-ingress-token-0000000",
-                scheduler_enabled=False,
-                tmdb_api_token="synthetic-browser-tmdb-token",
-            )
+        settings = Settings(
+            data_dir=data,
+            api_token="browser-test-admin-token-000000000",
+            ingress_token="browser-test-ingress-token-0000000",
+            scheduler_enabled=False,
+            tmdb_api_token="synthetic-browser-tmdb-token",
         )
+        app = create_app(settings)
 
         enriched_calls = []
         play_calls = []
@@ -117,8 +117,15 @@ def main():
 
         enrichment_patch = patch("kodi_library.app.enrich_tmdb", side_effect=enrichment)
         playback_patch = patch("kodi_library.app.play", side_effect=playback)
+        tmdb_probe_patch = patch("kodi_library.app.probe_tmdb")
+        player_probe_patch = patch(
+            "kodi_library.app.probe_player",
+            return_value={"version": "22.0", "playback_allowed": True},
+        )
         enrichment_patch.start()
         playback_patch.start()
+        tmdb_probe_patch.start()
+        player_probe_patch.start()
 
         @asynccontextmanager
         async def lifespan(_root):
@@ -254,6 +261,31 @@ def main():
                 expect(page.locator("#result-count")).to_contain_text("70 résultats")
                 page.unroute("**/api/v1/media?*", delay_last_page)
                 page.locator("#grid-view").click()
+                # All catalogue controls survive a reload, including dynamic facets.
+                selections = {
+                    "kind": "movie",
+                    "source-type": "kodi",
+                    "genre": "Aventure",
+                    "format": "HDR10+",
+                    "collection": "Collection de démonstration",
+                    "watch-status": "unknown",
+                    "sort": "title",
+                }
+                for control, value in selections.items():
+                    page.locator("#" + control).select_option(value)
+                page.locator("#search").fill("démonstration")
+                page.locator("#sort-order").click()
+                page.locator("#toggle-filters").click()
+                page.evaluate("scrollTo(0,0)")
+                page.reload(wait_until="domcontentloaded")
+                expect(page.locator(".media-card")).to_have_count(60)
+                for control, value in selections.items():
+                    expect(page.locator("#" + control)).to_have_value(value)
+                expect(page.locator("#search")).to_have_value("démonstration")
+                expect(page.locator("#sort-order")).to_have_text("↑ Croissant")
+                expect(page.locator("#filters")).to_be_hidden()
+                assert requests[-1]["order"] == ["asc"] and requests[-1]["sort"] == ["title"]
+                page.locator("#toggle-filters").click()
                 page.locator(".media-card").first.click()
                 expect(page.locator("#detail-dialog")).to_be_visible()
                 expect(page.locator(".cast-member")).to_have_count(13)
@@ -268,10 +300,34 @@ def main():
                     page.locator('.person-links a[href="https://www.themoviedb.org/person/100"]')
                 ).to_have_count(1)
                 expect(page.locator(".credits-section").last).to_contain_text("MUSIQUE")
+                expect(page.locator(".person-name").first).to_have_attribute(
+                    "href", "https://www.themoviedb.org/person/100"
+                )
+                expect(page.locator(".person-photo").first).to_have_attribute(
+                    "href", "https://www.themoviedb.org/person/100"
+                )
+                # Wheel scrolling at a modal edge never moves or loads the catalogue.
+                locked_top = page.locator("body").evaluate("e=>e.style.top")
+                request_count = len(requests)
+                dialog = page.locator("#detail-dialog")
+                dialog.evaluate("e=>e.scrollTop=e.scrollHeight")
+                bounds = dialog.bounding_box()
+                page.mouse.move(
+                    bounds["x"] + bounds["width"] / 2, bounds["y"] + bounds["height"] - 20
+                )
+                page.mouse.wheel(0, 700)
+                page.evaluate(
+                    "()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))"
+                )
+                assert page.locator("body").evaluate("e=>e.style.top") == locked_top
+                assert page.evaluate("scrollY") == 0 and len(requests) == request_count
+                dialog.evaluate("e=>e.scrollTop=0")
                 expect(page.locator(".detail-actions a").first).to_have_attribute(
                     "href", "https://www.youtube.com/watch?v=C6PbWhWGUrY"
                 )
                 expect(page.locator(".file-row code")).to_contain_text("smb://nas/films/")
+                page.locator("#test-play-target").click()
+                expect(page.locator("#play-status")).to_contain_text("Connexion Kodi réussie")
                 selected_edition = page.locator("#play-edition").input_value()
                 page.locator("#play-button").click()
                 expect(page.locator("#toast")).to_contain_text("Lecture envoyée")
@@ -285,6 +341,7 @@ def main():
                 page.locator("#choose-new-list input").fill("À voir ensemble")
                 page.locator("#choose-new-list button").click()
                 expect(page.locator("#choose-list-dialog")).not_to_be_visible()
+                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
                 expect(page.locator(".detail-intro")).to_contain_text("À voir ensemble")
                 initial_calls = len(enriched_calls)
                 page.locator("#refresh-metadata").click()
@@ -315,6 +372,7 @@ def main():
                 if screenshots:
                     page.screenshot(path=str(Path(screenshots) / "detail-mobile.png"))
                 page.locator('[data-close="detail-dialog"]').click()
+                assert not page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 page.locator("#lists-button").click()
                 expect(page.locator(".saved-list-row")).to_have_count(1)
@@ -337,16 +395,54 @@ def main():
                 expect(page.locator(".saved-list-row")).to_have_count(1)
                 page.locator('[data-close="lists-dialog"]').click()
                 # Opening the cached film again does not contact TMDB.
+                # It was marked watched above, so clear the persisted unknown-state filter.
+                page.locator("#watch-status").select_option("")
+                expect(page.locator(".media-card").first).to_contain_text("080")
                 page.locator(".media-card").first.click()
                 expect(page.locator("#detail-dialog")).to_be_visible()
                 assert len(enriched_calls) == initial_calls + 1
                 page.locator('[data-close="detail-dialog"]').click()
+                page.locator("#connections-button").click()
+                page.locator("#test-tmdb").click()
+                expect(page.locator("#tmdb-test-result")).to_contain_text("Connexion TMDB réussie")
+                page.locator("[data-test-player]").click()
+                expect(page.locator('[id^="player-result-"]')).to_contain_text(
+                    "Connexion Kodi réussie"
+                )
+                page.locator('[data-close="connections-dialog"]').click()
+                # Closing a film restores a nonzero catalogue scroll position.
+                card_down = page.locator(".media-card").nth(25)
+                card_down.scroll_into_view_if_needed()
+                card_down.click()
+                expect(page.locator("#detail-dialog")).to_be_visible()
+                saved_y = -float(page.locator("body").evaluate("e=>e.style.top").removesuffix("px"))
+                assert saved_y > 0
+                page.locator('[data-close="detail-dialog"]').click()
+                expect(page.locator("#detail-dialog")).not_to_be_visible()
+                assert abs(page.evaluate("scrollY") - saved_y) < 2
                 fallback = browser.new_page(viewport={"width": 1440, "height": 1000})
                 fallback.add_init_script("delete window.IntersectionObserver")
                 fallback.goto(prefix, wait_until="domcontentloaded")
                 expect(fallback.locator(".media-card")).to_have_count(60)
                 fallback.locator("#load-more").click()
                 expect(fallback.locator(".media-card")).to_have_count(120)
+                # Missing configuration leaves explicit actions in the film sheet.
+                settings.tmdb_api_token = ""
+                store.delete_player(player["id"])
+                unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
+                unconfigured.goto(prefix, wait_until="domcontentloaded")
+                unconfigured.locator(".media-card").first.click()
+                expect(unconfigured.locator(".metadata-status")).to_contain_text(
+                    "TMDB n’est pas configuré"
+                )
+                expect(
+                    unconfigured.get_by_role("button", name="+ Configurer une instance Kodi")
+                ).to_be_visible()
+                unconfigured.get_by_role("button", name="Configurer TMDB", exact=True).click()
+                expect(unconfigured.locator("#test-tmdb")).to_be_disabled()
+                expect(unconfigured.locator("#connection-content")).to_contain_text(
+                    "TMDB_API_TOKEN"
+                )
                 assert not errors, errors
                 browser.close()
                 print(
@@ -355,6 +451,8 @@ def main():
         finally:
             enrichment_patch.stop()
             playback_patch.stop()
+            tmdb_probe_patch.stop()
+            player_probe_patch.stop()
             server.should_exit = True
             thread.join(timeout=5)
 

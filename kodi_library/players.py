@@ -117,7 +117,11 @@ async def play(player: dict, detail: dict, edition_id: str | None, resume: bool)
         raise ConnectorError("No playable Kodi edition belongs to this player's configured source.")
     candidates.sort(key=lambda e: not e["metadata"].get("is_default", True))
     edition = candidates[0]
-    kodi_id = edition["metadata"]["kodi_id"]
+    kodi_id = edition["metadata"].get("kodi_id")
+    if not isinstance(kodi_id, int) or kodi_id < 0:
+        raise ConnectorError(
+            "Ce fichier n'a pas d'identifiant Kodi valide. Synchronisez la source Kodi."
+        )
     id_name = "movieid" if detail["kind"] == "movie" else "episodeid"
     method = (
         "VideoLibrary.GetMovieDetails"
@@ -139,14 +143,16 @@ async def play(player: dict, detail: dict, edition_id: str | None, resume: bool)
             raise ConnectorError(
                 "The Kodi target uses a different library or stale media IDs. Playback was refused."
             )
-        # Default versions use library IDs; explicit alternative versions use
-        # their own stored path instead of playing a different default file.
+        # An explicit file selection opens its exact path, including default
+        # editions on Kodi versions that otherwise open a version chooser.
         media = {id_name: kodi_id}
-        if detail["kind"] == "movie" and not edition["metadata"].get("is_default", True):
-            file = edition["metadata"].get("file")
-            if not file:
+        file = edition["metadata"].get("file")
+        alternate = detail["kind"] == "movie" and not edition["metadata"].get("is_default", True)
+        if edition_id or alternate:
+            if file:
+                media = {"file": file}
+            elif alternate:
                 raise ConnectorError("This Kodi version has no playable file path.")
-            media = {"file": file}
         await rpc("Player.Open", {"item": media, "options": {"resume": resume}})
     return {
         "player_id": player["id"],
