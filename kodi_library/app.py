@@ -238,7 +238,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         kind: Kind | None = None,
         watch_status: WatchStatus | None = None,
         genre: str | None = Query(None, max_length=120),
-        format: str | None = Query(None, max_length=120),
+        format: list[str] | None = Query(None),
         collection: str | None = Query(None, max_length=200),
         source_type: Literal["kodi", "clz"] | None = None,
         source_id: str | None = None,
