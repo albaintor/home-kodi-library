@@ -90,9 +90,20 @@ async def probe(config: dict) -> dict:
         if await rpc("JSONRPC.Ping", {}) != "pong":
             raise ConnectorError("The HTTP service is not a responding Kodi JSON-RPC endpoint.")
         permissions = await rpc("JSONRPC.Permission", {})
-        if not isinstance(permissions, dict) or not permissions.get("controlplayback"):
+        if not isinstance(permissions, dict):
             raise ConnectorError(
-                "Kodi is reachable but this HTTP client cannot control playback. Enable HTTP remote control in Kodi."
+                "Réponse JSONRPC.Permission inattendue : impossible de vérifier les droits de lecture Kodi."
+            )
+        # Kodi returns the permission names from PermissionToString in PascalCase,
+        # although the published JSON-RPC schema uses lowercase property names.
+        playback_allowed = permissions.get("ControlPlayback", permissions.get("controlplayback"))
+        if playback_allowed is False:
+            raise ConnectorError(
+                "Kodi répond, mais refuse le contrôle de lecture (ControlPlayback=false). Vérifiez le contrôle distant HTTP sur l'instance Kodi contactée."
+            )
+        if playback_allowed is not True:
+            raise ConnectorError(
+                "Réponse JSONRPC.Permission inattendue : le droit ControlPlayback est absent ou invalide."
             )
         properties = await rpc("Application.GetProperties", {"properties": ["name", "version"]})
         version = properties.get("version", {}) if isinstance(properties, dict) else {}

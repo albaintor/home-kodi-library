@@ -214,7 +214,8 @@ def test_mariadb_probe_checks_views_without_importing_or_writing():
     conn.rollback.assert_called_once()
 
 
-def test_kodi_probe_uses_only_non_playback_calls():
+@pytest.mark.parametrize("permission_key", ["ControlPlayback", "controlplayback"])
+def test_kodi_probe_uses_only_non_playback_calls(permission_key):
     calls = []
 
     def handle(request):
@@ -222,7 +223,7 @@ def test_kodi_probe_uses_only_non_playback_calls():
         calls.append(body["method"])
         values = {
             "JSONRPC.Ping": "pong",
-            "JSONRPC.Permission": {"controlplayback": True},
+            "JSONRPC.Permission": {"ReadData": True, permission_key: True, "ControlGUI": True},
             "Application.GetProperties": {"version": {"major": 22, "minor": 0}, "name": "Kodi"},
         }
         return httpx.Response(
@@ -262,11 +263,19 @@ def test_kodi_probe_reports_http_and_rpc_errors_safely(status, payload, fragment
     assert fragment in str(error.value) and "private-secret" not in str(error.value)
 
 
-def test_kodi_probe_refuses_missing_playback_permission():
+@pytest.mark.parametrize(
+    "permissions",
+    [
+        {"ControlPlayback": False},
+        {"controlplayback": False},
+        {"ControlPlayback": False, "controlplayback": True},
+    ],
+)
+def test_kodi_probe_refuses_denied_playback_permission(permissions):
     def handle(request):
         method = json.loads(request.content)["method"]
         return httpx.Response(
-            200, json={"result": "pong" if method == "JSONRPC.Ping" else {"controlplayback": False}}
+            200, json={"result": "pong" if method == "JSONRPC.Ping" else permissions}
         )
 
     actual_client = httpx.AsyncClient
@@ -274,5 +283,41 @@ def test_kodi_probe_refuses_missing_playback_permission():
         "kodi_library.players.httpx.AsyncClient",
         side_effect=lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw),
     ):
-        with pytest.raises(ConnectorError, match="cannot control playback"):
+        with pytest.raises(ConnectorError, match="ControlPlayback=false"):
             asyncio.run(probe({"host": "kodi", "port": 8080}))
+
+
+@pytest.mark.parametrize(
+    "permissions",
+    [
+        {},
+        {"ReadData": True},
+        {"ControlPlayback": "false"},
+        {"ControlPlayback": "true"},
+        {"ControlPlayback": 1},
+        {"ControlPlayback": None},
+        {"ControlPlayback": None, "controlplayback": True},
+        [],
+        "private-secret",
+        None,
+    ],
+)
+def test_kodi_probe_reports_unexpected_permissions_without_claiming_access_is_denied(permissions):
+    calls = []
+
+    def handle(request):
+        method = json.loads(request.content)["method"]
+        calls.append(method)
+        return httpx.Response(
+            200, json={"result": "pong" if method == "JSONRPC.Ping" else permissions}
+        )
+
+    actual_client = httpx.AsyncClient
+    with patch(
+        "kodi_library.players.httpx.AsyncClient",
+        side_effect=lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw),
+    ):
+        with pytest.raises(ConnectorError, match="Réponse JSONRPC.Permission inattendue") as error:
+            asyncio.run(probe({"host": "kodi", "port": 8080}))
+    assert "private-secret" not in str(error.value)
+    assert calls == ["JSONRPC.Ping", "JSONRPC.Permission"]
