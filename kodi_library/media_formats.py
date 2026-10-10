@@ -25,6 +25,18 @@ STEREOSCOPIC_LAYOUTS = {
 }
 
 
+def canonical_format(value: str) -> str:
+    """Use the same label for Kodi 4K and physical UHD sources."""
+    label = value.strip()
+    return "4K" if label.casefold() in {"4k", "4k uhd"} else label
+
+
+THREE_D_FILENAME = re.compile(
+    r"(?<![a-z0-9])(?:3d|hsbs|fsbs|sbs|htab|ftab|tab|mvc)(?![a-z0-9])",
+    re.IGNORECASE,
+)
+
+
 def technical_formats(labels: list[str]) -> list[str]:
     found = set()
     for label in labels:
@@ -58,9 +70,10 @@ def technical_formats(labels: list[str]) -> list[str]:
     return sorted(found)
 
 
-def stream_metadata(rows: list[dict]) -> dict:
+def stream_metadata(rows: list[dict], filename: str | None = None) -> dict:
     video, audio, subtitles, labels = [], [], [], []
     resolutions = set()
+    confirmed_3d = False
     for original in rows:
         row = {key.casefold(): value for key, value in original.items()}
         kind = int(number(row.get("istreamtype"), -1))
@@ -86,8 +99,12 @@ def stream_metadata(rows: list[dict]) -> dict:
             hdr = str(row.get("strhdrtype") or "")
             detail = str(row.get("strhdrdetail") or "")
             labels.extend([hdr, detail])
-            if stereo.strip().casefold() in STEREOSCOPIC_LAYOUTS:
-                labels.append("3D")
+            # Kodi's stereo mode can be incorrectly set on a regular 2D file.
+            # Corroborate with an explicit 3D indicator in the file name.
+            if stereo.strip().casefold() in STEREOSCOPIC_LAYOUTS and THREE_D_FILENAME.search(
+                (filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+            ):
+                confirmed_3d = True
             video.append(
                 {
                     "codec": row.get("strvideocodec"),
@@ -115,5 +132,8 @@ def stream_metadata(rows: list[dict]) -> dict:
         "video_streams": video,
         "audio_streams": audio,
         "subtitles": sorted(set(subtitles)),
-        "formats": sorted(resolutions | set(technical_formats(labels))),
+        "formats": sorted(
+            resolutions | (set(technical_formats(labels)) - {"3D"})
+            | ({"3D"} if confirmed_3d else set())
+        ),
     }
