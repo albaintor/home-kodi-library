@@ -353,7 +353,7 @@ class KodiConnector:
                     ]
                 record.metadata["people"] = [*casts.get(identity, []), *crew]
                 file_id = record.metadata.get("file_id")
-                technical = stream_metadata(streams.get(file_id, []))
+                technical = stream_metadata(streams.get(file_id, []), filename=record.metadata.get("file"))
                 record.formats = technical.pop("formats")
                 record.metadata.update(technical)
                 record.metadata["cast"] = casts.get(identity, [])
