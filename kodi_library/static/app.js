@@ -10,13 +10,32 @@ function writeStorage(key,value) { try { localStorage.setItem(key,value); } catc
 let preferences;
 try { preferences=JSON.parse(readStorage(preferenceKey)) || {}; } catch { preferences={}; }
 if(typeof preferences!=='object'||Array.isArray(preferences)) preferences={};
-const filterIds = ['search','kind','source-type','genre','format','collection','watch-status','sort'];
+const filterIds = ['search','kind','source-type','genre','collection','watch-status','sort'];
 let filtersRestored=false;
 const savedView = ['grid','list'].includes(preferences.view)?preferences.view:readStorage('kodi_library_view');
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const canonicalFormat = value => /^4k(?:\s+uhd)?$/i.test(String(value).trim())?'4K':String(value).trim();
+function formatCategory(label) {
+  if (/^(dolby atmos|dolby truehd|dolby digital|dts(?:[-:]|$)|aac|flac|pcm|lpcm|ac3|eac3|mp3|opus)/i.test(label)) return 'audio';
+  if (/^(blu-ray|dvd|hd dvd|uhd blu-ray|ultra hd blu-ray)/i.test(label)) return 'disc';
+  return 'video';
+}
+function formatSelects() { return {video:'video-format',audio:'audio-format',disc:'disc-format'}; }
+function updateFormatSelections() {
+  const selected=new Set(state.formats);
+  const values=[...new Set((state.facets?.formats||[]).map(canonicalFormat))].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+  for(const [category,id] of Object.entries(formatSelects())) {
+    const labels={video:'+ Format vidéo',audio:'+ Format audio',disc:'+ Support'};
+    $(id).innerHTML='<option value="">'+labels[category]+'</option>'+values
+      .filter(v=>formatCategory(v)===category&&!selected.has(v))
+      .map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  }
+  $('selected-formats').innerHTML=state.formats.map(v=>`<button type="button" class="selected-format" data-remove-format="${esc(v)}" aria-label="Retirer ${esc(v)}">${esc(v)} <span aria-hidden="true">×</span></button>`).join('');
+  $('selected-formats').hidden=!state.formats.length;
+}
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
-  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
+  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
 }
 function restoreFilters() {
   if(filtersRestored)return;
@@ -24,6 +43,13 @@ function restoreFilters() {
     const value=preferences.filters?.[id];
     if(typeof value==='string'&&(id==='search'||[...$(id).options].some(option=>option.value===value)))$(id).value=value;
   }
+  const previousFormat=preferences.filters?.format;
+  const savedFormats=Array.isArray(preferences.formats)?preferences.formats:
+    typeof previousFormat==='string'&&previousFormat?[previousFormat]:[];
+  const available=new Set((state.facets?.formats||[]).map(canonicalFormat));
+  state.formats=[...new Set(savedFormats.filter(v=>typeof v==='string').map(canonicalFormat))]
+    .filter(v=>available.has(v)).slice(0,20);
+  updateFormatSelections();
   $('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';
   $('filters').hidden=preferences.filtersHidden===true;
   $('toggle-filters').setAttribute('aria-expanded',!$('filters').hidden);
@@ -57,7 +83,7 @@ function poster(item, detail=false) {
 }
 const formatLogos = {'4K':['4k','video'],'4K UHD':['4k','video'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshd','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio']};
 function formatBadges(values, compact=false) {
-  const seen=new Set(); const labels=values.filter(label=>{const key=formatLogos[label]?.[0]||label;if(seen.has(key))return false;seen.add(key);return true;});
+  const seen=new Set(); const labels=values.map(canonicalFormat).filter(label=>{const key=formatLogos[label]?.[0]||label;if(seen.has(key))return false;seen.add(key);return true;});
   const visible=compact?labels.slice(0,4):labels;
   return visible.map(label=>{const logo=formatLogos[label];return logo?`<span class="format-badge ${logo[1]}" title="${esc(label)}" aria-label="${esc(label)}"><svg aria-hidden="true" viewBox="0 0 112 36"><use href="${esc(url('static/format-logos.svg'))}#${logo[0]}"></use></svg></span>`:`<span class="format-chip">${esc(label)}</span>`;}).join('')+(compact&&labels.length>4?`<span class="format-overflow" title="${esc(labels.slice(4).join(', '))}">+${labels.length-4}</span>`:'');
 }
@@ -187,11 +213,6 @@ async function savePersonal(values) {
   }finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
   if(saved){await loadMedia();if($('lists-dialog').open)await loadList();}
 }
-function networkMarkup(item) {
-  const editions=item.editions.filter(e=>e.source_type==='kodi'&&e.metadata.file);
-  if(!editions.length) return '';
-  return `<section class="detail-section"><p class="section-label">FICHIERS KODI</p>${editions.map(e=>`<div class="file-row"><span class="hint">${esc(e.metadata.version||e.source_name)}</span><code>${esc(e.metadata.file)}</code><button data-copy-file="${esc(e.id)}" class="text-button">Copier le chemin</button></div>`).join('')}<p class="hint">Les fichiers SMB/NFS sont lus par Kodi. Pour les ouvrir dans un lecteur local, copiez le chemin et utilisez ses accès au NAS.</p></section>`;
-}
 function metadataMarkup(item) {
   if(item.kind==='episode')return '';
   return `<p id="enrichment-status" class="hint enrichment-caption" role="status">${state.enrichingIds.has(item.id)?'Récupération des personnes, portraits et bandes-annonces…':item.enriched_at?`Métadonnées TMDB mises en cache le ${date(item.enriched_at)}.`:item.tmdb_available?'Les métadonnées TMDB sont récupérées à l’ouverture de cette fiche.':'TMDB n’est pas configuré. Les métadonnées affichées proviennent de Kodi ou CLZ.'}</p>`;
@@ -229,12 +250,13 @@ function card(item) {
 function attachImageFallbacks(root) { root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>img.classList.add('failed'),{once:true});}); }
 function currentParams(offset=0) {
   const params=new URLSearchParams({limit:state.limit,offset,sort:$('sort').value,order:state.order});
-  for (const [id,name] of [['search','q'],['kind','kind'],['source-type','source_type'],['genre','genre'],['format','format'],['collection','collection'],['watch-status','watch_status']]) if ($(id).value) params.set(name,$(id).value);
+  for (const [id,name] of [['search','q'],['kind','kind'],['source-type','source_type'],['genre','genre'],['collection','collection'],['watch-status','watch_status']]) if ($(id).value) params.set(name,$(id).value);
+  for (const value of state.formats) params.append('format',value);
   if (state.recent) params.set('recent_days','30');
   return params;
 }
 function updateFilterState() {
-  let count=['search','kind','source-type','genre','format','collection','watch-status'].filter(id=>$(id).value).length + Number(state.recent);
+  let count=['search','kind','source-type','genre','collection','watch-status'].filter(id=>$(id).value).length + state.formats.length + Number(state.recent);
   $('filter-count').textContent=count || '';
   $('reset-filters').hidden=!count;
   document.querySelectorAll('[data-quick]').forEach(b=>b.classList.toggle('active', b.dataset.quick==='recent'?state.recent:b.dataset.quick==='all'?!state.recent&&!$('watch-status').value:!state.recent&&b.dataset.quick===$('watch-status').value));
@@ -296,7 +318,12 @@ async function refresh() {
   const [facets,status,players]=await Promise.all([api('facets'),api('status'),api('players')]);
   state.facets=facets; state.players=players;
   state.tmdbAvailable=status.tmdb_available===true;
-  fillSelect('genre',facets.genres,'Tous les genres'); fillSelect('format',facets.formats,'Tous les formats'); fillSelect('collection',facets.collections,'Toutes les collections');
+  fillSelect('genre',facets.genres,'Tous les genres'); fillSelect('collection',facets.collections,'Toutes les collections');
+  if(filtersRestored){
+    const available=new Set(facets.formats.map(canonicalFormat));
+    state.formats=state.formats.filter(v=>available.has(v));
+    updateFormatSelections();
+  }
   restoreFilters();
   $('catalogue-status').textContent=`${status.works.toLocaleString('fr-FR')} titres · ${status.editions.toLocaleString('fr-FR')} fichiers et éditions · ${status.sources.length} source${status.sources.length>1?'s':''}`;
   const latest=status.sources.map(s=>s.last_sync).filter(Boolean).sort().at(-1);
@@ -311,7 +338,7 @@ async function initialize() {
     setView(state.view,false); await refresh();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
-function reset() { ['search','kind','source-type','genre','format','collection','watch-status'].forEach(id=>$(id).value=''); state.recent=false; loadMedia(); }
+function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[]; updateFormatSelections(); state.recent=false; loadMedia(); }
 function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
 let pagePosition=null;
 function lockPage() {
@@ -355,7 +382,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges">${formatBadges(item.formats)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div><button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${metadataMarkup(item)}${networkMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges">${formatBadges(item.formats)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div><button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${metadataMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -457,6 +484,10 @@ document.addEventListener('click',async event=>{
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
   if(button.dataset.genre) {$('genre').value=button.dataset.genre; $('detail-dialog').close();  loadMedia();}
+  if(button.dataset.removeFormat) {
+    state.formats=state.formats.filter(v=>v!==button.dataset.removeFormat);
+    updateFormatSelections();loadMedia();return;
+  }
   if(button.dataset.action==='connections') connections(); if(button.dataset.action==='reset') reset();
   if(button.dataset.action==='lists')openLists();
   if(button.dataset.openList)openLists(button.dataset.openList);
@@ -489,7 +520,12 @@ $('grid-view').addEventListener('click',()=>setView('grid')); $('list-view').add
 $('toggle-filters').addEventListener('click',()=>{const hidden=!$('filters').hidden;$('filters').hidden=hidden;$('toggle-filters').setAttribute('aria-expanded',!hidden);savePreferences();});
 $('reset-filters').addEventListener('click',reset);
 let searchTimer; $('search').addEventListener('input',()=>{savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
-['kind','source-type','genre','format','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
+['kind','source-type','genre','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
+for(const id of Object.values(formatSelects())) $(id).addEventListener('change',()=>{
+  const value=canonicalFormat($(id).value);
+  if(value&&!state.formats.includes(value)&&state.formats.length<20)state.formats.push(value);
+  updateFormatSelections();loadMedia();
+});
 $('sort-order').addEventListener('click',()=>{state.order=state.order==='asc'?'desc':'asc';$('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';loadMedia();});
 $('load-more').addEventListener('click',()=>loadMedia({append:state.items.length>0}));
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName)&&!$('app').hidden&&!document.querySelector('dialog[open]')){event.preventDefault();$('search').focus();}});
