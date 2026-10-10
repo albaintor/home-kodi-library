@@ -18,12 +18,28 @@ jobs:
       - run: pytest -q
   docker:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - uid: 1000
+            gid: 1000
+          - uid: 1026
+            gid: 100
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t home-kodi-library:test .
+      - name: Build from a restrictive NAS-style checkout
+        run: |
+          chmod -R go-rwx kodi_library
+          docker build -t home-kodi-library:test .
       - name: Start and probe the container
         run: |
-          docker run -d --name library -p 8099:8000 -e API_TOKEN=ci-test-token-00000000000000000000 home-kodi-library:test
+          sudo install -d -m 0700 -o ${{ matrix.uid }} -g ${{ matrix.gid }} "$RUNNER_TEMP/kodi-library-data"
+          docker run -d --name library -p 8099:8000 \
+            --user ${{ matrix.uid }}:${{ matrix.gid }} \
+            --read-only --tmpfs /tmp:mode=1777 \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            -v "$RUNNER_TEMP/kodi-library-data:/data" \
+            -e API_TOKEN=ci-test-token-00000000000000000000 home-kodi-library:test
           for attempt in $(seq 1 30); do
             if curl -fsS http://localhost:8099/healthz; then break; fi
             sleep 1
