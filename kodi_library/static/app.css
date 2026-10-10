@@ -102,3 +102,5 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .format-help{grid-column:1/-1;color:var(--muted);font-size:10px}
 @media(max-width:1150px){.format-picker{grid-column:span 3}}
 @media(max-width:700px){.format-picker{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr))}.format-picker label:nth-child(3){grid-column:1/-1}}
+
+.detail-timestamps .enrichment-caption{margin:0;font-size:inherit;color:inherit}
