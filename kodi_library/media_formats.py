@@ -4,6 +4,26 @@ import re
 
 from .utils import number
 
+# Kodi/Matroska stereoscopic layouts. Unknown values are not evidence of 3D.
+# https://github.com/xbmc/xbmc/blob/master/xbmc/guilib/StereoscopicsManager.cpp
+STEREOSCOPIC_LAYOUTS = {
+    "left_right",
+    "right_left",
+    "top_bottom",
+    "bottom_top",
+    "checkerboard_rl",
+    "checkerboard_lr",
+    "row_interleaved_rl",
+    "row_interleaved_lr",
+    "col_interleaved_rl",
+    "col_interleaved_lr",
+    "anaglyph_cyan_red",
+    "anaglyph_green_magenta",
+    "anaglyph_yellow_blue",
+    "block_lr",
+    "block_rl",
+}
+
 
 def technical_formats(labels: list[str]) -> list[str]:
     found = set()
@@ -66,7 +86,7 @@ def stream_metadata(rows: list[dict]) -> dict:
             hdr = str(row.get("strhdrtype") or "")
             detail = str(row.get("strhdrdetail") or "")
             labels.extend([hdr, detail])
-            if stereo.casefold() not in {"", "mono", "0", "none"}:
+            if stereo.strip().casefold() in STEREOSCOPIC_LAYOUTS:
                 labels.append("3D")
             video.append(
                 {

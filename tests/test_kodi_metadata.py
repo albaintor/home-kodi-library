@@ -136,6 +136,20 @@ def test_sparse_streams_do_not_invent_formats():
     )
 
 
+@pytest.mark.parametrize(
+    "stereo", [None, "", "mono", " Mono ", "monoscopic", "2D", "none", "0", "unknown", "bad"]
+)
+def test_2d_and_unknown_stereo_values_do_not_advertise_3d(stereo):
+    metadata = stream_metadata([{"iStreamType": 0, "iVideoWidth": 1920, "strStereoMode": stereo}])
+    assert metadata["formats"] == ["1080p"]
+
+
+@pytest.mark.parametrize("stereo", ["left_right", " TOP_BOTTOM ", "block_lr", "block_rl"])
+def test_explicit_stereoscopic_layouts_advertise_3d(stereo):
+    metadata = stream_metadata([{"iStreamType": 0, "strStereoMode": stereo}])
+    assert metadata["formats"] == ["3D"]
+
+
 def test_clz_audio_and_explicit_hdr_tags(clz_xml):
     data = clz_xml.replace(
         b"<nrdiscs>2</nrdiscs>",
