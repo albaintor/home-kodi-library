@@ -271,13 +271,17 @@ def main():
                     "kind": "movie",
                     "source-type": "kodi",
                     "genre": "Aventure",
-                    "format": "HDR10+",
                     "collection": "Collection de démonstration",
                     "watch-status": "unknown",
                     "sort": "title",
                 }
                 for control, value in selections.items():
                     page.locator("#" + control).select_option(value)
+                page.locator("#video-format").select_option("4K")
+                page.locator("#video-format").select_option("HDR10+")
+                page.locator("#audio-format").select_option("Dolby Atmos")
+                expect(page.locator("#selected-formats .selected-format")).to_have_count(3)
+                assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 page.locator("#search").fill("démonstration")
                 page.locator("#sort-order").click()
                 page.locator("#toggle-filters").click()
@@ -287,6 +291,8 @@ def main():
                 for control, value in selections.items():
                     expect(page.locator("#" + control)).to_have_value(value)
                 expect(page.locator("#search")).to_have_value("démonstration")
+                expect(page.locator("#selected-formats .selected-format")).to_have_count(3)
+                assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 expect(page.locator("#sort-order")).to_have_text("↑ Croissant")
                 expect(page.locator("#filters")).to_be_hidden()
                 assert requests[-1]["order"] == ["asc"] and requests[-1]["sort"] == ["title"]
