@@ -131,10 +131,33 @@ async function connections() {
   try {
     const sources=await api('sources'); state.facets.sources=sources; state.players=await api('players');
     const clz=sources.filter(s=>s.type==='clz'); const kodi=sources.filter(s=>s.type==='kodi');
-    $('connection-content').innerHTML=`<h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Un compte disposant uniquement du droit SELECT suffit. La bibliothèque reste consultable quand Kodi est arrêté.</p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p></div><div class="connection-actions"><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Cette instance doit utiliser la même base MyVideos que la source choisie. Activez le contrôle distant HTTP dans Kodi.</p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
+    $('connection-content').innerHTML=`<h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Ce formulaire contacte MariaDB, pas l’API HTTP de Kodi. Un compte SELECT suffit ; Kodi peut être arrêté. La connexion est testée avant tout nouvel ajout.</p><button class="secondary wide" type="button" data-test-connection="kodi-form">Tester la connexion MariaDB</button><p id="kodi-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p></div><div class="connection-actions"><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Ce formulaire contacte l’API HTTP de Kodi, pas MariaDB. Kodi doit être démarré, avec le contrôle distant HTTP activé, et utiliser la base MyVideos choisie.</p><button class="secondary wide" type="button" data-test-connection="player-form">Tester la connexion Kodi</button><p id="player-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
     showDialog('connections-dialog');
   } catch(e) {toast(e.message);}
 }
+function connectionInput(form) {
+  const data=new FormData(form);
+  const config={host:String(data.get('host')||'').trim(),port:Number(data.get('port')),username:String(data.get('username')||'').trim(),password:data.get('password')||null,tls:data.has('tls')};
+  if(form.getAttribute('id')==='kodi-form') return {config:{...config,database:String(data.get('database')||'').trim()},source_id:data.get('id')||null};
+  return {...config,player_id:data.get('id')||null};
+}
+async function testConnection(form) {
+  const input=connectionInput(form); const formId=form.getAttribute('id');
+  const result=$(formId+'-result'); result.hidden=false; result.className='connection-result wide';
+  result.textContent='Vérification de la connexion…';
+  const controls=[...form.elements].map(control=>({control,disabled:control.disabled}));
+  controls.forEach(({control})=>control.disabled=true);
+  try {
+    const tested=await api(`connections/${formId==='kodi-form'?'mariadb':'kodi'}/test`,{method:'POST',body:JSON.stringify(input)});
+    result.textContent=tested.message+(tested.version?` Version ${tested.version}.`:'');
+    result.classList.add('success-text'); return tested;
+  } catch(e) {result.textContent=e.message;result.classList.add('error-text');throw e;}
+  finally {controls.forEach(({control,disabled})=>control.disabled=disabled);}
+}
+document.addEventListener('input',event=>{
+  const form=event.target.closest('#kodi-form,#player-form');
+  if(form) {const result=$(form.getAttribute('id')+'-result');if(result) result.hidden=true;}
+});
 function fillForm(id,data) {
   const form=$(id); form.closest('details').open=true;
   for(const [key,value] of Object.entries(data)) {
@@ -144,27 +167,28 @@ function fillForm(id,data) {
   form.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 document.addEventListener('submit',async event=>{
-  const form=event.target;
-  if(!['login-form','kodi-form','clz-form','player-form'].includes(form.id)) return;
+  const form=event.target; const formId=form.getAttribute('id');
+  if(!['login-form','kodi-form','clz-form','player-form'].includes(formId)) return;
   event.preventDefault(); const button=form.querySelector('button[type="submit"]'); button.disabled=true;
   try {
     const data=new FormData(form);
-    if(form.id==='login-form') {
+    if(formId==='login-form') {
       await api('auth/session',{method:'POST',body:JSON.stringify({token:data.get('token')})}); form.reset(); $('login-error').textContent=''; await initialize();
-    } else if(form.id==='kodi-form') {
-      const body={name:data.get('name'),type:'kodi',config:{host:data.get('host'),port:Number(data.get('port')),username:data.get('username'),password:data.get('password')||null,database:data.get('database'),tls:data.has('tls')}};
-      const id=data.get('id'); const source=await api(id?`sources/${id}`:'sources',{method:id?'PUT':'POST',body:JSON.stringify(body)});
+    } else if(formId==='kodi-form') {
+      const body={name:data.get('name'),type:'kodi',config:connectionInput(form).config};
+      const id=data.get('id'); if(!id) await testConnection(form); const source=await api(id?`sources/${id}`:'sources',{method:id?'PUT':'POST',body:JSON.stringify(body)});
       await pollJob(await api(`sources/${source.id}/sync`,{method:'POST'}));
-    } else if(form.id==='clz-form') {
+    } else if(formId==='clz-form') {
       let id=data.get('source_id');
       if(!id) { const name=prompt('Nom de cette collection','Collection Blu-ray'); if(!name) return; const source=await api('sources',{method:'POST',body:JSON.stringify({name,type:'clz'})}); id=source.id; }
       const body=new FormData(); body.set('source_id',id); body.set('file',data.get('file'));
       await pollJob(await api('imports/clz',{method:'POST',body}));
     } else {
-      const id=data.get('id'); const body={name:data.get('name'),source_id:data.get('source_id'),host:data.get('host'),port:Number(data.get('port')),username:data.get('username'),password:data.get('password')||null,tls:data.has('tls')};
+      const id=data.get('id'); const {player_id,...config}=connectionInput(form); const body={name:data.get('name'),source_id:data.get('source_id'),...config};
+      if(!id) await testConnection(form);
       await api(id?`players/${id}`:'players',{method:id?'PUT':'POST',body:JSON.stringify(body)}); toast('Instance enregistrée.'); await connections();
     }
-  } catch(e) {if(form.id==='login-form') $('login-error').textContent=e.message; else toast(e.message);}
+  } catch(e) {if(formId==='login-form') $('login-error').textContent=e.message; else toast(e.message);}
   finally {button.disabled=false;}
 });
 document.addEventListener('click',async event=>{
@@ -175,6 +199,7 @@ document.addEventListener('click',async event=>{
   if(button.dataset.action==='connections') connections(); if(button.dataset.action==='reset') reset();
   if(button.dataset.quick) {state.recent=button.dataset.quick==='recent'; $('watch-status').value=['all','recent'].includes(button.dataset.quick)?'':button.dataset.quick; state.offset=0; if(state.recent){$('sort').value='date_added';state.order='desc';$('sort-order').textContent='↓ Décroissant';}loadMedia();}
   try {
+    if(button.dataset.testConnection) {const form=$(button.dataset.testConnection); const fields=['host','port',...(form.getAttribute('id')==='kodi-form'?['username']:[])];if(fields.every(name=>form.elements.namedItem(name).reportValidity())) await testConnection(form);}
     if(button.dataset.sync) {button.disabled=true; await pollJob(await api(`sources/${button.dataset.sync}/sync`,{method:'POST'}));}
     if(button.dataset.removeSource && confirm('Retirer cette source et ses données importées ?')) {await api(`sources/${button.dataset.removeSource}`,{method:'DELETE'});await refresh();await connections();}
     if(button.dataset.removePlayer && confirm('Retirer cette instance Kodi ?')) {await api(`players/${button.dataset.removePlayer}`,{method:'DELETE'});await connections();}

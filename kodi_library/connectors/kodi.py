@@ -6,6 +6,7 @@ instance or Home Assistant entity is required to browse the resulting catalogue.
 
 import math
 import re
+import socket
 from collections import defaultdict
 from typing import Any
 from urllib.parse import unquote
@@ -125,9 +126,18 @@ class KodiConnector:
         self.database: str | None = None
 
     def fetch(self) -> list[Record]:
+        return self._read(self._snapshot)
+
+    def probe(self) -> dict[str, Any]:
+        """Check authentication, the selected schema and view SELECT permissions."""
+        return self._read(self._probe)
+
+    def _read(self, operation):
         config = self.config
         if not config.get("host") or not config.get("username"):
             raise ConnectorError("Configure the MariaDB hostname and read-only username.")
+        if any(c in config["host"] for c in ("/", "@", "?", "#")):
+            raise ConnectorError("Enter a MariaDB hostname or IP address, not a URL.")
         requested = config.get("database", "")
         if requested and not re.fullmatch(r"[A-Za-z0-9_]+", requested):
             raise ConnectorError("Invalid Kodi database name.")
@@ -168,14 +178,57 @@ class KodiConnector:
                     self.database = database
                     cursor.execute("SET SESSION TRANSACTION READ ONLY")
                     cursor.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT")
-                    result = self._snapshot(cursor)
+                    result = operation(cursor)
                     conn.rollback()  # this connector never commits to the Kodi database
                     return result
         except pymysql.MySQLError as exc:
             code = exc.args[0] if exc.args else "unknown"
+            original = getattr(exc, "original_exception", None)
+            if isinstance(original, socket.gaierror) or "name resolution" in str(exc).lower():
+                message = "MariaDB hostname cannot be resolved. Check container DNS or use its IP address."
+            else:
+                message = {
+                    1044: "MariaDB account cannot access this database. Check its SELECT grants.",
+                    1045: "MariaDB rejected authentication. Check username/password and the account's permitted client hosts.",
+                    1049: "The specified MariaDB database does not exist. Check the MyVideos name.",
+                    1142: "MariaDB denied SELECT access to a Kodi view or table. Check read-only grants.",
+                    1146: "A required Kodi view or table is missing. Check the MyVideos schema.",
+                    1356: "A Kodi view is invalid or inaccessible. Check its schema and SELECT grants.",
+                    2003: "Cannot connect to MariaDB. Check host, port, server listening address and NAS firewall.",
+                    2005: "MariaDB hostname cannot be resolved. Check container DNS or use its IP address.",
+                    2013: "MariaDB connection was interrupted or timed out.",
+                    2026: "MariaDB TLS verification failed. Check TLS settings and the CA certificate.",
+                }.get(
+                    code, "MariaDB query failed. Check database version, schema and SELECT grants."
+                )
+            raise ConnectorError(f"{message} (MariaDB code {code})") from exc
+
+    def _probe(self, cursor) -> dict[str, Any]:
+        cursor.execute("SHOW FULL TABLES")
+        tables = {str(next(iter(r.values()))) for r in cursor.fetchall()}
+        if "movie_view" not in tables:
             raise ConnectorError(
-                f"MariaDB connection or query failed (code {code}). Check host, credentials, SELECT grants and MyVideos schema."
-            ) from exc
+                "The selected database has no movie_view. Select a Kodi MyVideos database."
+            )
+        available = []
+        for kind, view, id_field in (
+            ("movie", "movie_view", "idMovie"),
+            ("tvshow", "tvshow_view", "idShow"),
+            ("episode", "episode_view", "idEpisode"),
+        ):
+            if view not in tables:
+                continue
+            cursor.execute(f"SELECT `{id_field}`,c00 FROM `{view}` LIMIT 1")
+            cursor.fetchone()
+            available.append(kind)
+        for table, columns in (
+            ("art", "media_id,media_type,type,url"),
+            ("uniqueid", "media_id,media_type,type,value"),
+        ):
+            if table in tables:
+                cursor.execute(f"SELECT {columns} FROM `{table}` LIMIT 1")
+                cursor.fetchone()
+        return {"database": self.database, "available_media": available}
 
     def _snapshot(self, cursor: Any) -> list[Record]:
         cursor.execute("SHOW FULL TABLES")

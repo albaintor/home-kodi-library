@@ -65,6 +65,30 @@ class SourceInput(StrictModel):
     enabled: bool = True
 
 
+class MariaDBConnectionInput(StrictModel):
+    config: SourceConfig
+    source_id: str | None = None
+
+
+class KodiConnectionInput(StrictModel):
+    host: str = Field(min_length=1, max_length=253)
+    port: int = Field(default=8080, ge=1, le=65535)
+    username: str = Field(default="", max_length=128)
+    password: SecretStr | None = None
+    tls: bool = False
+    player_id: str | None = None
+
+
+class ConnectionResult(BaseModel):
+    success: Literal[True] = True
+    kind: Literal["mariadb", "kodi"]
+    message: str
+    database: str | None = None
+    available_media: list[str] = Field(default_factory=list)
+    version: str | None = None
+    playback_allowed: bool | None = None
+
+
 class SourceView(BaseModel):
     id: str
     name: str

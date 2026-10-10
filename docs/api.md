@@ -19,6 +19,8 @@ Ingress transmet un secret distinct dans `X-Kodi-Library-Ingress-Token`. Un simp
 | GET | `/media/{id}` | Fiche, identifiants, éditions, métadonnées par source |
 | GET | `/media/{id}/artwork/{poster\|fanart}` | Image protégée et mise en cache |
 | GET | `/facets` | Genres, formats, collections, années, sources |
+| POST | `/connections/mariadb/test` | Test en lecture seule d'une configuration MariaDB sans enregistrement |
+| POST | `/connections/kodi/test` | Test HTTP/JSON-RPC, version Kodi et autorisation de lecture sans enregistrement |
 | GET/POST | `/sources` | Liste / création d'une source |
 | PUT/DELETE | `/sources/{id}` | Modification / retrait de la source et de ses éditions |
 | POST | `/sources/{id}/sync` | Synchronisation Kodi, tâche retournée avec HTTP 202 |
@@ -69,6 +71,12 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 Suivre `/jobs/ID_TACHE` avant de rafraîchir le catalogue. Chaque import applique un instantané atomique : les éditions disparues de l'export sont retirées uniquement de cette source. Un échec conserve l'ancien catalogue. Une seule tâche active par source ; import maximum 20 MiB.
 
 Une source Kodi est créée avec `{"name":"NAS","type":"kodi","config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"MyVideos131","tls":false}}`. `database` peut être vide pour la détection automatique. Un mot de passe absent ou `null` lors d'un PUT conserve le précédent ; une chaîne vide le supprime. Les réponses remplacent le mot de passe par `has_password`.
+
+Avant de créer une source, `POST /connections/mariadb/test` accepte `{"config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"","tls":false}}`. Le test vérifie l'accès aux vues et tables utilisées sans importer le catalogue. La réponse contient `success`, `kind`, `message`, `database` et `available_media`.
+
+Pour une cible, `POST /connections/kodi/test` accepte `{"host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`. Il appelle `JSONRPC.Ping`, `JSONRPC.Permission` et `Application.GetProperties`, sans lancer de média. La réponse contient notamment `version` et `playback_allowed`. Kodi doit être démarré et autoriser le contrôle HTTP. Ce test ne garantit pas que l'instance utilise la même base MyVideos ; cette association reste à configurer.
+
+Ces routes requièrent le jeton administrateur et ne créent ni source, ni cible, ni tâche. Les échecs de connexion renvoient HTTP 502 avec une cause réseau, authentification ou permissions, sans mot de passe. Pour tester une modification, ajouter `source_id` ou `player_id` : un mot de passe absent ou `null` réutilise celui enregistré ; une chaîne vide teste sans mot de passe. L'interface teste automatiquement avant tout nouvel ajout ; les routes de création restent utilisables directement pour préparer une configuration hors ligne.
 
 Créer une cible Kodi avec `{"name":"Salon","source_id":"ID_SOURCE_KODI","host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`, puis :
 

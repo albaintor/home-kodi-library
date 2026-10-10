@@ -12,6 +12,7 @@ Catalogue indépendant pour consulter une bibliothèque Kodi et une collection p
 - Import XML CLZ Movies : éditions, formats Blu-ray/4K/3D/DVD, codes-barres, coffrets, langues, sous-titres et historique `seenhistory`.
 - Rapprochement Kodi/CLZ par identifiant fiable et type de média ; conservation des éditions. Les titres seuls ne provoquent pas de fusion.
 - Plusieurs cibles Kodi HTTP/JSON-RPC associées à une source MariaDB. Lecture ou reprise sur une instance **déjà démarrée**, sans obligation d'utiliser les entités Home Assistant.
+- Tests de connexion MariaDB et Kodi avant ajout : réseau, authentification, base MyVideos, droits de lecture et contrôle HTTP de Kodi. Disponibles également dans l'API.
 - SQLite locale persistante et cache des images : **aucune seconde MariaDB**.
 - Jeton administrateur, jeton de consultation facultatif, sessions navigateur protégées contre CSRF et secret Ingress séparé.
 

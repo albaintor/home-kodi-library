@@ -26,12 +26,16 @@ from . import __version__
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .connectors.base import ConnectorError
+from .connectors.kodi import KodiConnector
 from .models import (
     CatalogueStatus,
+    ConnectionResult,
     ErrorResponse,
     Facets,
     JobView,
     Kind,
+    KodiConnectionInput,
+    MariaDBConnectionInput,
     MediaDetail,
     MediaPage,
     PlayerInput,
@@ -46,6 +50,7 @@ from .models import (
     WatchStatus,
 )
 from .players import play
+from .players import probe as probe_player
 from .settings import Settings
 from .store import Store
 from .sync import BusyError, SyncManager
@@ -278,6 +283,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return Response(data, media_type=content_type)
         except ArtworkError as exc:
             raise HTTPException(404, str(exc)) from exc
+
+    @app.post(
+        API + "/connections/mariadb/test",
+        response_model=ConnectionResult,
+        tags=["Connections"],
+        dependencies=[Depends(writable)],
+    )
+    async def test_mariadb(data: MariaDBConnectionInput):
+        config = unsecret(data)["config"]
+        if data.source_id:
+            existing = await asyncio.to_thread(store.source, data.source_id, private=True)
+            if not existing or existing["type"] != "kodi":
+                raise HTTPException(404, "Unknown Kodi MariaDB source.")
+            if config.get("password") is None:
+                config["password"] = existing["config"].get("password", "")
+        config["password"] = config.get("password") or ""
+        try:
+            result = await asyncio.to_thread(KodiConnector(config).probe)
+        except ConnectorError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {
+            "kind": "mariadb",
+            "message": f"Connexion MariaDB réussie : {result['database']}, accès en lecture vérifié.",
+            **result,
+        }
+
+    @app.post(
+        API + "/connections/kodi/test",
+        response_model=ConnectionResult,
+        tags=["Connections"],
+        dependencies=[Depends(writable)],
+    )
+    async def test_kodi(data: KodiConnectionInput):
+        config = unsecret(data)
+        if data.player_id:
+            existing = await asyncio.to_thread(store.player, data.player_id)
+            if not existing:
+                raise HTTPException(404, "Unknown Kodi player.")
+            if config.get("password") is None:
+                config["password"] = existing["config"].get("password", "")
+        config["password"] = config.get("password") or ""
+        try:
+            result = await probe_player(config)
+        except ConnectorError as exc:
+            raise HTTPException(502, str(exc)) from exc
+        return {
+            "kind": "kodi",
+            "message": "Connexion Kodi réussie : API HTTP et contrôle de lecture vérifiés.",
+            **result,
+        }
 
     @app.get(
         API + "/sources",
