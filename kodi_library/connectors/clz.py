@@ -7,6 +7,7 @@ from xml.etree.ElementTree import Element, ParseError
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
 
+from ..media_formats import technical_formats
 from ..utils import formats, identifiers, integer, plain_text, positive
 from .base import ConnectorError, Record
 
@@ -82,7 +83,16 @@ def parse_clz(data: bytes) -> list[Record]:
             user_rating=positive(text(node, "myrating")),
             identifiers=identifiers({"imdb": text(node, "imdbnr")}),
             genres=display_list(node, "genres/genre/displayname"),
-            formats=formats(display_list(node, "formats/format/displayname")),
+            formats=sorted(
+                set(formats(display_list(node, "formats/format/displayname")))
+                | set(
+                    technical_formats(
+                        display_list(node, "formats/format/displayname")
+                        + display_list(node, "audiotracks/audiotrack/displayname")
+                        + display_list(node, "tags/tag/displayname")
+                    )
+                )
+            ),
             collections=[
                 v
                 for v in (text(node, "collection/displayname"), text(node, "boxset/displayname"))

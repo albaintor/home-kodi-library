@@ -1,6 +1,6 @@
 # Validation initiale — 10 octobre 2026
 
-- **56 tests Python réussis** : recherche accent-insensible, tri/pagination, filtres combinés, instantanés atomiques et idempotents, rapprochements/identifiants contradictoires, conservation des éditions, relations séries/épisodes, contrôle d'accès Bearer/Ingress/cookie/CSRF, import XML et erreurs, expurgation des secrets, images locales et refus des URL privées, JSON-RPC simulé et fichier alternatif, historique CLZ. Tests de connexion MariaDB/Kodi : permissions, diagnostics, réutilisation des mots de passe et absence d'enregistrement ou de lecture de média pendant le test.
+- **67 tests Python réussis** : recherche accent-insensible, tri/pagination, filtres combinés, instantanés atomiques et idempotents, rapprochements/identifiants contradictoires, conservation des éditions, relations séries/épisodes, contrôle d'accès Bearer/Ingress/cookie/CSRF, import XML et erreurs, expurgation des secrets, images locales et refus des URL privées, JSON-RPC simulé et fichier alternatif, historique CLZ. Tests de connexion MariaDB/Kodi : permissions, diagnostics, réutilisation des mots de passe et absence d'enregistrement ou de lecture de média pendant le test.
 - Ruff : vérification et formatage réussis. JavaScript : vérification syntaxique réussie.
 - Construction Python sdist et wheel réussie ; HTML/CSS/JS présents dans le wheel.
 - Chromium, serveur local : accès direct par jeton et déconnexion, authentification par secret sous `/api/ingress/kodi_library/`, filtres combinés, recherche libre, tri, grille/liste, fiches, pagination, dialogue de connexions. Aucun événement d'erreur JavaScript. Vérification d'absence de débordement horizontal à 390 px.
@@ -9,3 +9,6 @@
 - Exemple `seenhistory` fourni ensuite couvert par les tests : vu, deux dates, dernière date, historique vide/absent, dates invalides et rapprochement avec un fichier Kodi non lu.
 
 MariaDB et JSON-RPC sont simulés dans les tests ; aucune connexion à l'installation personnelle n'a été effectuée. Le chemin Ingress est simulé localement, sans installation réelle de Home Assistant. Docker n'est pas disponible dans l'environnement initial : le workflow GitHub construit l'image et effectue une sonde API authentifiée. L'exemple Swift est une base de client, pas une application iOS compilée/testée ici.
+
+- Régressions films : SQL exécuté sur des vues de test sans versions, avec VERSION=0 et avec VERSION=1 ; bonus exclus, versions alternatives, casting et flux par fichier conservés.
+- Chromium automatisé : lots 60/120/150 au défilement, cartes conservées, absence de doublons, filtres et grille/liste, reprise après erreur, annulation des réponses obsolètes, bouton sans IntersectionObserver, casting, badges SVG, favicon et placement desktop/mobile de la fiche. Aucun événement d’erreur JavaScript. Script reproductible : `tests/browser/check_catalogue.py`, également exécuté en CI.

@@ -83,6 +83,8 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
             rows = [{"Tables": "movie_view"}]
         elif query.startswith("SHOW COLUMNS"):
             rows = [{"Field": "VideoVersionTypeItemType"}]
+        elif query.startswith("SELECT DISTINCT videoVersionTypeItemType"):
+            rows = [{"videoVersionTypeItemType": 0}]
         elif query.startswith("SELECT *"):
             rows = [{"idMovie": 1, "idFile": 2, "c00": "Film"}]
         else:
@@ -99,7 +101,10 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
     conn.select_db.assert_called_once_with("MyVideos131")
     assert "SET SESSION TRANSACTION READ ONLY" in queries
     assert "START TRANSACTION WITH CONSISTENT SNAPSHOT" in queries
-    assert "SELECT * FROM `movie_view` WHERE videoVersionTypeItemType = 0" in queries
+    assert (
+        "SELECT * FROM `movie_view` WHERE videoVersionTypeItemType IS NULL OR videoVersionTypeItemType = 0"
+        in queries
+    )
     assert not any(q.startswith(("INSERT", "DELETE", "UPDATE", "ALTER")) for q in queries)
     conn.commit.assert_not_called()
     conn.rollback.assert_called_once()

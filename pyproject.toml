@@ -15,6 +15,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
+browser = ["playwright>=1.50,<2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["kodi_library"]

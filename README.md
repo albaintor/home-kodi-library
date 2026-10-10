@@ -6,8 +6,9 @@ Catalogue indépendant pour consulter une bibliothèque Kodi et une collection p
 
 - Recherche libre dans les titres, synopsis, genres, collections et certaines métadonnées ; recherche sans distinction d'accents, avec correspondance par préfixe de mots.
 - Filtres combinables : film/série/épisode, Kodi/CLZ, genre, format, collection, vu/non vu/en cours/inconnu, ajouts des 30 derniers jours. L'API ajoute année, source précise et série parente.
-- Tri par titre, date d'ajout, année, note ou dernier visionnage ; ordre croissant/décroissant et pagination.
+- Tri par titre, date d'ajout, année, note ou dernier visionnage ; ordre croissant/décroissant. Chargement progressif par lots de 60 au défilement, avec bouton de secours et reprise après erreur.
 - Vue pochettes ou liste, fiche détaillée, notes, synopsis, éditions physiques et fichiers Kodi, reprise et historique de lecture.
+- Fiche responsive avec casting Kodi (interprètes et rôles), badges de définition vidéo, 3D, Dolby Vision/HDR10/HDR10+, audio Dolby/DTS et formats physiques. Les caractéristiques restent détaillées par édition dans l'API.
 - Synchronisation **en lecture seule** de MariaDB Kodi, films/séries/épisodes, identifiants IMDb/TMDB/TVDB, versions alternatives si exposées par `movie_view`.
 - Import XML CLZ Movies : éditions, formats Blu-ray/4K/3D/DVD, codes-barres, coffrets, langues, sous-titres et historique `seenhistory`.
 - Rapprochement Kodi/CLZ par identifiant fiable et type de média ; conservation des éditions. Les titres seuls ne provoquent pas de fusion.
@@ -40,6 +41,8 @@ docker compose up -d --build
 Adapter `PUID`/`PGID` et le propriétaire du dossier aux comptes du NAS si nécessaire. Ouvrir `http://IP_DU_NAS:8099`, puis saisir `API_TOKEN`. Dans **Connexions**, ajouter la source Kodi et/ou importer un export XML CLZ. Les mises à jour Kodi sont ensuite automatiques, toutes les 300 secondes par défaut. Un nouvel export CLZ remplace uniquement les entrées de la collection CLZ choisie.
 
 Pour MariaDB, utiliser un compte avec `SELECT` sur la base `MyVideos…`. Renseigner explicitement la base en cas de plusieurs bibliothèques. Sans nom, le connecteur sélectionne la version numérique accessible la plus élevée ; toutes les vues doivent être accessibles avec ce compte. Les connexions et mots de passe sont enregistrés dans le volume local, jamais renvoyés par l'API.
+
+Après une mise à jour ajoutant des métadonnées, utiliser **Connexions → Synchroniser** pour Kodi et réimporter l'XML dans la **collection CLZ existante**. Les badges HDR et Atmos utilisent uniquement les indications explicites de la source ; un disque UHD ou une piste TrueHD ne suffit pas à annoncer ces technologies.
 
 Les posters HTTP(S) publics sont téléchargés et mis en cache. Les images sur SMB/NFS ou un chemin local doivent être montées en lecture seule et déclarées dans `ARTWORK_MOUNTS` ; voir [le modèle et les images](docs/model.md). Les affiches indisponibles laissent une vignette lisible.
 
@@ -128,6 +131,14 @@ uvicorn kodi_library.app:create_app --factory --port 8099
 pytest -q
 ruff check kodi_library tests
 ruff format --check kodi_library tests
+```
+
+Vérification navigateur avec un catalogue synthétique, sans données personnelles :
+
+```bash
+pip install -e '.[dev,browser]'
+playwright install chromium
+PYTHONPATH=. python tests/browser/check_catalogue.py
 ```
 
 Les tests utilisent un XML synthétique et des connexions simulées ; aucun export privé, mot de passe ni base Kodi ne figure dans le dépôt. La première validation réelle de MariaDB, de Docker sur le NAS et de hass_ingress reste à réaliser sur l'installation cible. Ce dépôt fournit un service Docker autonome, pas encore une intégration HA installable ni un add-on Supervisor.

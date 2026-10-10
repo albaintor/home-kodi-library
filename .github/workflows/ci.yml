@@ -16,6 +16,16 @@ jobs:
       - run: ruff check kodi_library tests
       - run: ruff format --check kodi_library tests
       - run: pytest -q
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev,browser]'
+      - run: playwright install --with-deps chromium
+      - run: PYTHONPATH=. python tests/browser/check_catalogue.py
   docker:
     runs-on: ubuntu-latest
     strategy:

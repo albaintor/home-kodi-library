@@ -39,6 +39,10 @@ Ingress transmet un secret distinct dans `X-Kodi-Library-Ingress-Token`. Un simp
 
 Les filtres sont combinés avec **ET**. `q` recherche tous les mots saisis par préfixe, en ignorant la casse et les accents ; ce n'est pas une recherche par sous-chaîne arbitraire ni une correction orthographique. Les facettes sont globales au catalogue.
 
+Les noms et rôles du casting Kodi participent à la recherche. La fiche `/media/{id}` expose `cast: [{name, role, order}]`. `formats` contient les formats physiques et les labels techniques connus (par exemple `4K`, `1080p`, `3D`, `Dolby Vision`, `HDR10+`, `Dolby Atmos`). Les métadonnées de chaque édition contiennent `cast`, `video_streams`, `audio_streams` et les sous-titres lorsque Kodi les fournit. Ces flux sont propres au fichier, y compris aux versions alternatives ; les formats de l'œuvre réunissent ceux de ses éditions.
+
+Le défilement automatique de l'interface utilise ces mêmes routes paginées : première requête avec `offset=0&limit=60`, puis offsets 60, 120, etc., en conservant les filtres et le tri. Un client mobile peut utiliser la même pagination et `has_more`.
+
 Tri : `sort=title|date_added|year|rating|last_played`, `order=asc|desc`. Défaut : `date_added`, `desc`. Les valeurs inconnues sont toujours à la fin ; l'identifiant départage les égalités. `limit` vaut 60 par défaut, maximum 200 ; `offset` vaut 0. Résultat : `{items, total, limit, offset, has_more}`. Un nouvel import entre deux requêtes peut déplacer les résultats paginés.
 
 Les liens d'image renvoyés commencent par `/api/v1/…` et sont relatifs à la racine du service. Un client utilisant un préfixe de proxy doit les résoudre **sous sa base du service**, comme le fait le client Swift, sans effacer le préfixe Ingress.

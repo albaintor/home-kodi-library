@@ -20,7 +20,7 @@ def test_clz_shape_and_normalization(clz_xml):
     assert entries[0].user_rating is None
     assert entries[1].formats == ["Blu-ray"]
     assert entries[-1].kind == "tvshow"
-    assert entries[-1].formats == ["Blu-ray 3D"]
+    assert entries[-1].formats == ["3D", "Blu-ray 3D"]
 
 
 def test_multiple_editions_and_remake_are_preserved(store, clz_xml):

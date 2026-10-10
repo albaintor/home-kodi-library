@@ -328,7 +328,7 @@ class Store:
         search_text += " " + " ".join(
             str(p.get("metadata", {}).get(n) or "")
             for p, _ in entries
-            for n in ("director", "show_title", "tags")
+            for n in ("director", "show_title", "tags", "cast")
         )
         posters = list(dict.fromkeys(v for p, _ in entries for v in p.get("poster", [])))
         fanarts = list(dict.fromkeys(v for p, _ in entries for v in p.get("fanart", [])))
@@ -533,7 +533,15 @@ class Store:
                         },
                     }
                 )
-            return {**value, "identifiers": dict(ids), "editions": editions}
+            cast = next(
+                (
+                    edition["metadata"]["cast"]
+                    for edition in editions
+                    if edition["metadata"].get("cast")
+                ),
+                [],
+            )
+            return {**value, "identifiers": dict(ids), "editions": editions, "cast": cast}
 
     def artwork(self, work_id: str, aspect: str) -> list[str]:
         if aspect not in ("poster", "fanart"):

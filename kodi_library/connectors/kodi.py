@@ -16,6 +16,7 @@ import pymysql
 from defusedxml.common import DefusedXmlException
 from defusedxml.ElementTree import fromstring
 
+from ..media_formats import stream_metadata
 from ..utils import date_value, identifiers, integer, number, plain_text, positive
 from .base import ConnectorError, Record
 
@@ -65,7 +66,9 @@ def normalize_row(
     else:
         watched = play_count > 0
     original = row.get("c16" if kind == "movie" else "c14" if kind == "episode" else "c09")
-    path = str(row.get("strPath") or "") + str(row.get("strFilename") or "")
+    path = str(row.get("strPath") or "") + str(
+        row.get("strFileName") or row.get("strFilename") or ""
+    )
     genres = genre_list(
         row.get("genre") if kind == "episode" else row.get("c14" if kind == "movie" else "c08")
     )
@@ -108,7 +111,9 @@ def normalize_row(
             "file_id": int(file_id) if file_id is not None else None,
             "file": path,
             "version": row.get("videoVersionTypeName"),
-            "is_default": bool(row.get("isDefaultVersion", True)),
+            "is_default": bool(row["isDefaultVersion"])
+            if row.get("isDefaultVersion") is not None
+            else True,
             "show_title": row.get("strTitle") if kind == "episode" else None,
             "director": row.get("c15" if kind == "movie" else "c10" if kind == "episode" else ""),
             "studio": row.get("c18" if kind == "movie" else "studio"),
@@ -224,6 +229,9 @@ class KodiConnector:
         for table, columns in (
             ("art", "media_id,media_type,type,url"),
             ("uniqueid", "media_id,media_type,type,value"),
+            ("streamdetails", "idFile,iStreamType"),
+            ("actor", "actor_id,name"),
+            ("actor_link", "actor_id,media_id,media_type,role,cast_order"),
         ):
             if table in tables:
                 cursor.execute(f"SELECT {columns} FROM `{table}` LIMIT 1")
@@ -252,6 +260,28 @@ class KodiConnector:
             for row in cursor.fetchall():
                 uniqueids[(row["media_type"], int(row["media_id"]))][row["type"]] = row["value"]
         result = []
+        streams: dict[int, list[dict]] = defaultdict(list)
+        if "streamdetails" in tables:
+            cursor.execute("SELECT * FROM streamdetails")
+            for row in cursor.fetchall():
+                streams[int(row["idFile"])].append(row)
+        casts: dict[tuple[str, int], list[dict]] = defaultdict(list)
+        if {"actor", "actor_link"}.issubset(tables):
+            cursor.execute(
+                "SELECT l.media_type,l.media_id,a.name,l.role,l.cast_order "
+                "FROM actor_link l JOIN actor a ON a.actor_id=l.actor_id "
+                "WHERE l.media_type IN ('movie','tvshow','episode') "
+                "ORDER BY l.cast_order IS NULL,l.cast_order,a.name"
+            )
+            for row in cursor.fetchall():
+                if row.get("name"):
+                    casts[(row["media_type"], int(row["media_id"]))].append(
+                        {
+                            "name": str(row["name"]),
+                            "role": row.get("role") or None,
+                            "order": row.get("cast_order"),
+                        }
+                    )
         for kind, view, id_field in (
             ("movie", "movie_view", "idMovie"),
             ("tvshow", "tvshow_view", "idShow"),
@@ -262,16 +292,38 @@ class KodiConnector:
             # View names are fixed constants, never client-supplied SQL identifiers.
             cursor.execute(f"SHOW COLUMNS FROM `{view}`")
             columns = {row["Field"].casefold() for row in cursor.fetchall()}
-            condition = (
-                " WHERE videoVersionTypeItemType = 0"
-                if "videoversiontypeitemtype" in columns
-                else ""
-            )
+            condition = ""
+            if kind == "movie" and "videoversiontypeitemtype" in columns:
+                # Kodi 21 uses VERSION=0/EXTRA=1; newer schemas use 1/2.
+                # Default movie files identify the version type without guessing
+                # from a MyVideos suffix or accidentally importing extras.
+                cursor.execute(
+                    "SELECT DISTINCT videoVersionTypeItemType FROM `movie_view` "
+                    "WHERE isDefaultVersion = 1 AND videoVersionTypeItemType IS NOT NULL"
+                )
+                version_types = {int(next(iter(row.values()))) for row in cursor.fetchall()}
+                if len(version_types) > 1 or not version_types.issubset({0, 1}):
+                    raise ConnectorError(
+                        "Cannot identify movie versions in this Kodi schema. "
+                        "Default movie files have inconsistent asset types."
+                    )
+                condition = " WHERE videoVersionTypeItemType IS NULL"
+                if version_types:
+                    condition += f" OR videoVersionTypeItemType = {version_types.pop()}"
             cursor.execute(f"SELECT * FROM `{view}`{condition}")
             seen = set()
             for row in cursor.fetchall():
                 identity = (kind, int(row[id_field]))
                 record = normalize_row(kind, row, artwork.get(identity), uniqueids.get(identity))
+                file_id = record.metadata.get("file_id")
+                technical = stream_metadata(streams.get(file_id, []))
+                record.formats = technical.pop("formats")
+                record.metadata.update(technical)
+                record.metadata["cast"] = casts.get(identity, [])
+                record.metadata["audio_tracks"] = [
+                    " · ".join(str(v) for v in (s["codec"], s["channels"], s["language"]) if v)
+                    for s in technical["audio_streams"]
+                ]
                 if record.external_key in seen:
                     continue  # tvshow_view can include one row for each linked path
                 seen.add(record.external_key)

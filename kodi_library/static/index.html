@@ -5,13 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#11151e">
   <title>Bibliothèque · Home Kodi Library</title>
+  <link rel="icon" type="image/svg+xml" href="static/cinema.svg">
   <link rel="stylesheet" href="static/app.css">
   <script type="module" src="static/app.js"></script>
 </head>
 <body>
   <section id="login" hidden class="login-wrap">
     <form id="login-form" class="login-card">
-      <div class="brand-mark" aria-hidden="true">K</div>
+      <img class="brand-mark" src="static/cinema.svg" alt="" width="46" height="46">
       <p class="eyebrow">KODI LIBRARY</p>
       <h1>Votre bibliothèque,<br>à portée de main.</h1>
       <p>Films, séries et éditions physiques dans un même catalogue.</p>
@@ -23,7 +24,7 @@
   </section>
   <main id="app" hidden>
     <header class="main-header">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">K</span><span>KODI <b>LIBRARY</b></span></div>
+      <div class="brand"><img class="brand-mark" src="static/cinema.svg" alt="" width="36" height="36"><span>KODI <b>LIBRARY</b></span></div>
       <nav aria-label="Actions">
         <a class="quiet" href="docs" target="_blank" rel="noopener">API</a>
         <button id="connections-button" class="quiet">Connexions</button>
@@ -52,7 +53,7 @@
       <div class="results-heading"><span id="result-count" aria-live="polite"></span><button id="reset-filters" class="text-button" hidden>Effacer les filtres</button></div>
       <div id="error-banner" class="error-banner" role="alert" hidden></div>
       <section id="results" class="poster-grid" aria-label="Résultats du catalogue" aria-busy="false"></section>
-      <div id="pagination" class="pagination" hidden><button id="previous-page" class="secondary">← Précédent</button><span id="page-info"></span><button id="next-page" class="secondary">Suivant →</button></div>
+      <div id="pagination" class="pagination catalogue-loading" hidden><span id="page-info" aria-live="polite"></span><p id="load-more-status" role="status"></p><button id="load-more" class="secondary" type="button" aria-controls="results">Charger la suite</button><div id="load-more-trigger" aria-hidden="true"></div></div>
       <footer class="catalogue-footer"><span>Home Kodi Library</span><span id="sync-status"></span></footer>
     </section>
   </main>

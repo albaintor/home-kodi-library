@@ -148,9 +148,16 @@ class EditionView(BaseModel):
     last_played: str | None = None
 
 
+class CastMember(BaseModel):
+    name: str
+    role: str | None = None
+    order: int | None = None
+
+
 class MediaDetail(MediaSummary):
     identifiers: dict[str, list[str]]
     editions: list[EditionView]
+    cast: list[CastMember] = Field(default_factory=list)
 
 
 class MediaPage(BaseModel):

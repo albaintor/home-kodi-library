@@ -2824,6 +2824,41 @@
         ],
         "title": "Body_import_clz_api_v1_imports_clz_post"
       },
+      "CastMember": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "order": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "CastMember"
+      },
       "CatalogueStatus": {
         "properties": {
           "version": {
@@ -3461,6 +3496,13 @@
             },
             "type": "array",
             "title": "Editions"
+          },
+          "cast": {
+            "items": {
+              "$ref": "#/components/schemas/CastMember"
+            },
+            "type": "array",
+            "title": "Cast"
           }
         },
         "type": "object",
