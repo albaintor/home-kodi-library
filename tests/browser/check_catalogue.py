@@ -194,6 +194,10 @@ def main():
                 prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
+                page.locator("#lists-button").click()
+                expect(page.locator("#new-list-form")).to_be_visible()
+                expect(page.locator("#new-list-form input")).to_be_focused()
+                page.locator('[data-close="lists-dialog"]').click()
                 first = page.locator(".media-card").first.element_handle()
                 page.locator("#load-more-trigger").scroll_into_view_if_needed()
                 expect(page.locator(".media-card")).to_have_count(120)
@@ -372,6 +376,7 @@ def main():
                 if screenshots:
                     page.screenshot(path=str(Path(screenshots) / "detail-mobile.png"))
                 page.locator('[data-close="detail-dialog"]').click()
+                page.wait_for_function("!document.documentElement.classList.contains('modal-open')")
                 assert not page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
                 page.set_viewport_size({"width": 1440, "height": 1000})
                 page.locator("#lists-button").click()
@@ -419,7 +424,53 @@ def main():
                 assert saved_y > 0
                 page.locator('[data-close="detail-dialog"]').click()
                 expect(page.locator("#detail-dialog")).not_to_be_visible()
+                page.wait_for_function("!document.documentElement.classList.contains('modal-open')")
                 assert abs(page.evaluate("scrollY") - saved_y) < 2
+                # A catalogue shortcut creates a list, then adds a whole TV show.
+                series_source = store.save_source(
+                    {"name": "Séries de démonstration", "type": "kodi"}
+                )
+                store.apply_snapshot(
+                    series_source["id"],
+                    [
+                        Record(
+                            "tvshow:1",
+                            "tvshow",
+                            "Série de démonstration",
+                            identifiers={"tmdb": "9999"},
+                        )
+                    ],
+                )
+                page.locator("#create-list-button").click()
+                expect(page.locator("#new-list-form")).to_be_visible()
+                page.locator("#new-list-form input").fill("Séries à suivre")
+                page.locator("#new-list-form button").click()
+                expect(page.locator("#selected-list option:checked")).to_contain_text(
+                    "Séries à suivre"
+                )
+                new_list_id = page.locator("#selected-list").input_value()
+                page.locator("#list-add-button").click()
+                page.locator("#list-search").fill("Série de démonstration")
+                expect(page.locator(".search-list-result")).to_have_count(1)
+                page.locator("[data-add-list-media]").click()
+                expect(page.locator(".saved-media")).to_contain_text("Série de démonstration")
+                page.locator(".saved-media").click()
+                expect(page.locator(".detail-intro")).to_contain_text("Séries à suivre")
+                page.locator('[data-close="detail-dialog"]').click()
+                page.locator('[data-close="lists-dialog"]').click()
+                page.reload(wait_until="domcontentloaded")
+                expect(page.locator("#create-list-button")).to_be_visible()
+                page.locator("#lists-button").click()
+                expect(page.locator("#selected-list")).to_have_value(new_list_id)
+                expect(page.locator(".saved-media")).to_contain_text("Série de démonstration")
+                page.set_viewport_size({"width": 390, "height": 844})
+                assert page.evaluate("document.documentElement.scrollWidth<=innerWidth")
+                if screenshots:
+                    page.screenshot(path=str(Path(screenshots) / "series-list-mobile.png"))
+                page.locator('[data-close="lists-dialog"]').click()
+                if screenshots:
+                    page.evaluate("scrollTo(0,0)")
+                    page.screenshot(path=str(Path(screenshots) / "lists-catalogue-mobile.png"))
                 fallback = browser.new_page(viewport={"width": 1440, "height": 1000})
                 fallback.add_init_script("delete window.IntersectionObserver")
                 fallback.goto(prefix, wait_until="domcontentloaded")
@@ -431,6 +482,7 @@ def main():
                 store.delete_player(player["id"])
                 unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
+                unconfigured.locator("#kind").select_option("movie")
                 unconfigured.locator(".media-card").first.click()
                 expect(unconfigured.locator(".metadata-status")).to_contain_text(
                     "TMDB n’est pas configuré"
@@ -443,6 +495,22 @@ def main():
                 expect(unconfigured.locator("#connection-content")).to_contain_text(
                     "TMDB_API_TOKEN"
                 )
+                reader = browser.new_page(viewport={"width": 390, "height": 844})
+                reader.route(
+                    "**/auth/session",
+                    lambda route: route.fulfill(
+                        content_type="application/json",
+                        body=json.dumps(
+                            {"role": "read", "csrf_token": None, "access_method": "session"}
+                        ),
+                    ),
+                )
+                reader.goto(prefix, wait_until="domcontentloaded")
+                expect(reader.locator(".media-card")).to_have_count(60)
+                expect(reader.locator("#create-list-button")).to_be_hidden()
+                reader.locator('[data-action="lists"]').click()
+                expect(reader.locator("#lists-content")).to_contain_text("Accès en lecture seule")
+                expect(reader.locator("#new-list-form")).to_have_count(0)
                 assert not errors, errors
                 browser.close()
                 print(
