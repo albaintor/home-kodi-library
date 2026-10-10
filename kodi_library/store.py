@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .connectors.base import Record
+from .media_formats import canonical_format
 from .people import person_view, youtube_url
 from .utils import fold, now
 
@@ -337,7 +338,7 @@ class Store:
         )
         playback = progress or (kodi_watch[0] if kodi_watch else {})
         genres = sorted({v for p, _ in entries for v in p.get("genres", [])}, key=fold)
-        fmts = sorted({v for p, _ in entries for v in p.get("formats", [])}, key=fold)
+        fmts = sorted({canonical_format(v) for p, _ in entries for v in p.get("formats", [])}, key=fold)
         collections = sorted({v for p, _ in entries for v in p.get("collections", [])}, key=fold)
         types = sorted({t for _, t in entries})
         search_text = " ".join(
@@ -431,6 +432,7 @@ class Store:
         value = dict(row)
         for name in ("genres", "formats", "collections", "source_types"):
             value[name] = json.loads(value[name])
+        value["formats"] = sorted({canonical_format(v) for v in value["formats"]}, key=fold)
         value["artwork"] = {
             name: f"/api/v1/media/{value['id']}/artwork/{name}" if json.loads(value[name]) else None
             for name in ("poster", "fanart")
@@ -446,7 +448,7 @@ class Store:
         kind: str | None = None,
         watch_status: str | None = None,
         genre: str | None = None,
-        format: str | None = None,
+        format: str | list[str] | None = None,
         collection: str | None = None,
         source_type: str | None = None,
         source_id: str | None = None,
@@ -474,7 +476,6 @@ class Store:
                 params.append(value)
         for name, value in (
             ("genres", genre),
-            ("formats", format),
             ("collections", collection),
             ("source_types", source_type),
         ):
@@ -483,6 +484,20 @@ class Store:
                     f"EXISTS(SELECT 1 FROM json_each(w.{name}) WHERE value=? COLLATE NOCASE)"
                 )
                 params.append(value)
+        requested_formats = [format] if isinstance(format, str) else (format or [])
+        if len(requested_formats) > 20 or any(
+            not isinstance(label, str) or not 1 <= len(label.strip()) <= 120
+            for label in requested_formats
+        ):
+            raise ValueError("Invalid format filters.")
+        for label in dict.fromkeys(canonical_format(value) for value in requested_formats):
+            aliases = ("4K", "4K UHD") if label == "4K" else (label,)
+            placeholders = ",".join("?" for _ in aliases)
+            clauses.append(
+                f"EXISTS(SELECT 1 FROM json_each(w.formats) "
+                f"WHERE value COLLATE NOCASE IN ({placeholders}))"
+            )
+            params.extend(aliases)
         if source_id:
             clauses.append("EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id AND r.source_id=?)")
             params.append(source_id)
@@ -804,6 +819,9 @@ class Store:
                 ]
                 for name in ("genres", "formats", "collections")
             }
+            value["formats"] = sorted(
+                {canonical_format(label) for label in value["formats"]}, key=fold
+            )
             value["years"] = [
                 r[0]
                 for r in conn.execute(
