@@ -133,7 +133,8 @@ def stream_metadata(rows: list[dict], filename: str | None = None) -> dict:
         "audio_streams": audio,
         "subtitles": sorted(set(subtitles)),
         "formats": sorted(
-            resolutions | (set(technical_formats(labels)) - {"3D"})
+            resolutions
+            | (set(technical_formats(labels)) - {"3D"})
             | ({"3D"} if confirmed_3d else set())
         ),
     }
