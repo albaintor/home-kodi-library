@@ -1,0 +1,7 @@
+# Optional workaround for build-time DNS issues on Linux / Synology.
+# Usage: docker compose -f compose.yaml -f compose.build-host.yaml up -d --build
+services:
+  library:
+    build:
+      context: .
+      network: host

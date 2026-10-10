@@ -42,6 +42,39 @@ Pour MariaDB, utiliser un compte avec `SELECT` sur la base `MyVideos…`. Rensei
 
 Les posters HTTP(S) publics sont téléchargés et mis en cache. Les images sur SMB/NFS ou un chemin local doivent être montées en lecture seule et déclarées dans `ARTWORK_MOUNTS` ; voir [le modèle et les images](docs/model.md). Les affiches indisponibles laissent une vignette lisible.
 
+
+## Si la construction échoue sur une erreur DNS
+
+Un message `Temporary failure in name resolution` pendant `pip install` signifie que l'environnement de construction n'arrive pas à résoudre le serveur de paquets. Le message final `No matching distribution found` ne permet alors pas de conclure que la version manque.
+
+Sur un NAS Linux/Synology, essayer de construire avec le réseau du NAS :
+
+```bash
+sudo docker build --network=host -t home-kodi-library:local .
+sudo docker compose up -d --no-build
+```
+
+La première commande utilise le réseau hôte pendant la construction de l'image. La deuxième démarre l'image déjà construite avec le réseau du service défini dans `compose.yaml`.
+
+Une variante Compose est fournie pour conserver cette option dans les futures reconstructions :
+
+```bash
+git pull --ff-only
+sudo docker compose -f compose.yaml -f compose.build-host.yaml up -d --build
+```
+
+L'option `build.network` concerne les instructions `RUN` du Dockerfile. Ajouter `dns:` au service concerne les conteneurs en fonctionnement et ne corrige pas à lui seul le DNS de construction. Voir la [documentation Docker](https://docs.docker.com/reference/compose-file/build/#network).
+
+Si le réseau hôte échoue également, vérifier la résolution depuis le NAS puis depuis un conteneur :
+
+```bash
+nslookup pypi.org
+sudo docker run --rm python:3.12-slim python -c 'import socket; print(socket.getaddrinfo("pypi.org", 443))'
+sudo docker run --rm --dns 1.1.1.1 --dns 8.8.8.8 python:3.12-slim python -c 'import socket; print(socket.getaddrinfo("pypi.org", 443))'
+```
+
+Le dernier test utilise des DNS publics pour identifier un éventuel problème de DNS Docker. S'il réussit seul, les paramètres DNS du NAS/Docker doivent être corrigés ; le DNS configuré au niveau du service pourra aussi être nécessaire pour télécharger les affiches en fonctionnement.
+
 ## Depuis Home Assistant et depuis iOS
 
 - [Accès Home Assistant avec hass_ingress](docs/home-assistant.md), y compris à distance depuis la même URL Home Assistant.
