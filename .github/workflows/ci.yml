@@ -1,0 +1,34 @@
+name: checks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev]'
+      - run: ruff check kodi_library tests
+      - run: ruff format --check kodi_library tests
+      - run: pytest -q
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t home-kodi-library:test .
+      - name: Start and probe the container
+        run: |
+          docker run -d --name library -p 8099:8000 -e API_TOKEN=ci-test-token-00000000000000000000 home-kodi-library:test
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://localhost:8099/healthz; then break; fi
+            sleep 1
+          done
+          curl -fsS -H 'Authorization: Bearer ci-test-token-00000000000000000000' http://localhost:8099/api/v1/status
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8099/api/v1/media)" = 401
+      - if: always()
+        run: docker logs library

@@ -1,0 +1,10 @@
+# Validation initiale — 10 octobre 2026
+
+- **37 tests Python réussis** : recherche accent-insensible, tri/pagination, filtres combinés, instantanés atomiques et idempotents, rapprochements/identifiants contradictoires, conservation des éditions, relations séries/épisodes, contrôle d'accès Bearer/Ingress/cookie/CSRF, import XML et erreurs, expurgation des secrets, images locales et refus des URL privées, JSON-RPC simulé et fichier alternatif, historique CLZ.
+- Ruff : vérification et formatage réussis. JavaScript : vérification syntaxique réussie.
+- Construction Python sdist et wheel réussie ; HTML/CSS/JS présents dans le wheel.
+- Chromium, serveur local : accès direct par jeton et déconnexion, authentification par secret sous `/api/ingress/kodi_library/`, filtres combinés, recherche libre, tri, grille/liste, fiches, pagination, dialogue de connexions. Aucun événement d'erreur JavaScript. Vérification d'absence de débordement horizontal à 390 px.
+- Export CLZ fourni testé **localement** : 476 éditions, 429 titres après rapprochement par IMDb. Aucune balise de visionnage présente dans cet export. Son contenu privé et les captures de sa collection ne sont pas inclus dans le dépôt.
+- Exemple `seenhistory` fourni ensuite couvert par les tests : vu, deux dates, dernière date, historique vide/absent, dates invalides et rapprochement avec un fichier Kodi non lu.
+
+MariaDB et JSON-RPC sont simulés dans les tests ; aucune connexion à l'installation personnelle n'a été effectuée. Le chemin Ingress est simulé localement, sans installation réelle de Home Assistant. Docker n'est pas disponible dans l'environnement initial : le workflow GitHub construit l'image et effectue une sonde API authentifiée. L'exemple Swift est une base de client, pas une application iOS compilée/testée ici.

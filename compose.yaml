@@ -1,0 +1,23 @@
+services:
+  library:
+    build: .
+    image: home-kodi-library:local
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-8099}:8000"
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+    volumes:
+      - ./data:/data
+      # Optional: adapt to your NAS, then configure ARTWORK_MOUNTS in .env.
+      # - /volume1/media/posters:/artwork:ro
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 90s

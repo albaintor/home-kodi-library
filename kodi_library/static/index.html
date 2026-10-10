@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11151e">
+  <title>Bibliothèque · Home Kodi Library</title>
+  <link rel="stylesheet" href="static/app.css">
+  <script type="module" src="static/app.js"></script>
+</head>
+<body>
+  <section id="login" hidden class="login-wrap">
+    <form id="login-form" class="login-card">
+      <div class="brand-mark" aria-hidden="true">K</div>
+      <p class="eyebrow">KODI LIBRARY</p>
+      <h1>Votre bibliothèque,<br>à portée de main.</h1>
+      <p>Films, séries et éditions physiques dans un même catalogue.</p>
+      <label for="access-token">Jeton d’accès</label>
+      <input id="access-token" name="token" type="password" autocomplete="current-password" required placeholder="Votre jeton API">
+      <button class="primary" type="submit">Ouvrir la bibliothèque <span aria-hidden="true">→</span></button>
+      <p id="login-error" role="alert" class="error-text"></p>
+    </form>
+  </section>
+  <main id="app" hidden>
+    <header class="main-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">K</span><span>KODI <b>LIBRARY</b></span></div>
+      <nav aria-label="Actions">
+        <a class="quiet" href="docs" target="_blank" rel="noopener">API</a>
+        <button id="connections-button" class="quiet">Connexions</button>
+        <button id="logout-button" class="icon-button" aria-label="Se déconnecter">↪</button>
+      </nav>
+    </header>
+    <section class="catalogue">
+      <div class="heading-row"><div><p class="eyebrow">LE CATALOGUE</p><h1>Bibliothèque</h1><p id="catalogue-status" class="muted">Chargement du catalogue…</p></div><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
+      <div class="toolbar">
+        <label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Rechercher dans la bibliothèque" placeholder="Un titre, un genre, un mot du synopsis…" autocomplete="off"><kbd aria-hidden="true">/</kbd></label>
+        <button id="toggle-filters" class="filter-toggle" aria-expanded="true" aria-controls="filters">Filtres <span id="filter-count"></span></button>
+      </div>
+      <div class="quick-filters" aria-label="Sélections rapides">
+        <button data-quick="all" class="active">Tout</button><button data-quick="unwatched">À voir</button><button data-quick="in_progress">En cours</button><button data-quick="watched">Vus</button><button data-quick="recent">Derniers ajouts</button>
+      </div>
+      <section id="filters" class="filters" aria-label="Filtres et tri">
+        <label>Type<select id="kind"><option value="">Tous les médias</option><option value="movie">Films</option><option value="tvshow">Séries</option><option value="episode">Épisodes</option></select></label>
+        <label>Source<select id="source-type"><option value="">Toutes les sources</option><option value="kodi">Kodi</option><option value="clz">Collection physique</option></select></label>
+        <label>Genre<select id="genre"><option value="">Tous les genres</option></select></label>
+        <label>Format<select id="format"><option value="">Tous les formats</option></select></label>
+        <label>Collection<select id="collection"><option value="">Toutes les collections</option></select></label>
+        <label>État<select id="watch-status"><option value="">Tous les états</option><option value="unwatched">Non vus</option><option value="in_progress">En cours</option><option value="watched">Vus</option><option value="unknown">Non renseigné</option></select></label>
+        <label>Tri<select id="sort"><option value="date_added">Date d’ajout</option><option value="title">Titre</option><option value="year">Année</option><option value="rating">Note</option><option value="last_played">Dernière lecture</option></select></label>
+        <button id="sort-order" class="sort-order" aria-label="Inverser le sens du tri">↓ Décroissant</button>
+      </section>
+      <div class="results-heading"><span id="result-count" aria-live="polite"></span><button id="reset-filters" class="text-button" hidden>Effacer les filtres</button></div>
+      <div id="error-banner" class="error-banner" role="alert" hidden></div>
+      <section id="results" class="poster-grid" aria-label="Résultats du catalogue" aria-busy="false"></section>
+      <div id="pagination" class="pagination" hidden><button id="previous-page" class="secondary">← Précédent</button><span id="page-info"></span><button id="next-page" class="secondary">Suivant →</button></div>
+      <footer class="catalogue-footer"><span>Home Kodi Library</span><span id="sync-status"></span></footer>
+    </section>
+  </main>
+  <dialog id="detail-dialog" class="detail-dialog"><button class="dialog-close" data-close="detail-dialog" aria-label="Fermer la fiche">×</button><div id="detail-content"></div></dialog>
+  <dialog id="connections-dialog" class="connections-dialog"><button class="dialog-close" data-close="connections-dialog" aria-label="Fermer les connexions">×</button><p class="eyebrow">VOTRE CATALOGUE</p><h2>Connexions</h2><p class="muted">Importez une collection ou connectez la base Kodi. Les lecteurs sont facultatifs.</p><div id="connection-content"></div></dialog>
+  <div id="toast" class="toast" role="status" hidden></div>
+</body>
+</html>

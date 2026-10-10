@@ -1,0 +1,656 @@
+"""Transactional local catalogue. SQLite never shares Kodi's schema or writes to MariaDB."""
+
+import json
+import re
+import sqlite3
+from collections import defaultdict
+from contextlib import contextmanager
+from dataclasses import asdict
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import Any
+from uuid import uuid4
+
+from .connectors.base import Record
+from .utils import fold, now
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS sources (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
+ enabled INTEGER NOT NULL DEFAULT 1, config TEXT NOT NULL DEFAULT '{}',
+ last_sync TEXT, last_error TEXT
+);
+CREATE TABLE IF NOT EXISTS works (
+ id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+ sort_title TEXT NOT NULL DEFAULT '', original_title TEXT, year INTEGER, plot TEXT,
+ runtime_minutes INTEGER, rating REAL, user_rating REAL, date_added TEXT, last_played TEXT,
+ watch_status TEXT NOT NULL DEFAULT 'unknown', play_count INTEGER, resume_seconds REAL DEFAULT 0,
+ total_seconds REAL DEFAULT 0, parent_id TEXT REFERENCES works(id) ON DELETE SET NULL,
+ season INTEGER, episode INTEGER, genres TEXT DEFAULT '[]', formats TEXT DEFAULT '[]',
+ collections TEXT DEFAULT '[]', source_types TEXT DEFAULT '[]', poster TEXT DEFAULT '[]',
+ fanart TEXT DEFAULT '[]', search_text TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS records (
+ id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+ external_key TEXT NOT NULL, payload TEXT NOT NULL,
+ UNIQUE(source_id,external_key)
+);
+CREATE INDEX IF NOT EXISTS records_work ON records(work_id);
+CREATE INDEX IF NOT EXISTS records_source ON records(source_id);
+CREATE TABLE IF NOT EXISTS identifiers (
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ kind TEXT NOT NULL, namespace TEXT NOT NULL, value TEXT NOT NULL,
+ PRIMARY KEY(work_id,namespace,value)
+);
+CREATE INDEX IF NOT EXISTS identifier_lookup ON identifiers(kind,namespace,value);
+CREATE INDEX IF NOT EXISTS work_sort_title ON works(sort_title,id);
+CREATE INDEX IF NOT EXISTS work_date ON works(date_added,id);
+CREATE INDEX IF NOT EXISTS work_kind_watch ON works(kind,watch_status);
+CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(work_id UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
+CREATE TABLE IF NOT EXISTS players (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL,
+ source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+ config TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS jobs (
+ id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+ status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT
+);
+PRAGMA user_version = 1;
+"""
+
+
+def encode(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+class Store:
+    def __init__(self, path: Path):
+        self.path = path
+
+    def initialize(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.parent.chmod(0o700)
+        with self.connect() as conn:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            if version > 1:
+                raise RuntimeError(
+                    "Catalogue schema is newer than this application; do not downgrade."
+                )
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.executescript(SCHEMA)
+            conn.execute(
+                "UPDATE jobs SET status='failed',finished_at=?,error='Application restarted before the job completed' WHERE status IN ('pending','running')",
+                (now(),),
+            )
+        self.path.chmod(0o600)
+
+    @contextmanager
+    def connect(self):
+        conn = sqlite3.connect(self.path, timeout=30)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("PRAGMA busy_timeout=30000")
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
+    def sources(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT s.*,COUNT(r.id) AS item_count FROM sources s LEFT JOIN records r ON r.source_id=s.id GROUP BY s.id ORDER BY s.name"
+            ).fetchall()
+            return [self._source_view(r) for r in rows]
+
+    @staticmethod
+    def _source_view(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        config = json.loads(value["config"])
+        config["has_password"] = bool(config.pop("password", ""))
+        value["config"] = config
+        value["enabled"] = bool(value["enabled"])
+        return value
+
+    def source(self, source_id: str, *, private: bool = False) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT s.*, (SELECT COUNT(*) FROM records r WHERE r.source_id=s.id) AS item_count FROM sources s WHERE id=?",
+                (source_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            if private:
+                value = dict(row)
+                value["config"] = json.loads(value["config"])
+                value["enabled"] = bool(value["enabled"])
+                return value
+            return self._source_view(row)
+
+    def save_source(self, data: dict[str, Any], source_id: str | None = None) -> dict[str, Any]:
+        source_id = source_id or str(uuid4())
+        config = dict(data.get("config", {}))
+        with self.connect() as conn:
+            existing = conn.execute(
+                "SELECT type,config FROM sources WHERE id=?", (source_id,)
+            ).fetchone()
+            if existing and existing["type"] != data["type"]:
+                raise ValueError("The source type cannot be changed.")
+            if config.get("password") is None:
+                config["password"] = (
+                    json.loads(existing["config"]).get("password", "") if existing else ""
+                )
+            conn.execute(
+                "INSERT INTO sources(id,name,type,enabled,config) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,config=excluded.config",
+                (
+                    source_id,
+                    data["name"],
+                    data["type"],
+                    bool(data.get("enabled", True)),
+                    encode(config),
+                ),
+            )
+        return self.source(source_id)
+
+    def delete_source(self, source_id: str) -> None:
+        with self.connect() as conn:
+            affected = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT work_id FROM records WHERE source_id=?", (source_id,)
+                )
+            ]
+            conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
+            for work_id in affected:
+                self._rebuild(conn, work_id)
+            self._prune(conn)
+
+    def apply_snapshot(self, source_id: str, records: list[Record]) -> dict[str, Any]:
+        """Atomic replacement per source; stable edition IDs across subsequent imports."""
+        with self.connect() as conn:
+            source = conn.execute("SELECT * FROM sources WHERE id=?", (source_id,)).fetchone()
+            if not source:
+                raise ValueError("Source no longer exists.")
+            old = {
+                r["external_key"]: r
+                for r in conn.execute("SELECT * FROM records WHERE source_id=?", (source_id,))
+            }
+            affected = {r["work_id"] for r in old.values()}
+            seen = set()
+            resolved = {}
+            inserted = updated = conflicts = 0
+            # Parents first ensures episode links are available in the same import.
+            for record in sorted(records, key=lambda r: r.kind == "episode"):
+                if record.external_key in seen:
+                    raise ValueError("The source snapshot contains duplicate identifiers.")
+                seen.add(record.external_key)
+                payload = asdict(record)
+                existing = old.get(record.external_key)
+                if existing:
+                    work_id, record_id = existing["work_id"], existing["id"]
+                    # Identifiers can change after a rescrape: never overwrite metadata
+                    # on a previously linked CLZ work if the Kodi IDs were recycled.
+                    previous = json.loads(existing["payload"])
+                    changed_identity = previous["kind"] != record.kind or any(
+                        k in record.identifiers and v != record.identifiers[k]
+                        for k, v in previous.get("identifiers", {}).items()
+                    )
+                    if changed_identity:
+                        work_id, conflict = self._match_work(conn, record, exclude=work_id)
+                        conflicts += conflict
+                    updated += 1
+                else:
+                    work_id, conflict = self._match_work(conn, record)
+                    record_id = str(uuid4())
+                    conflicts += conflict
+                    inserted += 1
+                affected.add(work_id)
+                resolved[record.external_key] = work_id
+                if record.parent_key:
+                    payload["parent_id"] = resolved.get(record.parent_key)
+                    if not payload["parent_id"]:
+                        parent = conn.execute(
+                            "SELECT work_id FROM records WHERE source_id=? AND external_key=?",
+                            (source_id, record.parent_key),
+                        ).fetchone()
+                        payload["parent_id"] = parent[0] if parent else None
+                conn.execute(
+                    "INSERT INTO records(id,work_id,source_id,external_key,payload) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_key) DO UPDATE SET work_id=excluded.work_id,payload=excluded.payload",
+                    (record_id, work_id, source_id, record.external_key, encode(payload)),
+                )
+                # Register immediately so two physical editions in this same import
+                # can resolve to one work. Rebuild removes obsolete identifiers.
+                for namespace, value in record.identifiers.items():
+                    conn.execute(
+                        "INSERT OR IGNORE INTO identifiers VALUES(?,?,?,?)",
+                        (work_id, record.kind, namespace, value),
+                    )
+            deleted = 0
+            for key, row in old.items():
+                if key not in seen:
+                    conn.execute("DELETE FROM records WHERE id=?", (row["id"],))
+                    deleted += 1
+            for work_id in affected:
+                self._rebuild(conn, work_id)
+            self._prune(conn)
+            conn.execute(
+                "UPDATE sources SET last_sync=?,last_error=NULL WHERE id=?", (now(), source_id)
+            )
+            return {
+                "imported": len(records),
+                "created_editions": inserted,
+                "updated_editions": updated,
+                "removed_editions": deleted,
+                "matching_conflicts": conflicts,
+            }
+
+    @staticmethod
+    def _match_work(
+        conn: sqlite3.Connection, record: Record, exclude: str | None = None
+    ) -> tuple[str, int]:
+        candidates = set()
+        for namespace, value in record.identifiers.items():
+            candidates.update(
+                r[0]
+                for r in conn.execute(
+                    "SELECT work_id FROM identifiers WHERE kind=? AND namespace=? AND value=?",
+                    (record.kind, namespace, value),
+                )
+                if r[0] != exclude
+            )
+        if len(candidates) == 1:
+            candidate = next(iter(candidates))
+            known: dict[str, set[str]] = defaultdict(set)
+            for row in conn.execute(
+                "SELECT namespace,value FROM identifiers WHERE work_id=?", (candidate,)
+            ):
+                known[row[0]].add(row[1])
+            if not any(
+                namespace in known and value not in known[namespace]
+                for namespace, value in record.identifiers.items()
+            ):
+                return candidate, 0
+        work_id = str(uuid4())
+        conn.execute("INSERT INTO works(id,kind) VALUES(?,?)", (work_id, record.kind))
+        # Similar titles are deliberately not enough to merge remakes/editions.
+        return work_id, int(bool(candidates))
+
+    @staticmethod
+    def _rebuild(conn: sqlite3.Connection, work_id: str) -> None:
+        rows = conn.execute(
+            "SELECT r.payload,s.type FROM records r JOIN sources s ON s.id=r.source_id WHERE r.work_id=?",
+            (work_id,),
+        ).fetchall()
+        conn.execute("DELETE FROM identifiers WHERE work_id=?", (work_id,))
+        conn.execute("DELETE FROM works_fts WHERE work_id=?", (work_id,))
+        if not rows:
+            return
+        entries = [(json.loads(row["payload"]), row["type"]) for row in rows]
+        entries.sort(
+            key=lambda p: (p[1] != "kodi", not p[0].get("metadata", {}).get("is_default", True))
+        )
+        primary = entries[0][0]
+
+        def choose(name: str):
+            return next(
+                (p[name] for p, _ in entries if p.get(name) not in (None, "", [], {})), None
+            )
+
+        known_watch = [p for p, _ in entries if p.get("watched") is not None]
+        kodi_watch = [p for p, t in entries if t == "kodi" and p.get("watched") is not None]
+        progress = next(
+            (p for p in kodi_watch if not p["watched"] and p.get("resume_seconds", 0) > 0), None
+        )
+        partial_show = any(
+            p.get("metadata", {}).get("watched_episodes", 0) and not p["watched"]
+            for p in known_watch
+        )
+        status = (
+            "watched"
+            if any(p["watched"] for p in known_watch)
+            else "in_progress"
+            if progress or partial_show
+            else "unwatched"
+            if known_watch
+            else "unknown"
+        )
+        playback = progress or (kodi_watch[0] if kodi_watch else {})
+        genres = sorted({v for p, _ in entries for v in p.get("genres", [])}, key=fold)
+        fmts = sorted({v for p, _ in entries for v in p.get("formats", [])}, key=fold)
+        collections = sorted({v for p, _ in entries for v in p.get("collections", [])}, key=fold)
+        types = sorted({t for _, t in entries})
+        search_text = " ".join(
+            str(p.get(n) or "") for p, _ in entries for n in ("title", "original_title", "plot")
+        )
+        search_text += " " + " ".join(genres + collections)
+        search_text += " " + " ".join(
+            str(p.get("metadata", {}).get(n) or "")
+            for p, _ in entries
+            for n in ("director", "show_title", "tags")
+        )
+        posters = list(dict.fromkeys(v for p, _ in entries for v in p.get("poster", [])))
+        fanarts = list(dict.fromkeys(v for p, _ in entries for v in p.get("fanart", [])))
+        values = {
+            "kind": primary["kind"],
+            "title": choose("title"),
+            "sort_title": fold(choose("sort_title") or choose("title") or ""),
+            **{
+                n: choose(n)
+                for n in (
+                    "original_title",
+                    "year",
+                    "plot",
+                    "runtime_minutes",
+                    "rating",
+                    "user_rating",
+                    "date_added",
+                    "parent_id",
+                    "season",
+                    "episode",
+                )
+            },
+            "last_played": max(
+                (p["last_played"] for p, _ in entries if p.get("last_played")), default=None
+            ),
+            "watch_status": status,
+            "play_count": max((p.get("play_count") or 0 for p in known_watch), default=None),
+            "resume_seconds": playback.get("resume_seconds", 0),
+            "total_seconds": playback.get("total_seconds", 0),
+            "genres": encode(genres),
+            "formats": encode(fmts),
+            "collections": encode(collections),
+            "source_types": encode(types),
+            "poster": encode(posters),
+            "fanart": encode(fanarts),
+            "search_text": fold(search_text),
+        }
+        conn.execute(
+            "UPDATE works SET " + ",".join(f"{n}=?" for n in values) + " WHERE id=?",
+            (*values.values(), work_id),
+        )
+        conn.execute(
+            "INSERT INTO works_fts(work_id,search_text) VALUES(?,?)",
+            (work_id, values["search_text"]),
+        )
+        for payload, _ in entries:
+            for namespace, value in payload.get("identifiers", {}).items():
+                conn.execute(
+                    "INSERT OR IGNORE INTO identifiers VALUES(?,?,?,?)",
+                    (work_id, primary["kind"], namespace, value),
+                )
+
+    @staticmethod
+    def _prune(conn: sqlite3.Connection) -> None:
+        conn.execute(
+            "DELETE FROM works_fts WHERE work_id IN (SELECT id FROM works w WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id))"
+        )
+        conn.execute(
+            "DELETE FROM works WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=works.id)"
+        )
+
+    @staticmethod
+    def _summary(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        for name in ("genres", "formats", "collections", "source_types"):
+            value[name] = json.loads(value[name])
+        value["artwork"] = {
+            name: f"/api/v1/media/{value['id']}/artwork/{name}" if json.loads(value[name]) else None
+            for name in ("poster", "fanart")
+        }
+        for name in ("poster", "fanart", "search_text", "sort_title"):
+            value.pop(name, None)
+        return value
+
+    def media(
+        self,
+        *,
+        q: str = "",
+        kind: str | None = None,
+        watch_status: str | None = None,
+        genre: str | None = None,
+        format: str | None = None,
+        collection: str | None = None,
+        source_type: str | None = None,
+        source_id: str | None = None,
+        parent_id: str | None = None,
+        year: int | None = None,
+        recent_days: int | None = None,
+        sort: str = "date_added",
+        order: str = "desc",
+        limit: int = 60,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        clauses, params = [], []
+        words = re.findall(r"\w+", q, flags=re.UNICODE)
+        if words:
+            clauses.append("w.id IN (SELECT work_id FROM works_fts WHERE works_fts MATCH ?)")
+            params.append(" AND ".join('"' + word.replace('"', '""') + '"*' for word in words))
+        for name, value in (
+            ("kind", kind),
+            ("watch_status", watch_status),
+            ("parent_id", parent_id),
+            ("year", year),
+        ):
+            if value is not None:
+                clauses.append(f"w.{name}=?")
+                params.append(value)
+        for name, value in (
+            ("genres", genre),
+            ("formats", format),
+            ("collections", collection),
+            ("source_types", source_type),
+        ):
+            if value is not None:
+                clauses.append(
+                    f"EXISTS(SELECT 1 FROM json_each(w.{name}) WHERE value=? COLLATE NOCASE)"
+                )
+                params.append(value)
+        if source_id:
+            clauses.append("EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id AND r.source_id=?)")
+            params.append(source_id)
+        if recent_days:
+            clauses.append("w.date_added>=?")
+            params.append(
+                (datetime.now(UTC) - timedelta(days=recent_days)).isoformat(timespec="seconds")[:19]
+            )
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        fields = {
+            "title": "sort_title",
+            "date_added": "date_added",
+            "year": "year",
+            "rating": "rating",
+            "last_played": "last_played",
+        }
+        if (
+            sort not in fields
+            or order not in ("asc", "desc")
+            or not 1 <= limit <= 200
+            or offset < 0
+        ):
+            raise ValueError("Invalid pagination or sort option.")
+        column = fields[sort]
+        with self.connect() as conn:
+            conn.execute("BEGIN")  # count and page see the same snapshot
+            total = conn.execute("SELECT COUNT(*) FROM works w" + where, params).fetchone()[0]
+            rows = conn.execute(
+                "SELECT w.* FROM works w"
+                + where
+                + f" ORDER BY w.{column} IS NULL,w.{column} {order},w.id ASC LIMIT ? OFFSET ?",
+                (*params, limit, offset),
+            ).fetchall()
+            return {
+                "items": [self._summary(r) for r in rows],
+                "total": total,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + len(rows) < total,
+            }
+
+    def detail(self, work_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            row = conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
+            if row is None:
+                return None
+            value = self._summary(row)
+            ids: dict[str, list[str]] = defaultdict(list)
+            for identity in conn.execute(
+                "SELECT namespace,value FROM identifiers WHERE work_id=? ORDER BY namespace,value",
+                (work_id,),
+            ):
+                ids[identity[0]].append(identity[1])
+            editions = []
+            for record in conn.execute(
+                "SELECT r.*,s.name,s.type FROM records r JOIN sources s ON s.id=r.source_id WHERE work_id=? ORDER BY s.type DESC,r.external_key",
+                (work_id,),
+            ):
+                payload = json.loads(record["payload"])
+                editions.append(
+                    {
+                        "id": record["id"],
+                        "source_id": record["source_id"],
+                        "source_name": record["name"],
+                        "source_type": record["type"],
+                        "external_key": record["external_key"],
+                        "identifiers": payload["identifiers"],
+                        "metadata": {
+                            **payload["metadata"],
+                            "formats": payload["formats"],
+                            "collections": payload["collections"],
+                        },
+                        **{
+                            n: payload.get(n)
+                            for n in (
+                                "watched",
+                                "play_count",
+                                "resume_seconds",
+                                "total_seconds",
+                                "date_added",
+                                "last_played",
+                            )
+                        },
+                    }
+                )
+            return {**value, "identifiers": dict(ids), "editions": editions}
+
+    def artwork(self, work_id: str, aspect: str) -> list[str]:
+        if aspect not in ("poster", "fanart"):
+            return []
+        with self.connect() as conn:
+            row = conn.execute(f"SELECT {aspect} FROM works WHERE id=?", (work_id,)).fetchone()
+            return json.loads(row[0]) if row else []
+
+    def facets(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            value = {
+                name: [
+                    r[0]
+                    for r in conn.execute(
+                        f"SELECT DISTINCT j.value FROM works w,json_each(w.{name}) j ORDER BY j.value COLLATE NOCASE"
+                    )
+                ]
+                for name in ("genres", "formats", "collections")
+            }
+            value["years"] = [
+                r[0]
+                for r in conn.execute(
+                    "SELECT DISTINCT year FROM works WHERE year IS NOT NULL ORDER BY year DESC"
+                )
+            ]
+        value["sources"] = self.sources()
+        return value
+
+    def status(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            counts = {
+                r[0]: r[1] for r in conn.execute("SELECT kind,COUNT(*) FROM works GROUP BY kind")
+            }
+            editions = conn.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+        return {
+            "works": sum(counts.values()),
+            "editions": editions,
+            "counts": counts,
+            "sources": self.sources(),
+        }
+
+    def new_job(self, source_id: str) -> dict[str, Any]:
+        job_id = str(uuid4())
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO jobs(id,source_id,status,created_at) VALUES(?,?,'pending',?)",
+                (job_id, source_id, now()),
+            )
+        return self.job(job_id)
+
+    def job(self, job_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
+            if row is None:
+                return None
+            value = dict(row)
+            value["result"] = json.loads(value["result"]) if value["result"] else None
+            return value
+
+    def finish_job(
+        self, job_id: str, *, result: dict[str, Any] | None = None, error: str | None = None
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET status=?,finished_at=?,result=?,error=? WHERE id=?",
+                (
+                    "failed" if error else "completed",
+                    now(),
+                    encode(result) if result else None,
+                    error,
+                    job_id,
+                ),
+            )
+            if error:
+                conn.execute(
+                    "UPDATE sources SET last_error=? WHERE id=(SELECT source_id FROM jobs WHERE id=?)",
+                    (error, job_id),
+                )
+
+    def start_job(self, job_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
+
+    def players(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            rows = conn.execute("SELECT * FROM players ORDER BY name").fetchall()
+            return [self._player_view(r) for r in rows]
+
+    @staticmethod
+    def _player_view(row: sqlite3.Row) -> dict[str, Any]:
+        config = json.loads(row["config"])
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "source_id": row["source_id"],
+            "has_password": bool(config.pop("password", "")),
+            **config,
+        }
+
+    def player(self, player_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute("SELECT * FROM players WHERE id=?", (player_id,)).fetchone()
+            return {**dict(row), "config": json.loads(row["config"])} if row else None
+
+    def save_player(self, data: dict[str, Any], player_id: str | None = None) -> dict[str, Any]:
+        player_id = player_id or str(uuid4())
+        config = {k: v for k, v in data.items() if k not in ("name", "source_id")}
+        with self.connect() as conn:
+            if config.get("password") is None:
+                old = conn.execute("SELECT config FROM players WHERE id=?", (player_id,)).fetchone()
+                config["password"] = json.loads(old[0]).get("password", "") if old else ""
+            conn.execute(
+                "INSERT INTO players(id,name,source_id,config) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,source_id=excluded.source_id,config=excluded.config",
+                (player_id, data["name"], data["source_id"], encode(config)),
+            )
+        return next(p for p in self.players() if p["id"] == player_id)
+
+    def delete_player(self, player_id: str) -> None:
+        with self.connect() as conn:
+            conn.execute("DELETE FROM players WHERE id=?", (player_id,))
