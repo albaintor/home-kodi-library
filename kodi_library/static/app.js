@@ -13,7 +13,7 @@ if(typeof preferences!=='object'||Array.isArray(preferences)) preferences={};
 const filterIds = ['search','kind','source-type','genre','format','collection','watch-status','sort'];
 let filtersRestored=false;
 const savedView = ['grid','list'].includes(preferences.view)?preferences.view:readStorage('kodi_library_view');
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
   writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
@@ -72,34 +72,155 @@ function castMarkup(people=[]) {
     return `<section class="detail-section credits-section"><p class="section-label">${label.toUpperCase()} · ${group.length}</p>${members(group.slice(0,8))}${group.length>8?`<details class="cast-more"><summary>Voir les ${group.length-8} autres personnes</summary>${members(group.slice(8))}</details>`:''}</section>`;
   }).join('');
 }
-function personalMarkup(item) {
-  if(state.role!=='admin') return '';
-  const watched=item.personal?.watched;
-  return `<form id="personal-form" class="personal-form"><label>Votre note / 10<input name="user_rating" type="number" min="0" max="10" step="0.5" value="${esc(item.personal?.user_rating??'')}" placeholder="${esc(item.user_rating??'Non renseignée')}"></label><label>Visionnage<select name="watched"><option value="" ${watched==null?'selected':''}>Depuis les sources</option><option value="true" ${watched===true?'selected':''}>Vu</option><option value="false" ${watched===false?'selected':''}>Non vu</option></select></label><button type="submit" class="secondary">Enregistrer</button><p class="hint">Les valeurs personnelles restent enregistrées après une synchronisation. Une note vide ou « Depuis les sources » rétablit la valeur importée.</p></form>`;
+function actionIcon(name) {
+  const icons={
+    star:'<path d="m12 2.5 2.9 5.9 6.5.9-4.7 4.6 1.1 6.5-5.8-3.1-5.8 3.1 1.1-6.5-4.7-4.6 6.5-.9z"/>',
+    youtube:'<rect x="1" y="4" width="22" height="16" rx="5" fill="#ff3838"/><path d="m10 8 6 4-6 4z" fill="white"/>',
+    watch:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
+    watched:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="m16 20 2 2 4-5"/>',
+    refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/>'
+  };
+  const filled=['star','youtube'].includes(name);
+  return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="${filled?'currentColor':'none'}" ${filled?'':'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'}>${icons[name]||''}</svg>`;
+}
+function personalActions(item) {
+  const writable=state.role==='admin'&&!state.personalPending.has(item.id);
+  const value=item.user_rating;
+  return `<div class="rating-control"><button id="rating-button" class="action-button rating-button ${value!=null?'rated':''}" aria-label="Votre note : ${value!=null?esc(value)+'/10':'non renseignée'}${state.role==='admin'?', modifier':''}" aria-haspopup="dialog" aria-controls="rating-popover" aria-expanded="false" ${writable?'':'disabled'}>${actionIcon('star')}<span class="rating-value">${value!=null?esc(value):'—'}</span></button><div id="rating-popover" class="rating-popover" popover="manual" role="dialog" aria-label="Modifier votre note" hidden><div class="rating-popover-heading"><strong>Votre note</strong><output id="rating-preview">${value!=null?esc(value):'—'}<small> / 10</small></output></div><div class="rating-stars" role="group" aria-label="Choisir une note sur dix">${Array.from({length:10},(_,i)=>`<button class="rating-choice" data-rating="${i+1}" aria-label="Donner la note de ${i+1} sur 10" aria-pressed="${value===i+1}" ${writable?'':'disabled'}><span class="rating-glyph">${actionIcon('star')}<span class="rating-choice-fill">${actionIcon('star')}</span></span><small>${i+1}</small></button>`).join('')}</div><label class="rating-slider-label">Par demi-point<input id="rating-slider" type="range" min="0" max="10" step="0.5" value="${value??0}" aria-label="Votre note par demi-point" ${writable?'':'disabled'}></label><button class="text-button rating-reset" data-rating-reset ${writable?'':'disabled'}>Utiliser la note des sources</button><p class="hint">Cliquez sur une étoile pour enregistrer.</p></div></div>`;
+}
+function watchMarkup(item) {
+  const watched=item.watch_status==='watched';
+  const label=state.role==='admin'?`${stateLabels[item.watch_status]} · Marquer comme ${watched?'non vu':'vu'}`:`${stateLabels[item.watch_status]} · Accès en lecture seule`;
+  return `<button id="watch-button" class="status-chip watch-button ${esc(item.watch_status)}" aria-label="${esc(label)}" aria-pressed="${watched}" title="${esc(label)}" data-tooltip="${esc(label)}" ${state.role==='admin'&&!state.personalPending.has(item.id)?'':'disabled'}>${actionIcon(watched?'watched':'watch')}<span class="watch-state">${esc(stateLabels[item.watch_status])}</span></button>`;
+}
+function detailActions(item) {
+  const trailers=[...new Set(item.trailers||[])];
+  const link=trailers[0]||'https://www.youtube.com/results?search_query='+encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce');
+  const multiple=trailers.length>1;
+  const label=multiple?`Choisir une bande-annonce parmi ${trailers.length}`:trailers.length?'Voir la bande-annonce sur YouTube':'Rechercher une bande-annonce sur YouTube';
+  const attributes=multiple?'id="open-trailers" aria-haspopup="dialog" aria-controls="trailers-dialog"':`id="trailer-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer"`;
+  const trailerButton=`<${multiple?'button':'a'} ${attributes} class="action-button trailer-button" aria-label="${label}" title="${label}">${actionIcon('youtube')}<span>Bande-annonce${multiple?` · ${trailers.length}`:''}</span></${multiple?'button':'a'}>`;
+  const playable=item.kind!=='tvshow'&&item.editions.some(e=>e.source_type==='kodi');
+  return `<div class="detail-actions compact-actions">${trailerButton}${personalActions(item)}${playable?`<button id="open-playback" class="action-button kodi-button" title="Lire sur Kodi" data-tooltip="Lire sur Kodi" aria-label="Lire sur Kodi" aria-haspopup="dialog" aria-controls="play-dialog"><img src="${esc(url('static/kodi-logo.svg'))}" alt="" width="27" height="27"></button>`:''}<span id="personal-status" class="visually-hidden" role="status" aria-live="polite"></span></div>`;
+}
+function openTrailers() {
+  hideRatingPopover();
+  const item=state.detail;if(!item)return;
+  $('trailers-content').innerHTML=`<p class="play-media-title">${esc(item.title)}</p><div class="trailer-choices">${[...new Set(item.trailers||[])].map((link,index)=>`<a class="external-button" data-trailer href="${esc(link)}" target="_blank" rel="noopener noreferrer">${actionIcon('youtube')}<span>Bande-annonce ${index+1}<small>YouTube</small></span><span aria-hidden="true">↗</span></a>`).join('')}</div>`;
+  showDialog('trailers-dialog');
+}
+function metadataAction(item) {
+  if(item.kind==='episode')return '';
+  const configured=item.tmdb_available;
+  const label=configured?'Rafraîchir les métadonnées TMDB':'Configurer TMDB dans les paramètres';
+  return `<div class="detail-tools"><button ${configured?'id="refresh-metadata"':'data-action="connections"'} class="action-button tmdb-button ${state.enrichingIds.has(item.id)?'is-loading':''}" title="${label}" data-tooltip="${label}" aria-label="${label}" ${state.role==='admin'&&!state.enrichingIds.has(item.id)?'':'disabled'}><img src="${esc(url('static/tmdb-logo.svg'))}" alt="" width="27" height="27">${configured?`<span class="refresh-mark">${actionIcon('refresh')}</span>`:''}</button></div>`;
+}
+let ratingCloseTimer;
+function positionRatingPopover() {
+  const popup=$('rating-popover'),button=$('rating-button');if(!popup||popup.hidden||!button)return;
+  const rect=button.getBoundingClientRect(),gap=10,edge=12;
+  popup.style.left=`${Math.max(edge,Math.min(rect.left,innerWidth-popup.offsetWidth-edge))}px`;
+  const below=rect.bottom+gap;
+  const top=below+popup.offsetHeight<=innerHeight-edge?below:Math.max(edge,rect.top-popup.offsetHeight-gap);
+  popup.style.top=`${top}px`;
+}
+function showRatingPopover(focus=false) {
+  clearTimeout(ratingCloseTimer);
+  const popup=$('rating-popover'),button=$('rating-button');if(!popup||!button||button.disabled)return;
+  popup.hidden=false;
+  if(popup.showPopover&&!popup.matches(':popover-open'))popup.showPopover();
+  popup.dataset.open='true';button.setAttribute('aria-expanded','true');positionRatingPopover();
+  if(focus)$('rating-slider').focus({preventScroll:true});
+}
+function hideRatingPopover() {
+  clearTimeout(ratingCloseTimer);
+  const popup=$('rating-popover');
+  if(popup){if(popup.hidePopover&&popup.matches(':popover-open'))popup.hidePopover();popup.hidden=true;delete popup.dataset.open;}
+  $('rating-button')?.setAttribute('aria-expanded','false');
+}
+function scheduleRatingClose() {
+  clearTimeout(ratingCloseTimer);
+  ratingCloseTimer=setTimeout(()=>{if(!$('rating-popover')?.contains(document.activeElement))hideRatingPopover();},180);
+}
+function previewRating(value) {
+  const output=$('rating-preview');if(output)output.innerHTML=`${value!=null?esc(value):'—'}<small> / 10</small>`;
+  document.querySelectorAll('[data-rating]').forEach(button=>{
+    const number=Number(button.dataset.rating);
+    button.style.setProperty('--star-fill',`${Math.min(100,Math.max(0,((value??0)-number+1)*100))}%`);
+  });
+  $('rating-slider')?.setAttribute('aria-valuetext',`${value??0} sur 10`);
+}
+function syncPersonalControls() {
+  const item=state.detail;if(!item)return;
+  const busy=state.personalPending.has(item.id),writable=state.role==='admin'&&!busy;
+  const rating=$('rating-button'),watch=$('watch-button');
+  if(rating){rating.disabled=!writable;rating.classList.toggle('rated',item.user_rating!=null);rating.querySelector('.rating-value').textContent=item.user_rating??'—';rating.setAttribute('aria-label',`Votre note : ${item.user_rating!=null?item.user_rating+'/10':'non renseignée'}${state.role==='admin'?', modifier':''}`);}
+  if(watch){
+    const watched=item.watch_status==='watched';
+    const label=state.role==='admin'?`${stateLabels[item.watch_status]} · Marquer comme ${watched?'non vu':'vu'}`:`${stateLabels[item.watch_status]} · Accès en lecture seule`;
+    watch.disabled=!writable;watch.className=`status-chip watch-button ${item.watch_status}`;watch.setAttribute('aria-pressed',watched);watch.setAttribute('aria-label',label);watch.title=label;watch.dataset.tooltip=label;
+    watch.innerHTML=`${actionIcon(watched?'watched':'watch')}<span class="watch-state">${esc(stateLabels[item.watch_status])}</span>`;
+  }
+  document.querySelectorAll('[data-rating],[data-rating-reset],#rating-slider').forEach(control=>control.disabled=!writable);
+  document.querySelectorAll('[data-rating]').forEach(button=>button.setAttribute('aria-pressed',Number(button.dataset.rating)===item.user_rating));
+  if($('rating-slider'))$('rating-slider').value=item.user_rating??0;
+  previewRating(item.user_rating);
+  if($('personal-status')&&busy)$('personal-status').textContent='Enregistrement…';
+}
+async function savePersonal(values) {
+  const item=state.detail;if(!item||state.role!=='admin'||state.personalPending.has(item.id))return;
+  const id=item.id,seq=state.detailSeq;
+  const previous={personal:{...item.personal},user_rating:item.user_rating,watch_status:item.watch_status};
+  state.personalPending.add(id);++state.personalSeq;hideRatingPopover();
+  item.personal={...item.personal,...values};
+  if(values.user_rating!=null)item.user_rating=values.user_rating;
+  if(typeof values.watched==='boolean')item.watch_status=values.watched?'watched':'unwatched';
+  syncPersonalControls();
+  let saved=false;
+  try {
+    const response=await api(`media/${encodeURIComponent(id)}/personal`,{method:'PATCH',body:JSON.stringify(values)});
+    saved=true;
+    if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,{personal:response.personal,user_rating:response.user_rating,watch_status:response.watch_status});if($('personal-status'))$('personal-status').textContent='Modification enregistrée.';}
+  }catch(e){
+    if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,previous);if($('personal-status'))$('personal-status').textContent='Échec de l’enregistrement : '+e.message;}
+    toast(e.message);
+  }finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
+  if(saved){await loadMedia();if($('lists-dialog').open)await loadList();}
 }
 function networkMarkup(item) {
   const editions=item.editions.filter(e=>e.source_type==='kodi'&&e.metadata.file);
   if(!editions.length) return '';
   return `<section class="detail-section"><p class="section-label">FICHIERS KODI</p>${editions.map(e=>`<div class="file-row"><span class="hint">${esc(e.metadata.version||e.source_name)}</span><code>${esc(e.metadata.file)}</code><button data-copy-file="${esc(e.id)}" class="text-button">Copier le chemin</button></div>`).join('')}<p class="hint">Les fichiers SMB/NFS sont lus par Kodi. Pour les ouvrir dans un lecteur local, copiez le chemin et utilisez ses accès au NAS.</p></section>`;
 }
-function trailerMarkup(item) {
-  const trailers=item.trailers||[];
-  return `<section class="detail-section"><p class="section-label">BANDE-ANNONCE</p>${!trailers.length?'<p class="hint">Aucune bande-annonce disponible dans les métadonnées actuelles.</p>':''}<div class="detail-actions">${trailers.length?trailers.map((link,index)=>`<a class="secondary external-button" href="${esc(link)}" target="_blank" rel="noopener noreferrer">▶ Bande-annonce${trailers.length>1?' '+(index+1):''} · YouTube ↗</a>`).join(''):`<a class="secondary external-button" href="https://www.youtube.com/results?search_query=${encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce')}" target="_blank" rel="noopener noreferrer">Chercher sur YouTube ↗</a>`}</div></section>`;
-}
 function metadataMarkup(item) {
   if(item.kind==='episode')return '';
-  const configured=item.tmdb_available;
-  return `<section class="detail-section metadata-status"><p class="section-label">CASTING, PORTRAITS ET BANDES-ANNONCES · TMDB</p><p id="enrichment-status" class="hint" role="status">${item.enriched_at?`Métadonnées TMDB mises en cache le ${date(item.enriched_at)}.`:configured?'Les métadonnées disponibles sur TMDB sont récupérées à l’ouverture de cette fiche.':'TMDB n’est pas configuré. Les personnes et vidéos affichées proviennent uniquement de Kodi ou CLZ.'}</p>${state.role==='admin'?configured?'<button id="refresh-metadata" class="secondary">↻ Rafraîchir les métadonnées TMDB</button>':'<button class="secondary" data-action="connections">Configurer TMDB</button>':configured?'<p class="hint">Un administrateur peut récupérer ou rafraîchir les métadonnées de cette fiche.</p>':''}</section>`;
+  return `<p id="enrichment-status" class="hint enrichment-caption" role="status">${state.enrichingIds.has(item.id)?'Récupération des personnes, portraits et bandes-annonces…':item.enriched_at?`Métadonnées TMDB mises en cache le ${date(item.enriched_at)}.`:item.tmdb_available?'Les métadonnées TMDB sont récupérées à l’ouverture de cette fiche.':'TMDB n’est pas configuré. Les métadonnées affichées proviennent de Kodi ou CLZ.'}</p>`;
 }
 function playbackMarkup(item) {
-  if(!item.editions.some(e=>e.source_type==='kodi'))return '';
-  if(item.kind==='tvshow')return '';
   const players=state.players.filter(p=>item.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
   let controls;
-  if(state.role!=='admin')controls='<p class="hint">Connectez-vous avec un accès administrateur pour lancer la lecture.</p>';
-  else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier pour lancer la lecture.</p><button class="secondary" data-action="connections">+ Configurer une instance Kodi</button>';
-  else controls=`<div class="play-row"><select id="play-target" aria-label="Instance Kodi">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select><button id="play-button" class="primary">▶ Lire sur Kodi</button></div><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="test-play-target" class="secondary">Tester cette instance Kodi</button><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
-  return `<section class="detail-section" id="playback-section"><p class="section-label">LIRE SUR KODI</p>${controls}<p class="hint">Kodi doit être démarré, avec le contrôle HTTP activé, et disposer de ses propres accès au fichier sur le NAS.</p></section>`;
+  if(state.role!=='admin')controls='<p class="hint">Un accès administrateur est nécessaire pour lancer la lecture.</p>';
+  else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier.</p><button class="secondary" data-action="connections">Configurer une instance Kodi</button>';
+  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
+  return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Kodi lit le fichier avec ses propres accès au NAS.</p>`;
+}
+function savePlaybackDraft() {
+  if(!$('play-target'))return;
+  state.playbackDraft={mediaId:state.playbackMediaId,target:$('play-target').value,edition:$('play-edition').value,resume:$('play-resume').checked};
+}
+function openPlayback() {
+  hideRatingPopover();
+  const item=state.detail;if(!item)return;
+  const draft=state.playbackDraft?.mediaId===item.id?state.playbackDraft:null;
+  state.playbackMediaId=item.id;
+  $('play-content').innerHTML=playbackMarkup(item);
+  if(draft&&$('play-target')&&[...$('play-target').options].some(o=>o.value===draft.target))$('play-target').value=draft.target;
+  updatePlayEdition();
+  if(draft&&$('play-edition')){
+    if([...$('play-edition').options].some(o=>o.value===draft.edition))$('play-edition').value=draft.edition;
+    $('play-resume').checked=draft.resume;
+  }
+  showDialog('play-dialog');
 }
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
@@ -220,19 +341,22 @@ function editionMarkup(e) {
 }
 function tmdbAttribution(item) {
   if(!item.enriched_at)return '';
-  return `<section class="detail-section credits-attribution"><p class="section-label">CRÉDITS DES MÉTADONNÉES</p><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img width="80" src="https://www.themoviedb.org/assets/2/v4/logos/v2/blue_short-8e7b30f73a4020692ccca9c88bafe5dcb6f8a62a4c6bc55cd9ba82bb2cd95f6c.svg" alt="TMDB"></a><p class="hint">This product uses the TMDB API but is not endorsed or certified by TMDB.</p></section>`;
+  return `<section class="detail-section credits-attribution"><p class="section-label">CRÉDITS DES MÉTADONNÉES</p><a href="https://www.themoviedb.org/" target="_blank" rel="noopener noreferrer"><img width="80" src="${esc(url('static/tmdb-logo.svg'))}" alt="TMDB"></a><p class="hint">This product uses the TMDB API but is not endorsed or certified by TMDB.</p></section>`;
 }
 function updatePlayEdition() {
   const target=$('play-target'); const selector=$('play-edition');if(!target||!selector)return;
+  const previous=selector.value;
   const player=state.players.find(p=>p.id===target.value);if(!player)return;
   const editions=state.detail.editions.filter(e=>e.source_type==='kodi'&&e.source_id===player.source_id).sort((a,b)=>Number(!a.metadata.is_default)-Number(!b.metadata.is_default));
   selector.innerHTML=editions.map(e=>`<option value="${esc(e.id)}">${esc(e.metadata.version||e.metadata.file?.split('/').pop()||'Fichier Kodi')}${e.metadata.is_default?' · Par défaut':''}</option>`).join('');
+  if([...selector.options].some(option=>option.value===previous))selector.value=previous;
 }
 function renderDetail(item) {
-    const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
-    state.detail=item;
-    $('detail-content').innerHTML=`<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score">★ ${Number(item.rating).toFixed(1)}</span>`:''}${item.user_rating!=null?`<span>Votre note : ${item.user_rating}/10</span>`:''}</div><div class="format-badges">${formatBadges(item.formats)}</div><span class="status-chip ${esc(item.watch_status)}">${esc(stateLabels[item.watch_status])}</span><div class="card-meta">${badges(item)}</div><div class="detail-actions"><a class="secondary external-button" href="${esc(item.trailers?.[0]||'https://www.youtube.com/results?search_query='+encodeURIComponent(item.title+' '+(item.year||'')+' bande annonce'))}" target="_blank" rel="noopener noreferrer">▶ ${item.trailers?.length?'Bande-annonce · YouTube':'Chercher une bande-annonce' } ↗</a></div><button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${playbackMarkup(item)}${personalMarkup(item)}${trailerMarkup(item)}${metadataMarkup(item)}${networkMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
-    attachImageFallbacks($('detail-content'));updatePlayEdition();$('detail-dialog').scrollTop=previousScroll;
+  const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
+  hideRatingPopover();
+  state.detail=item;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges">${formatBadges(item.formats)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div><button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${item.date_added||item.last_played?`<p class="hint">${item.date_added?`Ajouté le ${date(item.date_added)}`:''}${item.last_played?` · Dernier visionnage le ${date(item.last_played)}`:''}</p>`:''}${metadataMarkup(item)}${networkMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
+  attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
   const seq=++state.detailSeq;
@@ -262,7 +386,7 @@ async function pollJob(job) {
     }
     await new Promise(resolve=>setTimeout(resolve,1000));
   }
-  toast('L’import continue en arrière-plan. Consultez les connexions pour son résultat.');
+  toast('L’import continue en arrière-plan. Consultez les paramètres pour son résultat.');
 }
 async function connections() {
   try {
@@ -337,8 +461,8 @@ document.addEventListener('click',async event=>{
   if(button.dataset.action==='lists')openLists();
   if(button.dataset.openList)openLists(button.dataset.openList);
   if(button.dataset.quick) {state.recent=button.dataset.quick==='recent'; $('watch-status').value=['all','recent'].includes(button.dataset.quick)?'':button.dataset.quick;  if(state.recent){$('sort').value='date_added';state.order='desc';$('sort-order').textContent='↓ Décroissant';}loadMedia();}
-  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.testPlayer&&!['play-button','test-play-target','test-tmdb'].includes(button.id))return;
-  const result=['play-button','test-play-target'].includes(button.id)?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
+  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.testPlayer&&!['play-button','test-tmdb'].includes(button.id))return;
+  const result=button.id==='play-button'?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
   if(result){result.className='hint play-status';result.textContent=button.id==='play-button'?'Envoi de la lecture à Kodi…':'Vérification de la connexion…';}
   try {
     if(button.dataset.testConnection) {const form=$(button.dataset.testConnection); const fields=['host','port',...(form.getAttribute('id')==='kodi-form'?['username']:[])];if(fields.every(name=>form.elements.namedItem(name).reportValidity())) await testConnection(form);}
@@ -348,13 +472,13 @@ document.addEventListener('click',async event=>{
     if(button.dataset.editSource) {const s=state.facets.sources.find(s=>s.id===button.dataset.editSource); fillForm('kodi-form',{id:s.id,name:s.name,...s.config});}
     if(button.dataset.editPlayer) {const p=state.players.find(p=>p.id===button.dataset.editPlayer); fillForm('player-form',p);}
     if(button.id==='test-tmdb'){button.disabled=true;const tested=await api('connections/tmdb/test',{method:'POST'});result.textContent=tested.message;result.className='success-text play-status';}
-    if(button.dataset.testPlayer||button.id==='test-play-target'){
-      button.disabled=true;const p=state.players.find(p=>p.id===(button.dataset.testPlayer||$('play-target').value));
+    if(button.dataset.testPlayer){
+      button.disabled=true;const p=state.players.find(p=>p.id===button.dataset.testPlayer);
       if(!p)throw new Error('Choisissez une instance Kodi.');
       const tested=await api('connections/kodi/test',{method:'POST',body:JSON.stringify({player_id:p.id,host:p.host,port:p.port,username:p.username,tls:p.tls})});
       result.textContent=tested.message;result.className='success-text play-status';
     }
-    if(button.id==='play-button') {button.disabled=true; await api(`players/${$('play-target').value}/play`,{method:'POST',body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})});result.textContent='Lecture envoyée à Kodi. Si elle ne démarre pas, vérifiez sur Kodi ses accès au fichier du NAS.';result.className='success-text play-status';toast('Lecture envoyée à Kodi.');}
+    if(button.id==='play-button') {savePlaybackDraft();button.disabled=true; await api(`players/${$('play-target').value}/play`,{method:'POST',body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})});result.textContent='Lecture envoyée à Kodi. Si elle ne démarre pas, vérifiez sur Kodi ses accès au fichier du NAS.';result.className='success-text play-status';toast('Lecture envoyée à Kodi.');}
   }catch(e){if(result){result.textContent=e.message;result.className='error-text play-status';}toast(e.message);}finally{button.disabled=false;}
 });
 $('connections-button').addEventListener('click',connections);
@@ -374,22 +498,26 @@ for(const dialog of document.querySelectorAll('dialog')) {
   dialog.addEventListener('click',event=>{if(event.target===dialog){const r=dialog.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)dialog.close();}});
 }
 async function enrichDetail(force) {
-  const id=state.detail?.id; const seq=state.detailSeq; const status=$('enrichment-status');
+  const id=state.detail?.id;if(!id||state.enrichingIds.has(id))return;
+  state.enrichingIds.add(id);
+  const seq=state.detailSeq; const personalSeq=state.personalSeq; const status=$('enrichment-status');
   if(status)status.textContent='Récupération des personnes, portraits et bandes-annonces…';
-  const button=$('refresh-metadata');if(button)button.disabled=true;
+  const button=$('refresh-metadata');if(button){button.disabled=true;button.classList.add('is-loading');}
+  let enriched=false;
   try {
     const item=await api(`media/${encodeURIComponent(id)}/enrich?refresh=${force}`,{method:'POST'});
+    enriched=true;
     if(seq===state.detailSeq&&$('detail-dialog').open){
-      const form=$('personal-form');const draft=form?new FormData(form):null;
+      if((state.personalSeq||0)!==personalSeq)Object.assign(item,{personal:state.detail.personal,user_rating:state.detail.user_rating,watch_status:state.detail.watch_status});
       const episodes=$('episode-list')?.innerHTML;
-      const target=$('play-target')?.value;const edition=$('play-edition')?.value;const resume=$('play-resume')?.checked;
+      const ratingDraft=$('rating-popover')?.dataset.open?{value:$('rating-slider').value,focused:$('rating-popover').contains(document.activeElement)}:null;
       renderDetail(item);
-      if(draft){$('personal-form').elements.namedItem('user_rating').value=draft.get('user_rating');$('personal-form').elements.namedItem('watched').value=draft.get('watched');}
+      if(ratingDraft){showRatingPopover(ratingDraft.focused);$('rating-slider').value=ratingDraft.value;previewRating(Number(ratingDraft.value));}
       if(episodes&&$('episode-list'))$('episode-list').innerHTML=episodes;
-      if(target&&$('play-target')){$('play-target').value=target;updatePlayEdition();$('play-edition').value=edition;$('play-resume').checked=resume;}
+      if($('play-dialog').open)updatePlayEdition();
     }
-  } catch(e) {if(seq===state.detailSeq){if(status)status.textContent=e.message;toast(e.message);}}
-  finally {if(button)button.disabled=false;}
+  } catch(e) {if(seq===state.detailSeq){if($('enrichment-status'))$('enrichment-status').textContent=e.message;toast(e.message);}}
+  finally {state.enrichingIds.delete(id);if(enriched&&seq===state.detailSeq&&$('enrichment-status'))$('enrichment-status').textContent=`Métadonnées TMDB mises en cache le ${date(state.detail.enriched_at)}.`;if(seq===state.detailSeq&&$('refresh-metadata')){$('refresh-metadata').disabled=state.role!=='admin';$('refresh-metadata').classList.remove('is-loading');}}
 }
 async function chooseList() {
   try {
@@ -460,15 +588,11 @@ async function moveList(id,direction) {
 }
 document.addEventListener('submit',async event=>{
   const form=event.target;const id=form.getAttribute('id');
-  if(!['personal-form','new-list-form','choose-new-list'].includes(id))return;
+  if(!['new-list-form','choose-new-list'].includes(id))return;
   event.preventDefault();const button=form.querySelector('button[type="submit"]');button.disabled=true;
   try {
     const data=new FormData(form);
-    if(id==='personal-form'){
-      const mid=state.detail.id;const seq=state.detailSeq;const rating=data.get('user_rating');
-      const item=await api(`media/${mid}/personal`,{method:'PATCH',body:JSON.stringify({user_rating:rating===''?null:Number(rating),watched:data.get('watched')===''?null:data.get('watched')==='true'})});
-      if(seq===state.detailSeq)renderDetail(item);await loadMedia();if($('lists-dialog').open)await loadList();toast('Note et visionnage enregistrés.');
-    }else{
+    {
       const name=String(data.get('name')).trim();if(!name)return;
       const list=await api('lists',{method:'POST',body:JSON.stringify({name})});
       if(id==='choose-new-list'){
@@ -482,7 +606,7 @@ document.addEventListener('click',async event=>{
   const button=event.target.closest('button');if(!button)return;
   if(!['refresh-metadata','add-to-list','new-list-toggle','list-add-button','rename-list','delete-list','list-load-more','list-sort-order'].includes(button.id)&&!button.dataset.chooseList&&!button.dataset.addListMedia&&!button.dataset.removeListMedia&&!button.dataset.moveList&&!button.dataset.copyFile)return;
   try {
-    if(button.id==='refresh-metadata')await enrichDetail(true);
+    if(button.id==='refresh-metadata'){hideRatingPopover();await enrichDetail(true);}
     if(button.id==='add-to-list')await chooseList();
     if(button.dataset.chooseList){
       button.disabled=true;const mid=state.detail.id;
@@ -510,10 +634,52 @@ document.addEventListener('click',async event=>{
 });
 document.addEventListener('change',event=>{
   if(event.target.id==='play-target'){updatePlayEdition();if($('play-status'))$('play-status').textContent='';}
+  if(['play-target','play-edition','play-resume'].includes(event.target.id))savePlaybackDraft();
   if(event.target.id==='selected-list')openLists(event.target.value);
   if(event.target.id==='list-sort'){state.listSort=event.target.value;savePreferences();loadList();}
 });
 let listSearchTimer;
 document.addEventListener('input',event=>{if(event.target.id==='list-search'){clearTimeout(listSearchTimer);listSearchTimer=setTimeout(searchList,250);}});
+
+// The rating editor opens on hover/focus, and remains usable on touch screens.
+document.addEventListener('pointerover',event=>{
+  if(event.target.closest('#rating-button'))showRatingPopover();
+  if(event.target.closest('#rating-popover'))clearTimeout(ratingCloseTimer);
+});
+document.addEventListener('pointerout',event=>{
+  if(!event.target.closest('#rating-button,#rating-popover'))return;
+  const next=event.relatedTarget;
+  if(next&&($('rating-button')?.contains(next)||$('rating-popover')?.contains(next)))return;
+  scheduleRatingClose();
+});
+document.addEventListener('focusin',event=>{
+  if(event.target.id==='rating-button')showRatingPopover();
+  if(event.target.closest('#rating-popover'))clearTimeout(ratingCloseTimer);
+});
+document.addEventListener('focusout',event=>{
+  if(!event.target.closest('#rating-button,#rating-popover'))return;
+  const next=event.relatedTarget;
+  if(!next||!($('rating-button')?.contains(next)||$('rating-popover')?.contains(next)))hideRatingPopover();
+});
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&$('rating-popover')?.dataset.open){event.preventDefault();event.stopPropagation();$('rating-button').focus({preventScroll:true});hideRatingPopover();}
+},true);
+document.addEventListener('click',event=>{
+  if(!event.target.closest('#rating-button,#rating-popover'))hideRatingPopover();
+  if(event.target.closest('[data-trailer]'))$('trailers-dialog').close();
+  const button=event.target.closest('button');if(!button||button.disabled)return;
+  if(button.id==='rating-button')showRatingPopover(true);
+  if(button.dataset.rating)savePersonal({user_rating:Number(button.dataset.rating)});
+  if(button.hasAttribute('data-rating-reset'))savePersonal({user_rating:null});
+  if(button.id==='watch-button')savePersonal({watched:state.detail.watch_status!=='watched'});
+  if(button.id==='open-playback')openPlayback();
+  if(button.id==='open-trailers')openTrailers();
+});
+document.addEventListener('input',event=>{if(event.target.id==='rating-slider')previewRating(Number(event.target.value));});
+document.addEventListener('change',event=>{if(event.target.id==='rating-slider')savePersonal({user_rating:Number(event.target.value)});});
+$('detail-dialog').addEventListener('scroll',hideRatingPopover);
+$('detail-dialog').addEventListener('close',()=>{hideRatingPopover();if($('play-dialog').open)$('play-dialog').close();if($('trailers-dialog').open)$('trailers-dialog').close();});
+$('play-dialog').addEventListener('close',savePlaybackDraft);
+window.addEventListener('resize',positionRatingPopover);
 
 initialize();

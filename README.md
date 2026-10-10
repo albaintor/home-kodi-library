@@ -38,11 +38,11 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
-Adapter `PUID`/`PGID` et le propriétaire du dossier aux comptes du NAS si nécessaire. Ouvrir `http://IP_DU_NAS:8099`, puis saisir `API_TOKEN`. Dans **Connexions**, ajouter la source Kodi et/ou importer un export XML CLZ. Les mises à jour Kodi sont ensuite automatiques, toutes les 300 secondes par défaut. Un nouvel export CLZ remplace uniquement les entrées de la collection CLZ choisie.
+Adapter `PUID`/`PGID` et le propriétaire du dossier aux comptes du NAS si nécessaire. Ouvrir `http://IP_DU_NAS:8099`, puis saisir `API_TOKEN`. Dans **Paramètres**, ajouter la source Kodi et/ou importer un export XML CLZ. Les mises à jour Kodi sont ensuite automatiques, toutes les 300 secondes par défaut. Un nouvel export CLZ remplace uniquement les entrées de la collection CLZ choisie.
 
 Pour MariaDB, utiliser un compte avec `SELECT` sur la base `MyVideos…`. Renseigner explicitement la base en cas de plusieurs bibliothèques. Sans nom, le connecteur sélectionne la version numérique accessible la plus élevée ; toutes les vues doivent être accessibles avec ce compte. Les connexions et mots de passe sont enregistrés dans le volume local, jamais renvoyés par l'API.
 
-Après une mise à jour ajoutant des métadonnées, utiliser **Connexions → Synchroniser** pour Kodi et réimporter l'XML dans la **collection CLZ existante**. Les badges HDR et Atmos utilisent uniquement les indications explicites de la source ; un disque UHD ou une piste TrueHD ne suffit pas à annoncer ces technologies.
+Après une mise à jour ajoutant des métadonnées, utiliser **Paramètres → Synchroniser** pour Kodi et réimporter l'XML dans la **collection CLZ existante**. Les badges HDR et Atmos utilisent uniquement les indications explicites de la source ; un disque UHD ou une piste TrueHD ne suffit pas à annoncer ces technologies.
 
 ### Mises à jour suivantes
 
@@ -166,9 +166,9 @@ Pour compléter automatiquement les films et séries depuis TMDB, renseigner dan
 TMDB_API_TOKEN=votre_jeton_de_lecture_TMDB
 ```
 
-Dans **Connexions → Métadonnées et portraits · TMDB**, l'interface indique si TMDB est configuré et propose **Tester la connexion TMDB**. Les erreurs de clé refusée, de réseau ou de limite de requêtes sont explicites. L'absence de TMDB est aussi indiquée dans chaque fiche. Activer TMDB ne nécessite aucune réimportation du catalogue : rouvrir la fiche suffit lorsque son identifiant IMDb/TMDB existe déjà.
+Dans **Paramètres → Métadonnées et portraits · TMDB**, l'interface indique si TMDB est configuré et propose **Tester la connexion TMDB**. Les erreurs de clé refusée, de réseau ou de limite de requêtes sont explicites. L'absence de TMDB est aussi indiquée dans chaque fiche. Activer TMDB ne nécessite aucune réimportation du catalogue : rouvrir la fiche suffit lorsque son identifiant IMDb/TMDB existe déjà.
 
-L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms **et portraits** ouvrent une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible. La section bande-annonce se situe avant le casting et propose une recherche YouTube si aucune vidéo n'a été fournie.
+L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms **et portraits** ouvrent une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible. Le bouton YouTube est placé en haut de la fiche : il ouvre directement une bande-annonce unique, propose un choix si plusieurs sont disponibles et lance une recherche YouTube si aucune vidéo n'a été fournie.
 
 Les métadonnées restent dans SQLite pendant les redémarrages et synchronisations. Elles sont réutilisées pendant 30 jours, puis renouvelées à la prochaine ouverture. Le bouton **Rafraîchir les métadonnées TMDB** force leur renouvellement et invalide les images concernées dans le cache ; une panne conserve les informations précédentes. Les portraits utilisent le même proxy authentifié, cache 30 jours/512 MiB et règles de sécurité que les pochettes. Les clients API peuvent déclencher l'enrichissement sans utiliser le front. TMDB reste facultatif : la consultation des données importées/mises en cache fonctionne sans réseau ni jeton TMDB.
 
@@ -176,7 +176,7 @@ Le navigateur mémorise la recherche, les filtres, le tri et son sens, le mode d
 
 ## Notes, visionnage et listes
 
-La fiche permet de modifier **votre note sur 10** et le **statut vu/non vu**. Ces valeurs personnelles sont partagées par les utilisateurs de cette installation et conservées dans SQLite ; elles prennent priorité sur les imports. Une note vide ou « Depuis les sources » rétablit la valeur importée. La note publique IMDb/Kodi, les compteurs de lecture et les fichiers sources restent des informations importées : les éditions personnelles ne sont pas réécrites dans MariaDB ou CLZ. Aucun nouveau serveur de base de données n'est requis.
+En haut de la fiche, l'étoile permet de modifier **votre note sur 10** au survol, au clic ou au clavier ; une étoile ou le curseur par demi-point enregistre immédiatement la note. La pastille **Vu / Non vu** bascule et enregistre le statut au clic, sans bouton de sauvegarde. Ces valeurs personnelles sont partagées par les utilisateurs de cette installation et conservées dans SQLite ; elles prennent priorité sur les imports. Une note vide ou « Depuis les sources » rétablit la valeur importée. La note publique IMDb/Kodi, les compteurs de lecture et les fichiers sources restent des informations importées : les éditions personnelles ne sont pas réécrites dans MariaDB ou CLZ. Aucun nouveau serveur de base de données n'est requis.
 
 Dans le catalogue, la zone **Listes personnalisées** propose **＋ Créer une liste** et **Ouvrir mes listes**. Le bouton **Mes listes** reste accessible dans l'en-tête. Créer une liste ouvre directement le formulaire de nom ; ce formulaire est aussi visible dès la première ouverture quand aucune liste n'existe. Utiliser un accès administrateur pour créer ou modifier : un accès de lecture affiche une explication dans le dialogue.
 
@@ -188,7 +188,7 @@ Les UUID des œuvres conservent les associations lors d'une synchronisation norm
 
 Les chemins complets des fichiers sont visibles dans la fiche, avec **Copier le chemin** (sur HTTP, un dialogue de copie remplace l'accès au presse-papiers). **Lire sur Kodi** contacte l'instance choisie depuis le back-end, et permet de sélectionner le fichier/version ; la sélection explicite ouvre ce chemin exact, même pour une version par défaut. Kodi utilise ses propres accès au NAS.
 
-Sans instance associée à la source, la fiche propose **Configurer une instance Kodi**. Dans la fiche, **Tester cette instance Kodi** vérifie l'API HTTP et les droits de lecture ; ce test est aussi disponible sur les instances enregistrées dans **Connexions**. Les erreurs de lancement restent visibles dans la fiche. Un envoi réussi signifie que Kodi a accepté la commande ; l'accès au fichier dépend encore de la configuration et des identifiants NAS de Kodi.
+Sans instance associée à la source, la fiche propose **Configurer une instance Kodi**. Le bouton avec le logo Kodi ouvre les options de lecture : instance, fichier/version et reprise. Le test de l'API HTTP et des droits de lecture est disponible sur les instances enregistrées dans **Paramètres**. Les erreurs de lancement restent visibles dans la fenêtre de lecture. Un envoi réussi signifie que Kodi a accepté la commande ; l'accès au fichier dépend encore de la configuration et des identifiants NAS de Kodi.
 
 Un navigateur ne fournit pas de lecture SMB/NFS native : un lien vers ces protocoles dépend d'un gestionnaire installé sur le poste et de ses accès au partage. `file://` est aussi restreint depuis une page web. Aucun lien de lecture locale universel n'est proposé ; le chemin peut être ouvert dans un lecteur disposant des droits NAS. Cette version ne diffuse/transcode pas les fichiers vidéo via HTTP. [Gestionnaires de protocoles dans les navigateurs](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Player.Open Kodi](https://kodi.wiki/view/JSON-RPC_API/v13.11).
 

@@ -79,6 +79,7 @@ def main():
         app = create_app(settings)
 
         enriched_calls = []
+        trailer_options = ["https://www.youtube.com/watch?v=C6PbWhWGUrY"]
         play_calls = []
 
         async def enrichment(detail, _token):
@@ -103,7 +104,7 @@ def main():
                         "photos": ["https://example.org/portrait.jpg"],
                     },
                 ],
-                "trailers": ["https://www.youtube.com/watch?v=C6PbWhWGUrY"],
+                "trailers": list(trailer_options),
             }
 
         async def playback(player, detail, edition_id, resume):
@@ -330,17 +331,67 @@ def main():
                     "href", "https://www.youtube.com/watch?v=C6PbWhWGUrY"
                 )
                 expect(page.locator(".file-row code")).to_contain_text("smb://nas/films/")
-                page.locator("#test-play-target").click()
-                expect(page.locator("#play-status")).to_contain_text("Connexion Kodi réussie")
+                expect(page.locator("#personal-form")).to_have_count(0)
+                expect(page.locator("#playback-section")).to_have_count(0)
+                expect(page.locator("#test-play-target")).to_have_count(0)
+                expect(page.locator("#trailer-link")).to_have_count(1)
+                expect(page.locator("#connections-button")).to_have_text("Paramètres")
+                page.locator("#open-playback").click()
+                expect(page.locator("#play-dialog")).to_be_visible()
                 selected_edition = page.locator("#play-edition").input_value()
+                page.locator("#play-resume").uncheck()
                 page.locator("#play-button").click()
-                expect(page.locator("#toast")).to_contain_text("Lecture envoyée")
-                assert play_calls[-1][2] == selected_edition
-                page.locator('#personal-form input[name="user_rating"]').fill("8.5")
-                page.locator('#personal-form select[name="watched"]').select_option("true")
-                page.locator('#personal-form button[type="submit"]').click()
+                expect(page.locator("#play-status")).to_contain_text("Lecture envoyée")
+                assert play_calls[-1][2] == selected_edition and play_calls[-1][3] is False
+                page.locator('[data-close="play-dialog"]').click()
+                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
+                page.locator("#open-playback").click()
+                expect(page.locator("#play-edition")).to_have_value(selected_edition)
+                expect(page.locator("#play-resume")).not_to_be_checked()
+                page.locator('[data-close="play-dialog"]').click()
+                page.locator("#rating-button").hover()
+                expect(page.locator("#rating-popover")).to_be_visible()
+                expect(page.locator(".rating-choice")).to_have_count(10)
+                page.locator('[data-rating="9"]').click()
+                expect(page.locator("#rating-button .rating-value")).to_have_text("9")
+                expect(page.locator("#rating-popover")).to_be_hidden()
+                expect(page.locator("#watch-button")).to_be_enabled()
+                page.locator("#watch-button").click()
+                expect(page.locator("#watch-button")).to_have_attribute("aria-pressed", "true")
+                expect(page.locator("#watch-button")).to_be_enabled()
+                page.locator("#watch-button").click()
+                expect(page.locator("#watch-button")).to_have_attribute("aria-pressed", "false")
+                expect(page.locator("#watch-button")).to_be_enabled()
+                page.locator("#watch-button").click()
+                expect(page.locator("#watch-button")).to_be_enabled()
+                page.locator("#rating-button").click()
+                page.locator("#rating-slider").evaluate(
+                    "input=>{input.value='8.5';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));}"
+                )
+                expect(page.locator("#rating-button .rating-value")).to_have_text("8.5")
+                expect(page.locator("#rating-button")).to_be_enabled()
                 expect(page.locator(".detail-intro .status-chip")).to_have_text("Vu")
-                expect(page.locator(".detail-info")).to_contain_text("Votre note : 8.5/10")
+
+                # A failed immediate save restores the confirmed value.
+                def refuse_personal(route):
+                    route.fulfill(
+                        status=502,
+                        content_type="application/json",
+                        body=json.dumps({"error": {"message": "Échec simulé"}}),
+                    )
+
+                page.route("**/personal", refuse_personal)
+                page.locator("#watch-button").click()
+                expect(page.locator("#toast")).to_contain_text("Échec simulé")
+                expect(page.locator("#watch-button")).to_have_attribute("aria-pressed", "true")
+                page.unroute("**/personal", refuse_personal)
+                expect(page.locator("#watch-button")).to_be_enabled()
+                # Keyboard users can dismiss the editor without closing the film.
+                page.locator("#rating-button").focus()
+                expect(page.locator("#rating-popover")).to_be_visible()
+                page.keyboard.press("Escape")
+                expect(page.locator("#rating-popover")).to_be_hidden()
+                expect(page.locator("#detail-dialog")).to_be_visible()
                 page.locator("#add-to-list").click()
                 page.locator("#choose-new-list input").fill("À voir ensemble")
                 page.locator("#choose-new-list button").click()
@@ -351,6 +402,29 @@ def main():
                 page.locator("#refresh-metadata").click()
                 expect(page.locator("#refresh-metadata")).to_be_enabled()
                 assert len(enriched_calls) == initial_calls + 1
+                trailer_options.append("https://www.youtube.com/watch?v=anotherDemo")
+                page.locator("#refresh-metadata").click()
+                expect(page.locator("#refresh-metadata")).to_be_enabled()
+                expect(page.locator("#open-trailers")).to_have_count(1)
+                expect(page.locator("#trailer-link")).to_have_count(0)
+                page.locator("#open-trailers").click()
+                expect(page.locator("#trailers-dialog")).to_be_visible()
+                expect(page.locator(".trailer-choices a")).to_have_count(2)
+                expect(page.locator(".trailer-choices a").last).to_have_attribute(
+                    "href", trailer_options[-1]
+                )
+                page.context.route(
+                    "https://www.youtube.com/**",
+                    lambda route: route.fulfill(body="Synthetic trailer"),
+                )
+                with page.expect_popup() as trailer_popup:
+                    page.locator(".trailer-choices a").last.click()
+                trailer_popup.value.close()
+                expect(page.locator("#trailers-dialog")).not_to_be_visible()
+                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
+                page.locator("#open-playback").click()
+                expect(page.locator("#play-resume")).not_to_be_checked()
+                page.locator('[data-close="play-dialog"]').click()
                 expect(page.locator(".cast-member").first).to_contain_text("Personnage 0")
                 expect(page.locator(".detail-intro .format-badge")).to_have_count(7)
                 intro = page.locator(".detail-intro").bounding_box()
@@ -405,7 +479,7 @@ def main():
                 expect(page.locator(".media-card").first).to_contain_text("080")
                 page.locator(".media-card").first.click()
                 expect(page.locator("#detail-dialog")).to_be_visible()
-                assert len(enriched_calls) == initial_calls + 1
+                assert len(enriched_calls) == initial_calls + 2
                 page.locator('[data-close="detail-dialog"]').click()
                 page.locator("#connections-button").click()
                 page.locator("#test-tmdb").click()
@@ -484,13 +558,19 @@ def main():
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
                 unconfigured.locator("#kind").select_option("movie")
                 unconfigured.locator(".media-card").first.click()
-                expect(unconfigured.locator(".metadata-status")).to_contain_text(
+                expect(unconfigured.locator("#enrichment-status")).to_contain_text(
                     "TMDB n’est pas configuré"
                 )
+                unconfigured.locator("#open-playback").click()
                 expect(
-                    unconfigured.get_by_role("button", name="+ Configurer une instance Kodi")
+                    unconfigured.get_by_role(
+                        "button", name="Configurer une instance Kodi", exact=True
+                    )
                 ).to_be_visible()
-                unconfigured.get_by_role("button", name="Configurer TMDB", exact=True).click()
+                unconfigured.locator('[data-close="play-dialog"]').click()
+                unconfigured.get_by_role(
+                    "button", name="Configurer TMDB dans les paramètres", exact=True
+                ).click()
                 expect(unconfigured.locator("#test-tmdb")).to_be_disabled()
                 expect(unconfigured.locator("#connection-content")).to_contain_text(
                     "TMDB_API_TOKEN"
@@ -508,6 +588,10 @@ def main():
                 reader.goto(prefix, wait_until="domcontentloaded")
                 expect(reader.locator(".media-card")).to_have_count(60)
                 expect(reader.locator("#create-list-button")).to_be_hidden()
+                reader.locator(".media-card").first.click()
+                expect(reader.locator("#rating-button")).to_be_disabled()
+                expect(reader.locator("#watch-button")).to_be_disabled()
+                reader.locator('[data-close="detail-dialog"]').click()
                 reader.locator('[data-action="lists"]').click()
                 expect(reader.locator("#lists-content")).to_contain_text("Accès en lecture seule")
                 expect(reader.locator("#new-list-form")).to_have_count(0)
