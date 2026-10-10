@@ -336,7 +336,10 @@ def main():
                 expect(page.locator(".detail-actions a").first).to_have_attribute(
                     "href", "https://www.youtube.com/watch?v=C6PbWhWGUrY"
                 )
-                expect(page.locator(".file-row code")).to_contain_text("smb://nas/films/")
+                expect(page.locator(".file-row code")).to_have_count(0)
+                page.locator(".edition summary").first.click()
+                expect(page.locator(".edition-grid")).to_contain_text("smb://nas/films/")
+                page.locator(".edition summary").first.click()
                 expect(page.locator("#personal-form")).to_have_count(0)
                 expect(page.locator("#playback-section")).to_have_count(0)
                 expect(page.locator("#test-play-target")).to_have_count(0)
