@@ -5,7 +5,7 @@ Catalogue indépendant pour consulter une bibliothèque Kodi et une collection p
 ## Première version
 
 - Recherche libre dans les titres, synopsis, genres, collections et certaines métadonnées ; recherche sans distinction d'accents, avec correspondance par préfixe de mots.
-- Filtres combinables : film/série/épisode, Kodi/CLZ, genre, format, collection, vu/non vu/en cours/inconnu, ajouts des 30 derniers jours. L'API ajoute année, source précise et série parente.
+- Filtres combinables : film/série/épisode, Kodi/CLZ, genre, formats vidéo/audio/support cumulables (ET), collection, vu/non vu/en cours/inconnu, ajouts des 30 derniers jours. L'API ajoute année, source précise et série parente. Les formats 4K et 4K UHD sont unifiés sous 4K ; filtres et tris sont mémorisés dans le navigateur.
 - Tri par titre, date d'ajout, année, note ou dernier visionnage ; ordre croissant/décroissant. Chargement progressif par lots de 60 au défilement, avec bouton de secours et reprise après erreur.
 - Vue pochettes ou liste, fiche détaillée, notes, synopsis, éditions physiques et fichiers Kodi, reprise et historique de lecture.
 - Fiche responsive avec casting Kodi (interprètes et rôles), badges de définition vidéo, 3D, Dolby Vision/HDR10/HDR10+, audio Dolby/DTS et formats physiques. Les caractéristiques restent détaillées par édition dans l'API.
