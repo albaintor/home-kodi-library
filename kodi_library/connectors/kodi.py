@@ -388,10 +388,12 @@ class KodiConnector:
                 if kind == "movie" and identity[1] not in canonical_movie_ids:
                     orphan_count += 1
                     if len(orphan_examples) < 10:
-                        orphan_examples.append({
-                            "kodi_id": identity[1],
-                            "title": str(row.get("c00") or "Untitled")[:160],
-                        })
+                        orphan_examples.append(
+                            {
+                                "kodi_id": identity[1],
+                                "title": str(row.get("c00") or "Untitled")[:160],
+                            }
+                        )
                     if index % report_every == 0 or index == total:
                         self._report(phase, index, total)
                     continue

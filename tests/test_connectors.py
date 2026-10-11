@@ -164,10 +164,12 @@ def test_kodi_skips_orphaned_movie_view_rows_missing_from_movie_table():
 
 def test_diagnostic_checks_real_movie_table_and_selected_database():
     cursor = MagicMock()
+
     def execute(query, *params):
         if query.startswith("SELECT idMovie FROM movie WHERE"):
             cursor.fetchall.return_value = [{"idMovie": 10}]
         return None
+
     cursor.execute.side_effect = execute
     connection = MagicMock()
     connection.__enter__.return_value = connection

@@ -53,9 +53,7 @@ class SyncManager:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             if xml is not None:
-                await asyncio.to_thread(
-                    self.store.update_job_progress, job["id"], "parsing_clz"
-                )
+                await asyncio.to_thread(self.store.update_job_progress, job["id"], "parsing_clz")
                 records = await asyncio.to_thread(parse_clz, xml)
                 database = None
             else:
@@ -67,9 +65,7 @@ class SyncManager:
                 )
                 records = await asyncio.to_thread(connector.fetch)
                 database = connector.database
-            await asyncio.to_thread(
-                self.store.update_job_progress, job["id"], "publishing"
-            )
+            await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
             if database:
                 result["database"] = database
