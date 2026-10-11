@@ -26,9 +26,7 @@ def only_movies_in_library(records, library_movie_ids: set[int]):
         if record.kind == "movie" and isinstance(record.metadata.get("kodi_id"), int)
     }
     # Reject a different Kodi instance/library before publishing mass deletions.
-    if sql_movie_ids and library_movie_ids and not sql_movie_ids.intersection(
-        library_movie_ids
-    ):
+    if sql_movie_ids and library_movie_ids and not sql_movie_ids.intersection(library_movie_ids):
         raise ConnectorError(
             "L'instance Kodi et la source MariaDB n'ont aucun film en commun. "
             "Vérifiez que l'instance utilise la base MyVideos de cette source."

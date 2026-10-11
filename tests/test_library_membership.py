@@ -23,8 +23,11 @@ def test_jsonrpc_movie_library_pagination_reads_every_page():
             start = params["limits"]["start"]
             calls.append(start)
             ids = ([1, 2], [3, 4], [5])[start // 2]
-            return {"limits": {"start": start, "end": start + len(ids), "total": 5},
-                    "movies": [{"movieid": number} for number in ids]}
+            return {
+                "limits": {"start": start, "end": start + len(ids), "total": 5},
+                "movies": [{"movieid": number} for number in ids],
+            }
+
         yield rpc
 
     with patch("kodi_library.players.connection", fake_connection):
@@ -33,22 +36,26 @@ def test_jsonrpc_movie_library_pagination_reads_every_page():
     assert calls == [0, 2, 4]
 
 
-@pytest.mark.parametrize("pages", [
+@pytest.mark.parametrize(
+    "pages",
     [
-        {"limits": {"total": 4}, "movies": [{"movieid": 1}, {"movieid": 2}]},
-        {"limits": {"total": 4}, "movies": []},
+        [
+            {"limits": {"total": 4}, "movies": [{"movieid": 1}, {"movieid": 2}]},
+            {"limits": {"total": 4}, "movies": []},
+        ],
+        [
+            {"limits": {"total": 3}, "movies": [{"movieid": 1}, {"movieid": 2}]},
+            {"limits": {"total": 3}, "movies": [{"movieid": 2}]},
+        ],
+        [{"movies": [{"movieid": 1}]}],
     ],
-    [
-        {"limits": {"total": 3}, "movies": [{"movieid": 1}, {"movieid": 2}]},
-        {"limits": {"total": 3}, "movies": [{"movieid": 2}]},
-    ],
-    [{"movies": [{"movieid": 1}]}],
-])
+)
 def test_jsonrpc_failure_or_partial_response_cannot_delete_movies(pages):
     @asynccontextmanager
     async def fake_connection(config):
         async def rpc(method, params):
             return pages.pop(0)
+
         yield rpc
 
     with patch("kodi_library.players.connection", fake_connection):
@@ -61,6 +68,7 @@ def test_empty_kodi_library_is_valid_but_wont_wipe_nonempty_sql_snapshot():
     async def fake_connection(config):
         async def rpc(method, params):
             return {"limits": {"start": 0, "end": 0, "total": 0}}
+
         yield rpc
 
     with patch("kodi_library.players.connection", fake_connection):
@@ -79,21 +87,20 @@ def test_kodi_library_filter_preserves_versions_and_nonmovie_media():
         Record("tvshow:3", "tvshow", "Série", metadata={"kodi_id": 3}),
     ]
     remaining, status = only_movies_in_library(rows, {2, 6})
-    assert [r.external_key for r in remaining] == [
-        "movie:2:12", "movie:2:13", "tvshow:3"
-    ]
+    assert [r.external_key for r in remaining] == ["movie:2:12", "movie:2:13", "tvshow:3"]
     assert status["library_excluded_editions"] == 1
     assert status["library_extra_movie_ids"] == 1
 
 
 def test_sync_removes_sql_movie_not_in_kodi_library(store):
-    source_id = store.save_source({
-        "name": "MariaDB", "type": "kodi",
-        "config": {"host": "nas", "username": "reader"},
-    })["id"]
-    store.save_player({
-        "name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080
-    })
+    source_id = store.save_source(
+        {
+            "name": "MariaDB",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader"},
+        }
+    )["id"]
+    store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080})
     movies = [
         Record("movie:7:8", "movie", "Retiré de la bibliothèque", metadata={"kodi_id": 7}),
         Record("movie:9:10", "movie", "Toujours présent", metadata={"kodi_id": 9}),
@@ -114,8 +121,9 @@ def test_sync_removes_sql_movie_not_in_kodi_library(store):
         await asyncio.gather(*manager.tasks)
         return store.job(started["id"])
 
-    with patch.object(KodiConnector, "fetch", fake_fetch), patch(
-        "kodi_library.sync.library_movie_ids", fake_library
+    with (
+        patch.object(KodiConnector, "fetch", fake_fetch),
+        patch("kodi_library.sync.library_movie_ids", fake_library),
     ):
         job = asyncio.run(run())
     assert job["status"] == "completed"
@@ -128,9 +136,14 @@ def test_sync_removes_sql_movie_not_in_kodi_library(store):
 
 def test_failed_library_check_preserves_existing_catalogue(store):
     source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
-    store.save_player({
-        "name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080,
-    })
+    store.save_player(
+        {
+            "name": "Salon",
+            "source_id": source_id,
+            "host": "kodi",
+            "port": 8080,
+        }
+    )
     movie = Record("movie:7:8", "movie", "Retained", metadata={"kodi_id": 7})
     store.apply_snapshot(source_id, [movie])
     manager = SyncManager(store, Settings(scheduler_enabled=False))
@@ -148,8 +161,9 @@ def test_failed_library_check_preserves_existing_catalogue(store):
         await asyncio.gather(*manager.tasks)
         return store.job(started["id"])
 
-    with patch.object(KodiConnector, "fetch", fake_fetch), patch(
-        "kodi_library.sync.library_movie_ids", unavailable
+    with (
+        patch.object(KodiConnector, "fetch", fake_fetch),
+        patch("kodi_library.sync.library_movie_ids", unavailable),
     ):
         job = asyncio.run(run())
     assert job["status"] == "failed"
