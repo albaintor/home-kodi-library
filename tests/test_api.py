@@ -177,3 +177,22 @@ def test_api_does_not_require_frontend_cookie(client, admin):
     assert response.status_code == 200
     assert response.json()["items"] == []
     assert not client.cookies
+
+
+def test_jobs_feed_is_authorized_and_lists_active_or_completed_work(client, admin):
+    assert client.get("/api/v1/jobs").status_code == 401
+    sid = client.post(
+        "/api/v1/sources", headers=admin, json={"name": "Kodi", "type": "kodi"}
+    ).json()["id"]
+    store = client.app.state.store
+    job = store.new_job(sid)
+    store.start_job(job["id"])
+    read = {"Authorization": f"Bearer {READ}"}
+    listed = client.get("/api/v1/jobs", headers=read)
+    assert listed.status_code == 200
+    assert listed.json()[0]["id"] == job["id"]
+    assert listed.json()[0]["status"] == "running"
+    store.finish_job(job["id"], result={"removed_editions": 1, "database": "MyVideos131"})
+    latest = client.get("/api/v1/jobs", headers=admin).json()[0]
+    assert latest["status"] == "completed"
+    assert latest["result"]["removed_editions"] == 1

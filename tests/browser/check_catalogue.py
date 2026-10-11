@@ -195,6 +195,16 @@ def main():
                 prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
+                # A job started by another client / the scheduler must be
+                # visible even without reopening the settings dialog.
+                background = store.new_job(source["id"])
+                store.start_job(background["id"])
+                expect(page.locator("#activity-indicator")).to_be_visible(timeout=8000)
+                expect(page.locator("#activity-label")).to_contain_text("Kodi")
+                store.finish_job(background["id"], result={
+                    "database": "MyVideos131", "removed_editions": 0
+                })
+                expect(page.locator("#activity-indicator")).to_be_hidden(timeout=8000)
                 page.locator("#lists-button").click()
                 expect(page.locator("#new-list-form")).to_be_visible()
                 expect(page.locator("#new-list-form input")).to_be_focused()

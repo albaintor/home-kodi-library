@@ -616,6 +616,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from exc
 
     @app.get(
+        API + "/jobs",
+        response_model=list[JobView],
+        tags=["Imports"],
+        dependencies=[Depends(authenticated)],
+    )
+    def recent_jobs():
+        """Expose background and manual jobs to native/web progress indicators."""
+        return store.jobs()
+
+    @app.get(
         API + "/jobs/{job_id}",
         response_model=JobView,
         tags=["Imports"],

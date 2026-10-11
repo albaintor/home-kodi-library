@@ -104,3 +104,11 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 @media(max-width:700px){.format-picker{grid-column:1/-1;grid-template-columns:repeat(2,minmax(0,1fr))}.format-picker label:nth-child(3){grid-column:1/-1}}
 
 .detail-timestamps .enrichment-caption{margin:0;font-size:inherit;color:inherit}
+
+/* Persistent activity signal, including scheduled Kodi sync and CLZ import. */
+.activity-indicator{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:6px 10px;background:#bcdb8015;color:var(--accent);border:1px solid #bcdb8055;border-radius:22px;font-size:12px;max-width:230px}
+.activity-indicator:hover{background:#bcdb8028}
+.activity-spinner{display:block;flex:none;width:13px;height:13px;border-radius:50%;border:2px solid #bcdb8060;border-top-color:var(--accent);animation:activity-spin .8s linear infinite}
+@keyframes activity-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.activity-spinner{animation:none;border-color:var(--accent)}}
+@media(max-width:700px){.activity-indicator{max-width:140px;font-size:10px;padding:6px}.activity-indicator #activity-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}

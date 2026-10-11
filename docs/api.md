@@ -27,6 +27,7 @@ Ingress transmet un secret distinct dans `X-Kodi-Library-Ingress-Token`. Un simp
 | POST | `/sources/{id}/sync` | Synchronisation Kodi, tâche retournée avec HTTP 202 |
 | POST | `/imports/clz` | XML multipart, champs `source_id` et `file`, HTTP 202 |
 | GET | `/jobs/{id}` | `pending`, `running`, `completed` ou `failed` |
+| GET | `/jobs` | 30 dernières tâches, y compris celles démarrées automatiquement ; suivi d'activité web/iOS |
 | GET/POST | `/players` | Liste / création d'une cible Kodi |
 | PUT/DELETE | `/players/{id}` | Modification / retrait d'une cible |
 | POST | `/players/{id}/play` | Lecture d'un média, édition facultative et reprise |
@@ -93,6 +94,34 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 ```
 
 `edition_id` sélectionne un fichier/version Kodi précis. Le serveur vérifie que la cible est associée à la bonne source et refuse les identifiants distants contradictoires avant `Player.Open`. Une série nécessite de choisir un épisode via `GET /media?kind=episode&parent_id=ID_SERIE`. Le serveur ne réveille pas Kodi.
+
+## Diagnostic des suppressions Kodi
+
+Une synchronisation récupère un instantané **complet** des entrées de la base
+`MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées
+de SQLite dans la même transaction, puis les fiches sans aucune édition sont
+retirées (y compris des listes et des notes). Une œuvre qui possède encore une
+édition CLZ **reste** dans le catalogue mais perd ses éditions et métadonnées Kodi.
+
+Le résultat `GET /jobs/{id}` contient `database` (nom MyVideos interrogé),
+`source_records_before`, `source_records_after`, `removed_editions`,
+`removed_works`, `kept_clz_works`, `removed_titles` et
+`removed_titles_total`. Le serveur vérifie que les clés Kodi persistées
+correspondent exactement aux clés reçues ; une incohérence annule la transaction.
+
+Si `removed_editions=0` malgré une suppression dans Kodi, vérifiez d'abord
+la base `database` du résultat de la tâche : plusieurs bases `MyVideos…`
+peuvent cohabiter sur MariaDB ; une source configurée sans nom explicite
+utilise la version numérique la plus élevée **accessible** (pas nécessairement
+celle de l'instance Kodi consultée). Dans **Paramètres → source Kodi → Modifier**,
+renseignez alors explicitement la bonne base, puis synchronisez. Vérifiez aussi
+les autres sources Kodi et éditions CLZ de la fiche. Les fichiers simplement
+supprimés du NAS sans nettoyage de la médiathèque Kodi restent référencés dans
+la base et ne peuvent pas être distingués par ce connecteur en lecture seule.
+
+`GET /jobs` sert au voyant d'activité : les tâches planifiées et manuelles
+sont visibles au rechargement et leur état reste consultable même si le navigateur
+ou l'application iOS a été fermé pendant le traitement.
 
 ## Erreurs et évolution
 

@@ -183,6 +183,15 @@ class Store:
                 )
             ]
             conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
+            # Assert a complete source snapshot, including removals. A failure
+            # rolls back the transaction rather than publishing a stale edition.
+            actual_keys = {
+                row[0] for row in conn.execute(
+                    "SELECT external_key FROM records WHERE source_id=?", (source_id,)
+                )
+            }
+            if actual_keys != seen:
+                raise RuntimeError("Snapshot reconciliation mismatch; transaction rolled back.")
             for work_id in affected:
                 self._rebuild(conn, work_id)
             self._prune(conn)
@@ -295,6 +304,8 @@ class Store:
                 "removed_titles_total": len(removed_title_set),
                 "removed_works": removed_works,
                 "kept_clz_works": kept_clz_works,
+                "source_records_before": len(old),
+                "source_records_after": len(actual_keys),
                 "matching_conflicts": conflicts,
             }
 
@@ -886,6 +897,21 @@ class Store:
                 (job_id, source_id, now()),
             )
         return self.job(job_id)
+
+    def jobs(self, *, limit: int = 30) -> list[dict[str, Any]]:
+        """Durable feed of manual and automatically scheduled jobs."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM jobs ORDER BY created_at DESC,rowid DESC LIMIT ?",
+                (min(100, max(1, limit)),),
+            ).fetchall()
+            return [
+                {
+                    **dict(row),
+                    "result": json.loads(row["result"]) if row["result"] else None,
+                }
+                for row in rows
+            ]
 
     def job(self, job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:

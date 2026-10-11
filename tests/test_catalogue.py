@@ -388,3 +388,54 @@ def test_removed_titles_report_is_distinct_and_limited(store):
     assert result["removed_titles_total"] == 25
     assert len(result["removed_titles"]) == 20
     assert result["removed_titles"][0] == "Film 0"
+
+
+def test_kodi_snapshot_replacement_removes_absent_editions_after_file_id_changes(store):
+    """An import is an authoritative snapshot, not an append-only Kodi cache."""
+    kodi = source(store, "kodi")
+    a = Record("movie:21:100", "movie", "Retired movie", identifiers={"imdb": "tt0000021"})
+    b = Record("movie:22:200", "movie", "Active movie", identifiers={"imdb": "tt0000022"})
+    store.apply_snapshot(kodi, [a, b])
+    doomed = store.media(q="Retired movie")["items"][0]["id"]
+    collection = store.save_list({"name": "Mes films"})
+    store.change_list_item(collection["id"], doomed)
+    store.update_personal(doomed, {"watched": True})
+
+    # The retained movie may change its file ID during a new Kodi scan.
+    # Its identity and personal properties must not affect deletion of A.
+    updated = Record("movie:22:201", "movie", "Active movie", identifiers=b.identifiers)
+    result = store.apply_snapshot(kodi, [updated])
+    assert result["source_records_before"] == 2
+    assert result["source_records_after"] == 1
+    assert result["removed_editions"] == 2
+    assert result["created_editions"] == 1
+    assert store.media(q="Retired movie")["total"] == 0
+    assert store.detail(doomed) is None
+    assert store.lists()[0]["item_count"] == 0
+    assert store.media(source_type="kodi")["total"] == 1
+    with store.connect() as conn:
+        assert [
+            row[0] for row in conn.execute(
+                "SELECT external_key FROM records WHERE source_id=?", (kodi,)
+            )
+        ] == ["movie:22:201"]
+
+
+def test_recent_jobs_include_running_and_completed_snapshots(store):
+    sid = source(store, "kodi")
+    pending = store.new_job(sid)
+    assert store.jobs()[0]["status"] == "pending"
+    store.start_job(pending["id"])
+    assert store.jobs()[0]["status"] == "running"
+    store.finish_job(
+        pending["id"],
+        result={
+            "database": "MyVideos131",
+            "removed_editions": 2,
+            "source_records_after": 10,
+        },
+    )
+    report = store.jobs()[0]
+    assert report["status"] == "completed"
+    assert report["result"]["database"] == "MyVideos131"
+    assert report["result"]["removed_editions"] == 2

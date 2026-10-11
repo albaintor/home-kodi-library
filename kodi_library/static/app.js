@@ -32,7 +32,7 @@ function updateFormatSelections() {
   $('selected-formats').innerHTML=state.formats.map(v=>`<button type="button" class="selected-format" data-remove-format="${esc(v)}" aria-label="Retirer ${esc(v)}">${esc(v)} <span aria-hidden="true">×</span></button>`).join('');
   $('selected-formats').hidden=!state.formats.length;
 }
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],facets:null,players:[],tmdbAvailable:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
   writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
@@ -357,12 +357,52 @@ async function refresh() {
   $('sync-status').textContent=latest?`Dernière mise à jour : ${date(latest)}`:'Aucune source importée';
   await loadMedia();
 }
+// Keep the activity indicator in the main header, including automated jobs
+// started by the server scheduler and jobs launched by another client.
+function renderActivity() {
+  const active=state.jobs.filter(j=>['pending','running'].includes(j.status));
+  const indicator=$('activity-indicator');
+  indicator.hidden=!active.length || $('app').hidden;
+  if(!active.length)return;
+  const sources=new Map((state.facets?.sources||[]).map(s=>[s.id,s]));
+  const kinds=new Set(active.map(j=>sources.get(j.source_id)?.type||'kodi'));
+  const label=kinds.size>1?'Synchronisation / import en cours'
+    :kinds.has('clz')?'Import CLZ en cours':'Synchronisation Kodi en cours';
+  $('activity-label').textContent=active.length>1?`${active.length} tâches en cours`:label;
+  indicator.title=active.map(j=>`${sources.get(j.source_id)?.name||'Source'} : ${j.status}`).join(' · ');
+}
+async function pollActivity() {
+  if(state.activityPollBusy||$('app').hidden)return;
+  state.activityPollBusy=true;
+  try {
+    const recent=await api('jobs');
+    const oldActive=state.jobs.filter(j=>['pending','running'].includes(j.status));
+    const finished=oldActive.filter(j=>!recent.some(current=>current.id===j.id&&['pending','running'].includes(current.status)));
+    state.jobs=recent;
+    renderActivity();
+    if(finished.length) {
+      const completed=finished.filter(j=>recent.find(r=>r.id===j.id)?.status==='completed');
+      const failed=finished.filter(j=>recent.find(r=>r.id===j.id)?.status==='failed');
+      if(completed.length) {
+        await refresh();
+        if($('connections-dialog').open) await connections();
+        toast(`${completed.length} synchronisation(s) / import(s) terminé(s). Catalogue actualisé.`);
+      }
+      if(failed.length) toast('Une synchronisation ou un import a échoué. Consultez les paramètres.');
+    }
+  } catch(e) {
+    // Transient network issues must not leave a stale running badge forever.
+    if(e?.status===401)showLogin();
+  } finally { state.activityPollBusy=false; }
+}
+$('activity-indicator').addEventListener('click',()=>connections());
+setInterval(()=>{if(!$('app').hidden)pollActivity();},3000);
 async function initialize() {
   try {
     const session=await api('auth/session'); state.csrf=session.csrf_token; state.role=session.role;
     $('login').hidden=true; $('app').hidden=false; $('connections-button').hidden=state.role!=='admin'; $('logout-button').hidden=session.access_method!=='session';
     $('create-list-button').hidden=state.role!=='admin';
-    setView(state.view,false); await refresh();
+    setView(state.view,false); await refresh(); await pollActivity();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
 function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[]; updateFormatSelections(); state.recent=false; loadMedia(); }
@@ -429,9 +469,11 @@ async function openDetail(id) {
   } catch(e) {toast(e.message);}
 }
 async function pollJob(job) {
+  state.jobs=[job,...state.jobs.filter(j=>j.id!==job.id)];renderActivity();
   const target=$('job-status'); if (target) target.hidden=false;
   for(let i=0;i<600;i++) {
     const value=await api(`jobs/${encodeURIComponent(job.id)}`);
+    state.jobs=[value,...state.jobs.filter(j=>j.id!==value.id)];renderActivity();
     if (target) target.textContent=value.status==='pending'?'Import en attente…':'Synchronisation en cours…';
     if(value.status==='failed') throw new Error(value.error||'Import échoué.');
     if(value.status==='completed') {
@@ -444,6 +486,7 @@ async function pollJob(job) {
       else if(result.database) details.push('Aucune suppression Kodi détectée');
       if(result.removed_works) details.push(`${result.removed_works} œuvres supprimées du catalogue`);
       if(result.kept_clz_works) details.push(`${result.kept_clz_works} œuvres conservées via CLZ`);
+      if(result.kept_other_sources) details.push(`${result.kept_other_sources} œuvres conservées par une autre source`);
       if(result.matching_conflicts) details.push(`${result.matching_conflicts} rapprochements ambigus conservés séparément`);
       const summary=details.join(' · ')+'.';
       const removedTitles=result.removed_titles||[];
@@ -451,7 +494,8 @@ async function pollJob(job) {
       const removalReport=removedTitles.length
         ? `\nRetirés de cette source : ${removedTitles.join(' · ')}${more?` · et ${more} autre(s)`:''}.`
         : '';
-      const report=summary+removalReport;
+      const report=summary+removalReport+(result.database&&result.removed_editions===0?
+        '\nSi un film supprimé de Kodi reste affiché, vérifiez que la base MyVideos indiquée est bien celle utilisée par Kodi et que la fiche ne provient pas de CLZ.':'');
       if(target) target.textContent=report;
       toast(summary);
       await refresh();
@@ -470,8 +514,11 @@ async function connections() {
   try {
     const [sources,players,status]=await Promise.all([api('sources'),api('players'),api('status')]);state.facets.sources=sources;state.players=players;state.tmdbAvailable=status.tmdb_available===true;
     const clz=sources.filter(s=>s.type==='clz'); const kodi=sources.filter(s=>s.type==='kodi');
-    $('connection-content').innerHTML=`<h3 class="connection-subheading">Métadonnées et portraits · TMDB</h3><section class="metadata-status"><p>${state.tmdbAvailable?'TMDB est configuré. Les fiches récupèrent automatiquement le casting, les portraits et les bandes-annonces disponibles.':'TMDB n’est pas configuré. Renseignez TMDB_API_TOKEN dans .env, puis relancez rebuild.sh.'}</p><p class="hint">Utilisez le jeton de lecture API ou la clé API v3 depuis <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">les paramètres API de votre compte TMDB ↗</a>. Le secret reste sur le serveur. Il n’est pas nécessaire de réimporter la bibliothèque pour activer TMDB.</p><button id="test-tmdb" class="secondary" ${state.tmdbAvailable?'':'disabled'}>Tester la connexion TMDB</button><p id="tmdb-test-result" class="hint play-status" role="status"></p></section><h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Ce formulaire contacte MariaDB, pas l’API HTTP de Kodi. Un compte SELECT suffit ; Kodi peut être arrêté. La connexion est testée avant tout nouvel ajout.</p><button class="secondary wide" type="button" data-test-connection="kodi-form">Tester la connexion MariaDB</button><p id="kodi-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées. Une synchronisation Kodi retire les fichiers absents de la base MyVideos, mais conserve les films également présents dans CLZ. Supprimer un fichier du disque ne suffit pas : nettoyez d’abord la médiathèque Kodi.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p><p id="player-result-${esc(p.id)}" class="hint play-status" role="status"></p></div><div class="connection-actions"><button data-test-player="${esc(p.id)}">Tester</button><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Ce formulaire contacte l’API HTTP de Kodi, pas MariaDB. Kodi doit être démarré, avec le contrôle distant HTTP activé, et utiliser la base MyVideos choisie.</p><button class="secondary wide" type="button" data-test-connection="player-form">Tester la connexion Kodi</button><p id="player-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
+    const sourceJobs=new Map();
+    for(const job of state.jobs)if(!sourceJobs.has(job.source_id))sourceJobs.set(job.source_id,job);
+    $('connection-content').innerHTML=`<h3 class="connection-subheading">Métadonnées et portraits · TMDB</h3><section class="metadata-status"><p>${state.tmdbAvailable?'TMDB est configuré. Les fiches récupèrent automatiquement le casting, les portraits et les bandes-annonces disponibles.':'TMDB n’est pas configuré. Renseignez TMDB_API_TOKEN dans .env, puis relancez rebuild.sh.'}</p><p class="hint">Utilisez le jeton de lecture API ou la clé API v3 depuis <a href="https://www.themoviedb.org/settings/api" target="_blank" rel="noopener noreferrer">les paramètres API de votre compte TMDB ↗</a>. Le secret reste sur le serveur. Il n’est pas nécessaire de réimporter la bibliothèque pour activer TMDB.</p><button id="test-tmdb" class="secondary" ${state.tmdbAvailable?'':'disabled'}>Tester la connexion TMDB</button><p id="tmdb-test-result" class="hint play-status" role="status"></p></section><h3 class="connection-subheading">Sources du catalogue</h3>${sources.map(s=>`<div class="connection-card"><div><strong>${esc(s.name)}</strong><p>${s.type==='kodi'?'Kodi / MariaDB':'CLZ Movies'} · ${s.item_count} entrées${s.last_sync?` · ${date(s.last_sync)}`:''}${!s.enabled?' · Désactivée':''}</p>${sourceJobs.get(s.id)?.result?.database?`<p class="hint">Base synchronisée : <strong>${esc(sourceJobs.get(s.id).result.database)}</strong> · ${s.config?.database?'sélection explicite':'détection automatique'}</p>`:''}${sourceJobs.get(s.id)&&['pending','running'].includes(sourceJobs.get(s.id).status)?`<p class="hint"><span class="activity-spinner" style="display:inline-block;vertical-align:middle" aria-hidden="true"></span> ${s.type==='clz'?'Import':'Synchronisation'} en cours…</p>`:''}${s.last_error?`<p class="error-text">${esc(s.last_error)}</p>`:''}</div><div class="connection-actions">${s.type==='kodi'?`<button data-sync="${esc(s.id)}">Synchroniser</button><button data-edit-source="${esc(s.id)}">Modifier</button>`:''}<button data-remove-source="${esc(s.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Aucune source configurée.</p>'}<details><summary class="text-button">+ Connecter une base Kodi</summary><form id="kodi-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — NAS"></label><label>Hôte MariaDB<input name="host" required placeholder="192.168.1.10"></label><label>Port<input name="port" type="number" min="1" max="65535" value="3306" required></label><label>Base MyVideos<input name="database" placeholder="Automatique, ou MyVideos…"></label><label>Utilisateur<input name="username" required autocomplete="off" placeholder="kodi_library"></label><label>Mot de passe<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">Connexion MariaDB avec TLS</label><p class="hint wide">Ce formulaire contacte MariaDB, pas l’API HTTP de Kodi. Un compte SELECT suffit ; Kodi peut être arrêté. La connexion est testée avant tout nouvel ajout.</p><button class="secondary wide" type="button" data-test-connection="kodi-form">Tester la connexion MariaDB</button><p id="kodi-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button class="primary wide" type="submit">Enregistrer et synchroniser</button></form></details><h3 class="connection-subheading">Importer CLZ Movies</h3><form id="clz-form" class="upload-row"><select name="source_id" aria-label="Collection CLZ">${clz.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}<option value="">Nouvelle collection…</option></select><input name="file" type="file" accept=".xml,application/xml,text/xml" required aria-label="Export XML CLZ Movies"><button class="secondary" type="submit">Importer l’export XML</button><p class="hint">Un nouvel import remplace les données de cette collection et conserve les données Kodi associées. Une synchronisation Kodi retire les fichiers absents de la base MyVideos, mais conserve les films également présents dans CLZ. Supprimer un fichier du disque ne suffit pas : nettoyez d’abord la médiathèque Kodi.</p></form><div id="job-status" class="job-status" role="status" hidden></div><h3 class="connection-subheading">Instances Kodi pour la lecture</h3>${state.players.map(p=>`<div class="connection-card"><div><strong>${esc(p.name)}</strong><p>${esc(p.host)}:${p.port}</p><p id="player-result-${esc(p.id)}" class="hint play-status" role="status"></p></div><div class="connection-actions"><button data-test-player="${esc(p.id)}">Tester</button><button data-edit-player="${esc(p.id)}">Modifier</button><button data-remove-player="${esc(p.id)}">Retirer</button></div></div>`).join('')||'<p class="hint">Configurez-les lorsque vous souhaitez lancer un média à distance.</p>'}${kodi.length?`<details><summary class="text-button">+ Ajouter une instance Kodi</summary><form id="player-form" class="connection-form"><input type="hidden" name="id"><label>Nom<input name="name" required placeholder="Kodi — Salon"></label><label>Base partagée<select name="source_id">${kodi.map(s=>`<option value="${esc(s.id)}">${esc(s.name)}</option>`).join('')}</select></label><label>Hôte Kodi<input name="host" required placeholder="192.168.1.20"></label><label>Port HTTP<input name="port" type="number" value="8080" min="1" max="65535" required></label><label>Utilisateur HTTP<input name="username" autocomplete="off"></label><label>Mot de passe HTTP<input name="password" type="password" autocomplete="new-password"></label><label class="check-label wide"><input name="tls" type="checkbox">HTTPS sur Kodi</label><p class="hint wide">Ce formulaire contacte l’API HTTP de Kodi, pas MariaDB. Kodi doit être démarré, avec le contrôle distant HTTP activé, et utiliser la base MyVideos choisie.</p><button class="secondary wide" type="button" data-test-connection="player-form">Tester la connexion Kodi</button><p id="player-form-result" class="connection-result wide" role="status" aria-live="polite" hidden></p><button type="submit" class="primary wide">Enregistrer l’instance</button></form></details>`:''}`;
     showDialog('connections-dialog');
+    renderActivity();
   } catch(e) {toast(e.message);}
 }
 function connectionInput(form) {
