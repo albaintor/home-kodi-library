@@ -415,9 +415,8 @@ def test_kodi_snapshot_replacement_removes_absent_editions_after_file_id_changes
     assert store.media(source_type="kodi")["total"] == 1
     with store.connect() as conn:
         assert [
-            row[0] for row in conn.execute(
-                "SELECT external_key FROM records WHERE source_id=?", (kodi,)
-            )
+            row[0]
+            for row in conn.execute("SELECT external_key FROM records WHERE source_id=?", (kodi,))
         ] == ["movie:22:201"]
 
 

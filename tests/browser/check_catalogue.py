@@ -201,9 +201,9 @@ def main():
                 store.start_job(background["id"])
                 expect(page.locator("#activity-indicator")).to_be_visible(timeout=8000)
                 expect(page.locator("#activity-label")).to_contain_text("Kodi")
-                store.finish_job(background["id"], result={
-                    "database": "MyVideos131", "removed_editions": 0
-                })
+                store.finish_job(
+                    background["id"], result={"database": "MyVideos131", "removed_editions": 0}
+                )
                 expect(page.locator("#activity-indicator")).to_be_hidden(timeout=8000)
                 page.locator("#lists-button").click()
                 expect(page.locator("#new-list-form")).to_be_visible()

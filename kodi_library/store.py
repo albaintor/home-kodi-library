@@ -264,7 +264,8 @@ class Store:
             # Assert a complete source snapshot, including removals. A failure
             # rolls back the transaction rather than publishing a stale edition.
             actual_keys = {
-                row[0] for row in conn.execute(
+                row[0]
+                for row in conn.execute(
                     "SELECT external_key FROM records WHERE source_id=?", (source_id,)
                 )
             }
