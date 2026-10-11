@@ -26,8 +26,7 @@ class SQLCursor:
         elif query.startswith("SHOW COLUMNS FROM"):
             table = query.split("`")[1]
             self.rows = [
-                {"Field": row[1]}
-                for row in self.database.execute(f"PRAGMA table_info(`{table}`)")
+                {"Field": row[1]} for row in self.database.execute(f"PRAGMA table_info(`{table}`)")
             ]
         else:
             self.rows = [dict(row) for row in self.database.execute(query)]
@@ -107,9 +106,7 @@ def test_sql_navigation_removes_residual_movie_even_if_movie_row_is_present(stor
 
 def test_sync_uses_mariadb_only_even_when_player_is_configured(store):
     source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
-    store.save_player(
-        {"name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080}
-    )
+    store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080})
     store.apply_snapshot(
         source_id,
         [

@@ -281,9 +281,8 @@ class KodiConnector:
                 if has_default
                 else "legacy movie_view (no isDefaultVersion column)"
             )
-            sql = (
-                f"SELECT DISTINCT idMovie FROM movie_view WHERE idMovie IN ({marks})"
-                + (" AND isDefaultVersion = 1" if has_default else "")
+            sql = f"SELECT DISTINCT idMovie FROM movie_view WHERE idMovie IN ({marks})" + (
+                " AND isDefaultVersion = 1" if has_default else ""
             )
             cursor.execute(sql, ids)
             listed = sorted({int(row["idMovie"]) for row in cursor.fetchall()})
@@ -513,13 +512,10 @@ class KodiConnector:
                 # version has been detached. Such a movie is NOT listed by Kodi.
                 if has_default:
                     default_fields = (
-                        "idMovie, videoVersionTypeItemType"
-                        if has_asset_type
-                        else "idMovie"
+                        "idMovie, videoVersionTypeItemType" if has_asset_type else "idMovie"
                     )
                     cursor.execute(
-                        f"SELECT {default_fields} FROM `movie_view` "
-                        "WHERE isDefaultVersion = 1"
+                        f"SELECT {default_fields} FROM `movie_view` WHERE isDefaultVersion = 1"
                     )
                     default_rows = cursor.fetchall()
                     library_movie_ids = {int(row["idMovie"]) for row in default_rows}
@@ -616,7 +612,9 @@ class KodiConnector:
             "orphaned_movie_view_examples": orphan_examples,
             "library_verified": library_movie_ids is not None,
             "library_rule": library_rule,
-            "library_movie_count": len(library_movie_ids) if library_movie_ids is not None else None,
+            "library_movie_count": len(library_movie_ids)
+            if library_movie_ids is not None
+            else None,
             "library_excluded_editions": not_in_library_count,
             "library_excluded_examples": not_in_library_examples,
             "sql_view_fetch_ms": view_fetch_ms,
