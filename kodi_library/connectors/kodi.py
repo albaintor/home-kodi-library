@@ -8,7 +8,7 @@ import math
 import re
 import socket
 from collections import defaultdict
-from typing import Callable
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import unquote
 from xml.etree.ElementTree import ParseError
