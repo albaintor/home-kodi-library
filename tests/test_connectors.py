@@ -215,7 +215,7 @@ def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
 
     def execute(query, *params):
         if query == "SHOW FULL TABLES":
-            rows = [{"Tables": x} for x in ("movie", "files", "path", "videoversion")]
+            rows = [{"Tables": x} for x in ("movie", "files", "path", "videoversion", "movie_view")]
         elif query == "SHOW COLUMNS FROM `path`":
             rows = [{"Field": "noUpdate"}, {"Field": "exclude"}]
         elif query == "SHOW COLUMNS FROM `movie_view`":

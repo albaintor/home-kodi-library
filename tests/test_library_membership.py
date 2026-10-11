@@ -36,7 +36,7 @@ class SQLCursor:
 
 
 def movie_database(*, legacy=False):
-    db = sqlite3.connect(":memory:")
+    db = sqlite3.connect(":memory:", check_same_thread=False)
     db.row_factory = sqlite3.Row
     if legacy:
         db.execute("CREATE TABLE movie_view (idMovie INTEGER,idFile INTEGER,c00 TEXT)")
@@ -58,6 +58,8 @@ def movie_database(*, legacy=False):
                 (3, 30, "Orphan version", 30, 0, 1),
             ],
         )
+    db.execute("CREATE TABLE uniqueid(media_id INTEGER,media_type TEXT,type TEXT,value TEXT)")
+    db.execute("INSERT INTO uniqueid VALUES(1,'movie','imdb','tt0123456')")
     db.execute("CREATE TABLE movie(idMovie INTEGER PRIMARY KEY)")
     db.executemany("INSERT INTO movie VALUES(?)", [(1,), (2,), (3,)])
     return db
@@ -91,7 +93,7 @@ def test_legacy_movie_view_without_default_column_preserves_previous_behavior():
 def test_sql_navigation_removes_residual_movie_even_if_movie_row_is_present(store):
     source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
     old = [
-        Record("movie:1:10", "movie", "Listed film"),
+        Record("movie:1:10", "movie", "Listed film", identifiers={"imdb": "tt0123456"}),
         Record("movie:2:20", "movie", "Residual movie"),
     ]
     store.apply_snapshot(source_id, old)
