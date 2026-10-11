@@ -231,8 +231,8 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
 
     monkeypatch.setattr(
         KodiConnector,
-        "check_movie_ids",
-        lambda self, ids: {"database": "MyVideos131", "movie_ids_present": []},
+        "inspect_movie_links",
+        lambda self, ids: {"database": "MyVideos131", "movies": {}},
     )
     read = {"Authorization": f"Bearer {READ}"}
     assert client.get(f"/api/v1/media/{item['id']}/diagnostics", headers=read).status_code == 403
@@ -242,3 +242,56 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
     edition = diag["sources"][0]["editions"][0]
     assert diag["sources"][0]["queried_database"] == "MyVideos131"
     assert edition["exists_in_movie"] is False
+
+
+def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, monkeypatch):
+    import contextlib
+
+    import kodi_library.app as app_module
+    from kodi_library.connectors.kodi import KodiConnector
+
+    sid = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={
+            "name": "Kodi", "type": "kodi",
+            "config": {"host": "nas", "username": "reader", "database": "MyVideos131"},
+        },
+    ).json()["id"]
+    store = client.app.state.store
+    store.apply_snapshot(
+        sid, [Record("movie:7:8", "movie", "Phantom",
+                     metadata={"kodi_id": 7, "file_id": 8})],
+    )
+    movie = store.media()["items"][0]
+    store.save_player(
+        {"name": "Salon", "source_id": sid, "host": "192.168.1.3", "port": 8080}
+    )
+    monkeypatch.setattr(
+        KodiConnector, "inspect_movie_links",
+        lambda self, ids: {
+            "database": "MyVideos131",
+            "movies": {7: {
+                "title": "Phantom", "default_file_id": 8,
+                "file_row_exists": True, "path_row_exists": True,
+                "file": "smb://nas/films/phantom.mkv",
+                "excluded_from_scan": 0, "scan_disabled": 0, "versions": [],
+            }},
+        },
+    )
+
+    @contextlib.asynccontextmanager
+    async def fake_connection(config):
+        async def rpc(method, params):
+            assert method == "VideoLibrary.GetMovieDetails"
+            assert params["movieid"] == 7
+            return {"moviedetails": {"movieid": 7, "file": "smb://nas/films/phantom.mkv"}}
+        yield rpc
+
+    monkeypatch.setattr(app_module, "kodi_rpc_connection", fake_connection)
+    response = client.get(f"/api/v1/media/{movie['id']}/diagnostics", headers=admin)
+    assert response.status_code == 200, response.text
+    info = response.json()["sources"][0]
+    assert info["editions"][0]["sql_links"]["file_row_exists"] is True
+    assert info["players"][0]["movies"][0]["recognized"] is True
+    assert info["physical_file_verified"] is False

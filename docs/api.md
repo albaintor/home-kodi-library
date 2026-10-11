@@ -105,10 +105,19 @@ son `idMovie` est absent de `movie`. Le rapport de tâche contient
 `orphaned_movie_view_examples` (limité à 10 lignes).
 
 La fiche film expose, en mode administrateur, le bouton
-**Vérifier dans Kodi (table movie)** : `GET /api/v1/media/{id}/diagnostics`
-contrôle en temps réel les identifiants Kodi de chaque édition dans la
-base `MyVideos` effectivement utilisée par sa source et signale les éditions
-CLZ qui justifient la conservation de la fiche. Ce diagnostic n'efface rien.
+**Diagnostiquer la présence Kodi / fichiers** : `GET /api/v1/media/{id}/diagnostics`
+interroge dans la même base `MyVideos` les tables `movie`, `files`,
+`path` et, lorsqu'elle existe, `videoversion`. Il signale les liens de
+fichiers manquants, le chemin enregistré et les éditions CLZ. S'il existe
+une instance Kodi associée à la source, il interroge également son API
+`VideoLibrary.GetMovieDetails` pour connaître l'identifiant et le chemin
+qu'elle renvoie. Un lien `files/path` valide **ne prouve pas** que le
+fichier existe physiquement sur SMB/NFS ; le contrôle SQL et JSON-RPC ne
+teste pas l'accès physique au NAS. `path.exclude` et `path.noUpdate`
+ne sont pas des marques de suppression : ils concernent la découverte/
+l'actualisation du contenu. Aucun film n'est supprimé automatiquement
+sur la seule base de ces indicateurs et le diagnostic n'écrit jamais
+dans MyVideos.
 
 Une synchronisation récupère un instantané **complet** des entrées de la base
 `MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées

@@ -477,7 +477,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${item.source_types.length===1&&item.source_types[0]==='clz'?'<p class="hint">Cette fiche provient uniquement de CLZ. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier dans Kodi (table movie)</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${item.source_types.length===1&&item.source_types[0]==='clz'?'<p class="hint">Cette fiche provient uniquement de CLZ. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Diagnostiquer la présence Kodi / fichiers</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -502,7 +502,7 @@ async function diagnoseKodi() {
   const button=$('diagnose-kodi');
   if(!item||!display||!button)return;
   display.hidden=false;
-  display.textContent='Vérification directe de la table movie sur chaque source Kodi…';
+  display.textContent='Contrôle des liens movie/files/path/videoversion et des instances Kodi configurées…';
   button.disabled=true;
   try {
     const data=await api('media/'+encodeURIComponent(item.id)+'/diagnostics');
@@ -520,7 +520,27 @@ async function diagnoseKodi() {
         const status=edition.exists_in_movie===true?'Présent dans movie':
           edition.exists_in_movie===false?'ABSENT de movie (édition obsolète)':'Non vérifié';
         paragraphs.push('<p class="'+(edition.exists_in_movie===false?'error-text':'hint')+'">'+esc(edition.external_key)+' · idMovie='+esc(edition.kodi_id??'—')+' · '+esc(status)+'</p>');
+        const links=edition.sql_links;
+        if(links){
+          paragraphs.push('<p class="hint">Fichier par défaut (ID '+esc(links.default_file_id??'—')+') : '+(links.file_row_exists?'ligne files présente':'<strong>ligne files absente</strong>')+' · '+(links.path_row_exists?'chemin SQL présent':'<strong>chemin SQL absent</strong>')+'</p>');
+          if(links.file)paragraphs.push('<p class="hint">Chemin enregistré : <code>'+esc(links.file)+'</code></p>');
+          if(links.excluded_from_scan)paragraphs.push('<p class="hint">Répertoire exclu du scan (path.exclude)</p>');
+          if(links.scan_disabled)paragraphs.push('<p class="hint">Mise à jour du répertoire désactivée (path.noUpdate)</p>');
+          if(links.versions?.length)paragraphs.push('<p class="hint">Versions dans videoversion : '+links.versions.map(v=>'ID '+esc(v.file_id??'—')+' ('+(v.file_row_exists?'lien valide':'fichier SQL absent')+')').join(' · ')+'</p>');
+        }
       }
+      for(const player of source.players||[]){
+        paragraphs.push('<p><strong>Instance Kodi : '+esc(player.name)+'</strong></p>');
+        if(player.error)paragraphs.push('<p class="error-text">'+esc(player.error)+'</p>');
+        for(const movie of player.movies||[]){
+          const status=movie.recognized===true?'Reconnu par Kodi':
+            movie.recognized===false?'Non reconnu par Kodi':'Vérification non concluante';
+          paragraphs.push('<p class="hint">idMovie='+esc(movie.kodi_id)+' · '+esc(status)+'</p>');
+          if(movie.file)paragraphs.push('<p class="hint">Chemin renvoyé par Kodi : <code>'+esc(movie.file)+'</code></p>');
+          if(movie.error)paragraphs.push('<p class="error-text">'+esc(movie.error)+'</p>');
+        }
+      }
+      paragraphs.push('<p class="hint">La présence dans files/path atteste un lien SQL, pas l’existence physique du fichier NAS. exclude/noUpdate contrôlent le scan, ce ne sont pas des indicateurs de suppression.</p>');
     }
     $('kodi-diagnostic').innerHTML=paragraphs.join('')||'<p>Aucune édition répertoriée.</p>';
   }catch(e){

@@ -204,3 +204,48 @@ def test_kodi_progress_callbacks_are_throttled_to_avoid_sqlite_write_storm(monke
         ("movies", 100, 100),
         ("episodes", 0, 5),
     ]
+
+
+def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
+    cursor = MagicMock()
+
+    def execute(query, *params):
+        if query == "SHOW FULL TABLES":
+            rows = [{"Tables": x} for x in ("movie", "files", "path", "videoversion")]
+        elif query == "SHOW COLUMNS FROM `path`":
+            rows = [{"Field": "noUpdate"}, {"Field": "exclude"}]
+        elif "FROM movie m" in query:
+            assert params == ([7, 8],)
+            rows = [
+                {"idMovie": 7, "title": "Movie", "default_file_id": 42,
+                 "resolved_file_id": 42, "strFileName": "film.mkv",
+                 "strPath": "smb://nas/", "excluded_from_scan": 0, "scan_disabled": 1},
+                {"idMovie": 8, "title": "Orphan", "default_file_id": 101,
+                 "resolved_file_id": None, "strFileName": None,
+                 "strPath": None, "excluded_from_scan": None, "scan_disabled": None},
+            ]
+        elif "FROM videoversion v" in query:
+            assert params == ([7, 8],)
+            rows = [
+                {"idMedia": 7, "idFile": 43, "itemType": 0,
+                 "resolved_file_id": 43, "strFileName": "long.mkv",
+                 "strPath": "smb://nas/"},
+            ]
+        else:
+            rows = []
+        cursor.fetchall.return_value = rows
+
+    cursor.execute.side_effect = execute
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+        report = KodiConnector(
+            {"host": "nas", "username": "reader", "database": "MyVideos131"}
+        ).inspect_movie_links([7, 8, 7])
+    movies = report["movies"]
+    assert movies[7]["file"] == "smb://nas/film.mkv"
+    assert movies[7]["scan_disabled"] == 1
+    assert movies[7]["versions"][0]["file"] == "smb://nas/long.mkv"
+    assert movies[8]["file_row_exists"] is False
+    assert movies[8]["path_row_exists"] is False

@@ -57,6 +57,7 @@ from .models import (
     SourceView,
     WatchStatus,
 )
+from .players import connection as kodi_rpc_connection
 from .players import play
 from .players import probe as probe_player
 from .settings import Settings
@@ -342,13 +343,67 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if detail["kind"] == "movie" and movie_ids:
                         try:
                             checked = await asyncio.to_thread(
-                                KodiConnector(source["config"]).check_movie_ids, movie_ids
+                                KodiConnector(source["config"]).inspect_movie_links, movie_ids
                             )
                             report["queried_database"] = checked["database"]
-                            present = set(checked["movie_ids_present"])
+                            movie_rows = {int(k): v for k, v in checked["movies"].items()}
                             for entry in report["editions"]:
                                 if isinstance(entry["kodi_id"], int):
-                                    entry["exists_in_movie"] = entry["kodi_id"] in present
+                                    row = movie_rows.get(entry["kodi_id"])
+                                    entry["exists_in_movie"] = row is not None
+                                    entry["sql_links"] = row
+                            # A database file/path link is not proof of file existence
+                            # on SMB/NFS. A configured Kodi player can separately
+                            # tell us whether it resolves this movie ID.
+                            report["physical_file_verified"] = False
+                            report["players"] = []
+                            player_list = await asyncio.to_thread(store.players)
+                            for public_player in player_list:
+                                if public_player["source_id"] != sid:
+                                    continue
+                                configured_player = await asyncio.to_thread(
+                                    store.player, public_player["id"]
+                                )
+                                if not configured_player:
+                                    continue
+                                player_report = {
+                                    "name": public_player["name"],
+                                    "movies": [],
+                                }
+                                try:
+                                    async with kodi_rpc_connection(
+                                        configured_player["config"]
+                                    ) as rpc:
+                                        for kodi_id in sorted(set(movie_ids)):
+                                            try:
+                                                answer = await rpc(
+                                                    "VideoLibrary.GetMovieDetails",
+                                                    {
+                                                        "movieid": kodi_id,
+                                                        "properties": ["file"],
+                                                    },
+                                                )
+                                                item = answer.get("moviedetails") if isinstance(
+                                                    answer, dict
+                                                ) else None
+                                                player_report["movies"].append(
+                                                    {
+                                                        "kodi_id": kodi_id,
+                                                        "recognized": bool(item),
+                                                        "file": item.get("file") if item else None,
+                                                    }
+                                                )
+                                            except ConnectorError as exc:
+                                                player_report["movies"].append(
+                                                    {
+                                                        "kodi_id": kodi_id,
+                                                        "recognized": None,
+                                                        "error": str(exc),
+                                                    }
+                                                )
+                                except ConnectorError as exc:
+                                    player_report["error"] = str(exc)
+                                report["players"].append(player_report)
                         except ConnectorError as exc:
                             report["error"] = str(exc)
                     else:

@@ -187,6 +187,88 @@ class KodiConnector:
 
         return self._read(check)
 
+    def inspect_movie_links(self, movie_ids: list[int]) -> dict[str, Any]:
+        """Inspect retained movie rows and their database file/path links.
+
+        A Kodi database does not track the physical existence of SMB/NFS
+        files. Missing SQL links are authoritative; existing links are not
+        proof that a file remains available on storage.
+        """
+        ids = sorted({int(value) for value in movie_ids if int(value) > 0})
+        if len(ids) > 100:
+            raise ConnectorError("At most 100 Kodi movie IDs may be inspected.")
+
+        def inspect(cursor):
+            if not ids:
+                return {"database": self.database, "movies": {}}
+            cursor.execute("SHOW FULL TABLES")
+            tables = {str(next(iter(row.values()))) for row in cursor.fetchall()}
+            if not {"movie", "files", "path"}.issubset(tables):
+                raise ConnectorError(
+                    "The Kodi database must expose movie, files and path for diagnostics."
+                )
+            cursor.execute("SHOW COLUMNS FROM `path`")
+            path_cols = {str(row["Field"]).casefold() for row in cursor.fetchall()}
+            optional = [
+                f"p.`{column}` AS `{alias}`"
+                for column, alias in (("exclude", "excluded_from_scan"), ("noUpdate", "scan_disabled"))
+                if column.casefold() in path_cols
+            ]
+            marks = ",".join("%s" for _ in ids)
+            sql = (
+                "SELECT m.idMovie, m.c00 AS title, m.idFile AS default_file_id, "
+                "f.idFile AS resolved_file_id, f.strFileName, p.strPath"
+                + (", " + ", ".join(optional) if optional else "")
+                + " FROM movie m "
+                "LEFT JOIN files f ON f.idFile=m.idFile "
+                "LEFT JOIN path p ON p.idPath=f.idPath "
+                f"WHERE m.idMovie IN ({marks})"
+            )
+            cursor.execute(sql, ids)
+            movies = {}
+            for row in cursor.fetchall():
+                movie_id = int(row["idMovie"])
+                filename = str(row.get("strFileName") or "")
+                path = str(row.get("strPath") or "")
+                movies[movie_id] = {
+                    "title": str(row.get("title") or ""),
+                    "default_file_id": row.get("default_file_id"),
+                    "file_row_exists": row.get("resolved_file_id") is not None,
+                    "path_row_exists": row.get("strPath") is not None,
+                    "file": path + filename if filename else None,
+                    "excluded_from_scan": row.get("excluded_from_scan"),
+                    "scan_disabled": row.get("scan_disabled"),
+                    "versions": [],
+                }
+            if "videoversion" in tables:
+                cursor.execute(
+                    "SELECT v.idMedia, v.idFile, v.itemType, "
+                    "f.idFile AS resolved_file_id, f.strFileName, p.strPath "
+                    "FROM videoversion v "
+                    "LEFT JOIN files f ON f.idFile=v.idFile "
+                    "LEFT JOIN path p ON p.idPath=f.idPath "
+                    f"WHERE v.media_type='movie' AND v.idMedia IN ({marks})",
+                    ids,
+                )
+                for row in cursor.fetchall():
+                    movie = movies.get(int(row["idMedia"]))
+                    if movie is not None:
+                        filename = str(row.get("strFileName") or "")
+                        movie["versions"].append(
+                            {
+                                "file_id": row.get("idFile"),
+                                "item_type": row.get("itemType"),
+                                "file_row_exists": row.get("resolved_file_id") is not None,
+                                "path_row_exists": row.get("strPath") is not None,
+                                "file": str(row.get("strPath") or "") + filename
+                                if filename
+                                else None,
+                            }
+                        )
+            return {"database": self.database, "movies": movies}
+
+        return self._read(inspect)
+
     def _read(self, operation):
         config = self.config
         if not config.get("host") or not config.get("username"):
