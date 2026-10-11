@@ -192,6 +192,10 @@ Sans instance associée à la source, la fiche propose **Configurer une instance
 
 Un navigateur ne fournit pas de lecture SMB/NFS native : un lien vers ces protocoles dépend d'un gestionnaire installé sur le poste et de ses accès au partage. `file://` est aussi restreint depuis une page web. Aucun lien de lecture locale universel n'est proposé ; le chemin peut être ouvert dans un lecteur disposant des droits NAS. Cette version ne diffuse/transcode pas les fichiers vidéo via HTTP. [Gestionnaires de protocoles dans les navigateurs](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Player.Open Kodi](https://kodi.wiki/view/JSON-RPC_API/v13.11).
 
+## Nom stable du conteneur sur Synology
+
+Les fichiers `compose.yaml` et `compose.host.yaml` définissent désormais `container_name: ${KODI_LIBRARY_CONTAINER_NAME:-home-kodi-library}` pour obtenir un nom lisible dans Synology Container Manager lors des prochains déploiements. Pour personnaliser ce nom sans modifier les fichiers versionnés, renseigner `KODI_LIBRARY_CONTAINER_NAME` dans `.env`. Cela n'affecte ni les volumes, ni le mode réseau choisi ; un changement de nom Compose peut néanmoins nécessiter une recréation du conteneur. Si un autre conteneur possède déjà ce nom, le nouveau déploiement échouera jusqu'à résolution du conflit. Préserver `COMPOSE_FILE` pour conserver notamment le mode `host` lorsqu'il est utilisé pour l'accès local sans jeton.
+
 ## Accès local sans jeton
 
 Par défaut, l'authentification reste obligatoire. Pour autoriser explicitement votre réseau local en IPv4/IPv6, adapter ces plages dans `.env` :
