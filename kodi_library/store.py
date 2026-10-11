@@ -248,13 +248,34 @@ class Store:
                         (work_id, record.kind, namespace, value),
                     )
             deleted = 0
+            removed_work_ids = set()
             for key, row in old.items():
                 if key not in seen:
                     conn.execute("DELETE FROM records WHERE id=?", (row["id"],))
+                    removed_work_ids.add(row["work_id"])
                     deleted += 1
             for work_id in affected:
                 self._rebuild(conn, work_id)
             self._prune(conn)
+
+            # An absent Kodi edition may have been the last source of a work,
+            # or one of several editions of a film also owned in CLZ.
+            removed_works = kept_clz_works = 0
+            if source["type"] == "kodi":
+                for work_id in removed_work_ids:
+                    remaining_types = {
+                        row[0]
+                        for row in conn.execute(
+                            "SELECT DISTINCT s.type FROM records r "
+                            "JOIN sources s ON s.id=r.source_id WHERE r.work_id=?",
+                            (work_id,),
+                        )
+                    }
+                    if not remaining_types:
+                        removed_works += 1
+                    elif remaining_types == {"clz"}:
+                        kept_clz_works += 1
+
             conn.execute(
                 "UPDATE sources SET last_sync=?,last_error=NULL WHERE id=?", (now(), source_id)
             )
@@ -263,6 +284,8 @@ class Store:
                 "created_editions": inserted,
                 "updated_editions": updated,
                 "removed_editions": deleted,
+                "removed_works": removed_works,
+                "kept_clz_works": kept_clz_works,
                 "matching_conflicts": conflicts,
             }
 

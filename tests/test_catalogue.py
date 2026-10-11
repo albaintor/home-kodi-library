@@ -241,3 +241,99 @@ def test_parent_links_survive_show_and_episode_import(store):
     parent = store.media(kind="tvshow")["items"][0]["id"]
     assert store.media(parent_id=parent)["total"] == 1
     assert store.media(parent_id=parent)["items"][0]["episode"] == 2
+
+
+def test_kodi_reconciliation_deletes_missing_files_but_retains_clz_work(store):
+    """Removing Kodi editions must not erase the linked physical collection."""
+    clz = source(store)
+    kodi = source(store, "kodi")
+    store.apply_snapshot(
+        clz,
+        [
+            Record(
+                "disc-1",
+                "movie",
+                "Film en collection",
+                identifiers={"imdb": "tt0123456"},
+                formats=["Blu-ray"],
+                watched=None,
+            )
+        ],
+    )
+    version_a = Record(
+        "movie:42:10",
+        "movie",
+        "Film dans Kodi",
+        identifiers={"imdb": "tt0123456", "tmdb": "123"},
+        formats=["4K"],
+        watched=False,
+        metadata={"file_id": 10, "file": "video.mkv"},
+    )
+    version_b = replace(
+        version_a,
+        external_key="movie:42:11",
+        formats=["1080p"],
+        metadata={"file_id": 11, "file": "alternative.mkv"},
+    )
+    kodi_only = Record(
+        "movie:99:19",
+        "movie",
+        "Film numérique seul",
+        identifiers={"imdb": "tt7654321"},
+        watched=True,
+    )
+    store.apply_snapshot(kodi, [version_a, version_b, kodi_only])
+    shared_id = store.media(q="Film dans Kodi")["items"][0]["id"]
+    gone_id = store.media(q="Film numérique seul")["items"][0]["id"]
+    collection = store.save_list({"name": "Ma sélection", "description": ""})
+    store.change_list_item(collection["id"], shared_id)
+    store.update_personal(shared_id, {"user_rating": 9.0})
+
+    # Kodi removes an alternative version and a digital-only film while
+    # updating the remaining Kodi version's metadata.
+    result = store.apply_snapshot(
+        kodi, [replace(version_a, title="Titre Kodi actualisé", formats=["HDR10+"])]
+    )
+    assert result["removed_editions"] == 2
+    assert result["removed_works"] == 1
+    assert result["kept_clz_works"] == 0
+    assert store.detail(gone_id) is None
+    current = store.detail(shared_id)
+    assert current["title"] == "Titre Kodi actualisé"
+    assert current["formats"] == ["Blu-ray", "HDR10+"]
+    assert len(current["editions"]) == 2
+    assert {e["external_key"] for e in current["editions"]} == {"disc-1", "movie:42:10"}
+
+    # When the final Kodi file disappears, CLZ and user data survive.
+    result = store.apply_snapshot(kodi, [])
+    assert result["removed_editions"] == 1
+    assert result["removed_works"] == 0
+    assert result["kept_clz_works"] == 1
+    assert store.media(source_type="kodi")["total"] == 0
+    assert store.media(source_type="clz")["total"] == 1
+    current = store.detail(shared_id)
+    assert current["title"] == "Film en collection"
+    assert current["formats"] == ["Blu-ray"]
+    assert current["source_types"] == ["clz"]
+    assert current["user_rating"] == 9.0
+    assert len(current["editions"]) == 1
+    assert current["editions"][0]["source_type"] == "clz"
+    assert store.lists()[0]["item_count"] == 1
+
+    # The same CLZ work UUID is reused if Kodi later reimports the film.
+    result = store.apply_snapshot(kodi, [version_a])
+    assert result["created_editions"] == 1
+    assert store.media()["total"] == 1
+    assert store.detail(shared_id)["source_types"] == ["clz", "kodi"]
+
+
+def test_empty_kodi_snapshot_does_not_remove_unrelated_clz_entries(store):
+    clz, kodi = source(store), source(store, "kodi")
+    store.apply_snapshot(clz, [Record("disc", "movie", "CLZ indépendant")])
+    store.apply_snapshot(kodi, [Record("movie:1:5", "movie", "Kodi seul")])
+    result = store.apply_snapshot(kodi, [])
+    assert result["removed_editions"] == 1
+    assert result["removed_works"] == 1
+    assert result["kept_clz_works"] == 0
+    assert store.media()["total"] == 1
+    assert store.media()["items"][0]["title"] == "CLZ indépendant"
