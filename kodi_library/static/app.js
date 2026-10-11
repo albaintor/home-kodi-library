@@ -362,6 +362,7 @@ async function refresh() {
 const jobPhaseLabels={
   connecting:'Connexion à MariaDB',loading:'Lecture des métadonnées Kodi',parsing_clz:'Analyse du fichier CLZ',
   movies:'Films',series:'Séries',episodes:'Épisodes',
+  verifying_library:'Contrôle de la vidéothèque Kodi',
   publishing:'Mise à jour du catalogue',completed:'Terminé',failed:'Échec'
 };
 function jobProgressLabel(job) {
@@ -533,9 +534,11 @@ async function diagnoseKodi() {
         paragraphs.push('<p><strong>Instance Kodi : '+esc(player.name)+'</strong></p>');
         if(player.error)paragraphs.push('<p class="error-text">'+esc(player.error)+'</p>');
         for(const movie of player.movies||[]){
-          const status=movie.recognized===true?'Reconnu par Kodi':
-            movie.recognized===false?'Non reconnu par Kodi':'Vérification non concluante';
-          paragraphs.push('<p class="hint">idMovie='+esc(movie.kodi_id)+' · '+esc(status)+'</p>');
+          const status=movie.in_library===true?'PRÉSENT dans la vidéothèque Kodi':
+            movie.in_library===false?'ABSENT de la vidéothèque Kodi':
+            movie.recognized===true?'Fiche accessible par ID (appartenance non vérifiée)':
+            'Vérification non concluante';
+          paragraphs.push('<p class="'+(movie.in_library===false?'error-text':'hint')+'">idMovie='+esc(movie.kodi_id)+' · '+esc(status)+'</p>');
           if(movie.file)paragraphs.push('<p class="hint">Chemin renvoyé par Kodi : <code>'+esc(movie.file)+'</code></p>');
           if(movie.error)paragraphs.push('<p class="error-text">'+esc(movie.error)+'</p>');
         }
@@ -570,6 +573,8 @@ async function pollJob(job) {
       if(result.updated_editions) details.push(`${result.updated_editions} éditions reconnues`);
       if(result.unchanged_editions) details.push(`${result.unchanged_editions} éditions inchangées (sans réindexation)`);
       if(result.rebuilt_works!=null) details.push(`${result.rebuilt_works} fiches réindexées`);
+      if(result.library_verified)details.push(`Vidéothèque vérifiée via ${result.library_player} : ${result.library_movie_count} films · ${result.library_excluded_editions} éditions SQL non présentes dans Kodi écartées`);
+      if(result.library_warning)details.push(result.library_warning);
       if(result.removed_editions) details.push(`${result.removed_editions} éditions retirées de cette source`);
       else if(result.database) details.push('Aucune suppression Kodi détectée');
       if(result.removed_works) details.push(`${result.removed_works} œuvres supprimées du catalogue`);

@@ -109,15 +109,39 @@ La fiche film expose, en mode administrateur, le bouton
 interroge dans la même base `MyVideos` les tables `movie`, `files`,
 `path` et, lorsqu'elle existe, `videoversion`. Il signale les liens de
 fichiers manquants, le chemin enregistré et les éditions CLZ. S'il existe
-une instance Kodi associée à la source, il interroge également son API
-`VideoLibrary.GetMovieDetails` pour connaître l'identifiant et le chemin
-qu'elle renvoie. Un lien `files/path` valide **ne prouve pas** que le
+une instance Kodi associée à la source, il interroge son API
+`VideoLibrary.GetMovies` (liste effective des `movieid` de la vidéothèque)
+puis `VideoLibrary.GetMovieDetails`. **Une fiche encore accessible par ID
+n'implique pas qu'elle figure dans le listing de la vidéothèque.** Un lien `files/path` valide **ne prouve pas** que le
 fichier existe physiquement sur SMB/NFS ; le contrôle SQL et JSON-RPC ne
 teste pas l'accès physique au NAS. `path.exclude` et `path.noUpdate`
 ne sont pas des marques de suppression : ils concernent la découverte/
 l'actualisation du contenu. Aucun film n'est supprimé automatiquement
 sur la seule base de ces indicateurs et le diagnostic n'écrit jamais
 dans MyVideos.
+
+La synchronisation Kodi est à présent **basée sur l'appartenance à la
+vidéothèque** : lorsqu'une instance Kodi est associée à la source,
+`VideoLibrary.GetMovies` est interrogé par pages de 500 éléments puis ses
+identifiants `movieid` filtrent les films extraits de MariaDB. Les différentes
+versions d'un film sont conservées ensemble si le film figure dans Kodi.
+Les séries et épisodes restent synchronisés via MariaDB. Aucune vérification
+de la présence physique des fichiers du NAS n'est exécutée.
+
+Pour éviter une suppression accidentelle, une réponse JSON-RPC partielle,
+une instance indisponible, une vidéothèque vide face à une source SQL non
+vide, ou l'absence totale d'identifiants communs **fait échouer la tâche
+sans remplacer le catalogue SQLite**. Avec plusieurs lecteurs associés à une
+même source, le premier lecteur (trié par nom) est utilisé et son nom apparaît
+dans le rapport de tâche. En l'absence de lecteur associé, la synchronisation
+MariaDB reste possible mais **la présence en vidéothèque n'est pas vérifiée** ;
+le rapport l'indique explicitement. Cette vérification nécessite que l'instance
+Kodi liée soit démarrée et joignable sur son interface HTTP JSON-RPC.
+
+Le résultat de tâche expose `library_verified`, `library_player`,
+`library_movie_count`, `library_excluded_movie_ids`,
+`library_excluded_editions`, `library_extra_movie_ids` et, en l'absence de
+lecteur, `library_warning`.
 
 Une synchronisation récupère un instantané **complet** des entrées de la base
 `MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées

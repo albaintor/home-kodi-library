@@ -945,8 +945,9 @@ class Store:
             "movies": (8, 70),
             "series": (70, 80),
             "episodes": (80, 95),
+            "verifying_library": (95, 97),
             "parsing_clz": (2, 92),
-            "publishing": (95, 99),
+            "publishing": (97, 99),
         }.get(phase, (0, 0))
         current = max(0, int(job.get("progress_current") or 0))
         total = max(0, int(job.get("progress_total") or 0))

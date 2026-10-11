@@ -58,7 +58,7 @@ from .models import (
     WatchStatus,
 )
 from .players import connection as kodi_rpc_connection
-from .players import play
+from .players import library_movie_ids, play
 from .players import probe as probe_player
 from .settings import Settings
 from .store import Store
@@ -371,6 +371,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     "movies": [],
                                 }
                                 try:
+                                    # GetMovieDetails can return a retained SQL
+                                    # record even if it is not listed in the
+                                    # active Kodi video library. GetMovies is
+                                    # the authoritative membership check.
+                                    visible_movies = await library_movie_ids(
+                                        configured_player["config"]
+                                    )
                                     async with kodi_rpc_connection(
                                         configured_player["config"]
                                     ) as rpc:
@@ -391,6 +398,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                                 player_report["movies"].append(
                                                     {
                                                         "kodi_id": kodi_id,
+                                                        "in_library": kodi_id in visible_movies,
                                                         "recognized": bool(item),
                                                         "file": item.get("file") if item else None,
                                                     }
@@ -399,6 +407,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                                 player_report["movies"].append(
                                                     {
                                                         "kodi_id": kodi_id,
+                                                        "in_library": kodi_id in visible_movies,
                                                         "recognized": None,
                                                         "error": str(exc),
                                                     }

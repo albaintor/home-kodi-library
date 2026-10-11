@@ -295,10 +295,15 @@ def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, m
 
         yield rpc
 
+    async def fake_library(config):
+        return {7}
+
     monkeypatch.setattr(app_module, "kodi_rpc_connection", fake_connection)
+    monkeypatch.setattr(app_module, "library_movie_ids", fake_library)
     response = client.get(f"/api/v1/media/{movie['id']}/diagnostics", headers=admin)
     assert response.status_code == 200, response.text
     info = response.json()["sources"][0]
     assert info["editions"][0]["sql_links"]["file_row_exists"] is True
     assert info["players"][0]["movies"][0]["recognized"] is True
+    assert info["players"][0]["movies"][0]["in_library"] is True
     assert info["physical_file_verified"] is False

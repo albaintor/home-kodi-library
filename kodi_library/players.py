@@ -85,6 +85,52 @@ async def connection(config: dict):
         ) from exc
 
 
+async def library_movie_ids(config: dict, *, page_size: int = 500) -> set[int]:
+    """Get the *visible Kodi video library*, not MariaDB's residual movie rows.
+
+    Read all pages of VideoLibrary.GetMovies before returning any identifiers.
+    An incomplete/inconsistent result raises so synchronization cannot mistake
+    partial JSON-RPC responses for deletions.
+    """
+    if not 1 <= page_size <= 1000:
+        raise ValueError("Invalid Kodi library page size.")
+    found: set[int] = set()
+    start = 0
+    async with connection(config) as rpc:
+        while True:
+            result = await rpc(
+                "VideoLibrary.GetMovies",
+                {"limits": {"start": start, "end": start + page_size}},
+            )
+            if not isinstance(result, dict):
+                raise ConnectorError("Kodi returned an invalid movie library response.")
+            limits = result.get("limits")
+            rows = result.get("movies", [])
+            if not isinstance(limits, dict) or not isinstance(rows, list):
+                raise ConnectorError("Kodi returned an invalid movie library page.")
+            total = limits.get("total")
+            if type(total) is not int or total < 0 or total > 500_000:
+                raise ConnectorError("Kodi returned an invalid movie library total.")
+            if total == 0:
+                if start or rows:
+                    raise ConnectorError("Kodi movie library changed during pagination.")
+                return set()
+            if not rows or len(rows) > page_size or len(found) + len(rows) > total:
+                raise ConnectorError("Kodi returned an incomplete movie library page.")
+            for movie in rows:
+                if not isinstance(movie, dict):
+                    raise ConnectorError("Kodi returned a malformed movie.")
+                movie_id = movie.get("movieid")
+                if type(movie_id) is not int or movie_id < 1 or movie_id in found:
+                    raise ConnectorError("Kodi returned missing or duplicate movie IDs.")
+                found.add(movie_id)
+            start += len(rows)
+            if start == total:
+                return found
+            if start > total:
+                raise ConnectorError("Kodi returned an inconsistent movie library total.")
+
+
 async def probe(config: dict) -> dict:
     async with connection(config) as rpc:
         if await rpc("JSONRPC.Ping", {}) != "pong":
