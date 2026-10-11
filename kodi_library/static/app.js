@@ -409,7 +409,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div><button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${item.source_types.length===1&&item.source_types[0]==='clz'?'<p class="hint">Cette fiche provient uniquement de CLZ. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -437,20 +437,28 @@ async function pollJob(job) {
     if(value.status==='completed') {
       const result=value.result||{};
       const details=[`${result.imported||0} entrées synchronisées`];
+      if(result.database) details.unshift(`Base Kodi : ${result.database}`);
       if(result.created_editions) details.push(`${result.created_editions} nouvelles éditions`);
       if(result.updated_editions) details.push(`${result.updated_editions} éditions actualisées`);
-      if(result.removed_editions) details.push(`${result.removed_editions} éditions Kodi/CLZ retirées`);
+      if(result.removed_editions) details.push(`${result.removed_editions} éditions retirées de cette source`);
+      else if(result.database) details.push('Aucune suppression Kodi détectée');
       if(result.removed_works) details.push(`${result.removed_works} œuvres supprimées du catalogue`);
       if(result.kept_clz_works) details.push(`${result.kept_clz_works} œuvres conservées via CLZ`);
       if(result.matching_conflicts) details.push(`${result.matching_conflicts} rapprochements ambigus conservés séparément`);
       const summary=details.join(' · ')+'.';
-      if(target) target.textContent=summary;
+      const removedTitles=result.removed_titles||[];
+      const more=Math.max(0,(result.removed_titles_total||removedTitles.length)-removedTitles.length);
+      const removalReport=removedTitles.length
+        ? `\nRetirés de cette source : ${removedTitles.join(' · ')}${more?` · et ${more} autre(s)`:''}.`
+        : '';
+      const report=summary+removalReport;
+      if(target) target.textContent=report;
       toast(summary);
       await refresh();
       if($('connections-dialog').open) {
         await connections();
         const status=$('job-status');
-        if(status) {status.hidden=false;status.textContent=summary;}
+        if(status) {status.hidden=false;status.textContent=report;}
       }
       return;
     }

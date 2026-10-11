@@ -337,3 +337,53 @@ def test_empty_kodi_snapshot_does_not_remove_unrelated_clz_entries(store):
     assert result["kept_clz_works"] == 0
     assert store.media()["total"] == 1
     assert store.media()["items"][0]["title"] == "CLZ indépendant"
+
+
+def test_removed_kodi_only_title_is_deleted_even_when_watched_and_listed(store):
+    kodi = source(store, "kodi")
+    initial = Record(
+        "movie:19:20",
+        "movie",
+        "Film supprimé",
+        identifiers={"imdb": "tt0000019"},
+    )
+    store.apply_snapshot(kodi, [initial])
+    work_id = store.media()["items"][0]["id"]
+    collection = store.save_list({"name": "À revoir", "description": ""})
+    store.change_list_item(collection["id"], work_id)
+    store.update_personal(work_id, {"watched": True, "user_rating": 8.5})
+    store.save_enrichment(work_id, {"trailers": []})
+
+    assert store.detail(work_id)["watch_status"] == "watched"
+    assert store.lists()[0]["item_count"] == 1
+
+    result = store.apply_snapshot(kodi, [])
+    assert result["removed_editions"] == 1
+    assert result["removed_works"] == 1
+    assert result["removed_titles"] == ["Film supprimé"]
+    assert result["removed_titles_total"] == 1
+    assert store.media()["total"] == 0
+    assert store.detail(work_id) is None
+    assert store.lists()[0]["item_count"] == 0
+    with store.connect() as conn:
+        assert conn.execute(
+            "SELECT COUNT(*) FROM personal WHERE work_id=?", (work_id,)
+        ).fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM enrichment WHERE work_id=?", (work_id,)
+        ).fetchone()[0] == 0
+
+
+def test_removed_titles_report_is_distinct_and_limited(store):
+    kodi = source(store, "kodi")
+    records = [
+        Record(f"movie:{number}:1", "movie", f"Film {number}")
+        for number in range(25)
+    ]
+    records.append(Record("movie:1:2", "movie", "Film 1"))
+    store.apply_snapshot(kodi, records)
+    result = store.apply_snapshot(kodi, [])
+    assert result["removed_editions"] == 26
+    assert result["removed_titles_total"] == 25
+    assert len(result["removed_titles"]) == 20
+    assert result["removed_titles"][0] == "Film 0"

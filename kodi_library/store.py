@@ -249,10 +249,17 @@ class Store:
                     )
             deleted = 0
             removed_work_ids = set()
+            removed_titles = []
+            removed_title_set = set()
             for key, row in old.items():
                 if key not in seen:
                     conn.execute("DELETE FROM records WHERE id=?", (row["id"],))
                     removed_work_ids.add(row["work_id"])
+                    title = json.loads(row["payload"]).get("title") or key
+                    if title not in removed_title_set:
+                        removed_title_set.add(title)
+                        if len(removed_titles) < 20:
+                            removed_titles.append(title)
                     deleted += 1
             for work_id in affected:
                 self._rebuild(conn, work_id)
@@ -284,6 +291,8 @@ class Store:
                 "created_editions": inserted,
                 "updated_editions": updated,
                 "removed_editions": deleted,
+                "removed_titles": removed_titles,
+                "removed_titles_total": len(removed_title_set),
                 "removed_works": removed_works,
                 "kept_clz_works": kept_clz_works,
                 "matching_conflicts": conflicts,
