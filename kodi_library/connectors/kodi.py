@@ -211,7 +211,10 @@ class KodiConnector:
             path_cols = {str(row["Field"]).casefold() for row in cursor.fetchall()}
             optional = [
                 f"p.`{column}` AS `{alias}`"
-                for column, alias in (("exclude", "excluded_from_scan"), ("noUpdate", "scan_disabled"))
+                for column, alias in (
+                    ("exclude", "excluded_from_scan"),
+                    ("noUpdate", "scan_disabled"),
+                )
                 if column.casefold() in path_cols
             ]
             marks = ",".join("%s" for _ in ids)

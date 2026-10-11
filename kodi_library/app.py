@@ -383,9 +383,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                                         "properties": ["file"],
                                                     },
                                                 )
-                                                item = answer.get("moviedetails") if isinstance(
-                                                    answer, dict
-                                                ) else None
+                                                item = (
+                                                    answer.get("moviedetails")
+                                                    if isinstance(answer, dict)
+                                                    else None
+                                                )
                                                 player_report["movies"].append(
                                                     {
                                                         "kodi_id": kodi_id,

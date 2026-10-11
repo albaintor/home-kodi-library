@@ -217,19 +217,38 @@ def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
         elif "FROM movie m" in query:
             assert params == ([7, 8],)
             rows = [
-                {"idMovie": 7, "title": "Movie", "default_file_id": 42,
-                 "resolved_file_id": 42, "strFileName": "film.mkv",
-                 "strPath": "smb://nas/", "excluded_from_scan": 0, "scan_disabled": 1},
-                {"idMovie": 8, "title": "Orphan", "default_file_id": 101,
-                 "resolved_file_id": None, "strFileName": None,
-                 "strPath": None, "excluded_from_scan": None, "scan_disabled": None},
+                {
+                    "idMovie": 7,
+                    "title": "Movie",
+                    "default_file_id": 42,
+                    "resolved_file_id": 42,
+                    "strFileName": "film.mkv",
+                    "strPath": "smb://nas/",
+                    "excluded_from_scan": 0,
+                    "scan_disabled": 1,
+                },
+                {
+                    "idMovie": 8,
+                    "title": "Orphan",
+                    "default_file_id": 101,
+                    "resolved_file_id": None,
+                    "strFileName": None,
+                    "strPath": None,
+                    "excluded_from_scan": None,
+                    "scan_disabled": None,
+                },
             ]
         elif "FROM videoversion v" in query:
             assert params == ([7, 8],)
             rows = [
-                {"idMedia": 7, "idFile": 43, "itemType": 0,
-                 "resolved_file_id": 43, "strFileName": "long.mkv",
-                 "strPath": "smb://nas/"},
+                {
+                    "idMedia": 7,
+                    "idFile": 43,
+                    "itemType": 0,
+                    "resolved_file_id": 43,
+                    "strFileName": "long.mkv",
+                    "strPath": "smb://nas/",
+                },
             ]
         else:
             rows = []

@@ -254,29 +254,35 @@ def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, m
         "/api/v1/sources",
         headers=admin,
         json={
-            "name": "Kodi", "type": "kodi",
+            "name": "Kodi",
+            "type": "kodi",
             "config": {"host": "nas", "username": "reader", "database": "MyVideos131"},
         },
     ).json()["id"]
     store = client.app.state.store
     store.apply_snapshot(
-        sid, [Record("movie:7:8", "movie", "Phantom",
-                     metadata={"kodi_id": 7, "file_id": 8})],
+        sid,
+        [Record("movie:7:8", "movie", "Phantom", metadata={"kodi_id": 7, "file_id": 8})],
     )
     movie = store.media()["items"][0]
-    store.save_player(
-        {"name": "Salon", "source_id": sid, "host": "192.168.1.3", "port": 8080}
-    )
+    store.save_player({"name": "Salon", "source_id": sid, "host": "192.168.1.3", "port": 8080})
     monkeypatch.setattr(
-        KodiConnector, "inspect_movie_links",
+        KodiConnector,
+        "inspect_movie_links",
         lambda self, ids: {
             "database": "MyVideos131",
-            "movies": {7: {
-                "title": "Phantom", "default_file_id": 8,
-                "file_row_exists": True, "path_row_exists": True,
-                "file": "smb://nas/films/phantom.mkv",
-                "excluded_from_scan": 0, "scan_disabled": 0, "versions": [],
-            }},
+            "movies": {
+                7: {
+                    "title": "Phantom",
+                    "default_file_id": 8,
+                    "file_row_exists": True,
+                    "path_row_exists": True,
+                    "file": "smb://nas/films/phantom.mkv",
+                    "excluded_from_scan": 0,
+                    "scan_disabled": 0,
+                    "versions": [],
+                }
+            },
         },
     )
 
@@ -286,6 +292,7 @@ def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, m
             assert method == "VideoLibrary.GetMovieDetails"
             assert params["movieid"] == 7
             return {"moviedetails": {"movieid": 7, "file": "smb://nas/films/phantom.mkv"}}
+
         yield rpc
 
     monkeypatch.setattr(app_module, "kodi_rpc_connection", fake_connection)
