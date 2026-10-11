@@ -366,20 +366,21 @@ def test_removed_kodi_only_title_is_deleted_even_when_watched_and_listed(store):
     assert store.detail(work_id) is None
     assert store.lists()[0]["item_count"] == 0
     with store.connect() as conn:
-        assert conn.execute(
-            "SELECT COUNT(*) FROM personal WHERE work_id=?", (work_id,)
-        ).fetchone()[0] == 0
-        assert conn.execute(
-            "SELECT COUNT(*) FROM enrichment WHERE work_id=?", (work_id,)
-        ).fetchone()[0] == 0
+        assert (
+            conn.execute("SELECT COUNT(*) FROM personal WHERE work_id=?", (work_id,)).fetchone()[0]
+            == 0
+        )
+        assert (
+            conn.execute("SELECT COUNT(*) FROM enrichment WHERE work_id=?", (work_id,)).fetchone()[
+                0
+            ]
+            == 0
+        )
 
 
 def test_removed_titles_report_is_distinct_and_limited(store):
     kodi = source(store, "kodi")
-    records = [
-        Record(f"movie:{number}:1", "movie", f"Film {number}")
-        for number in range(25)
-    ]
+    records = [Record(f"movie:{number}:1", "movie", f"Film {number}") for number in range(25)]
     records.append(Record("movie:1:2", "movie", "Film 1"))
     store.apply_snapshot(kodi, records)
     result = store.apply_snapshot(kodi, [])
