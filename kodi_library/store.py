@@ -183,15 +183,6 @@ class Store:
                 )
             ]
             conn.execute("DELETE FROM sources WHERE id=?", (source_id,))
-            # Assert a complete source snapshot, including removals. A failure
-            # rolls back the transaction rather than publishing a stale edition.
-            actual_keys = {
-                row[0] for row in conn.execute(
-                    "SELECT external_key FROM records WHERE source_id=?", (source_id,)
-                )
-            }
-            if actual_keys != seen:
-                raise RuntimeError("Snapshot reconciliation mismatch; transaction rolled back.")
             for work_id in affected:
                 self._rebuild(conn, work_id)
             self._prune(conn)
@@ -270,6 +261,15 @@ class Store:
                         if len(removed_titles) < 20:
                             removed_titles.append(title)
                     deleted += 1
+            # Assert a complete source snapshot, including removals. A failure
+            # rolls back the transaction rather than publishing a stale edition.
+            actual_keys = {
+                row[0] for row in conn.execute(
+                    "SELECT external_key FROM records WHERE source_id=?", (source_id,)
+                )
+            }
+            if actual_keys != seen:
+                raise RuntimeError("Snapshot reconciliation mismatch; transaction rolled back.")
             for work_id in affected:
                 self._rebuild(conn, work_id)
             self._prune(conn)
