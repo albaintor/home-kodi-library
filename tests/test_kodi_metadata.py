@@ -48,6 +48,9 @@ def test_movies_versions_cast_and_streams_survive_each_schema(version_type, stor
     db.execute(
         f"CREATE TABLE movie_view (idMovie INTEGER,idFile INTEGER,c00 TEXT,strFileName TEXT{extra_columns})"
     )
+    db.execute("CREATE TABLE movie(idMovie INTEGER PRIMARY KEY)")
+    db.execute("INSERT INTO movie VALUES(1)")
+    db.execute("INSERT INTO movie VALUES(2)")
     if version_type is None:
         db.execute("INSERT INTO movie_view VALUES(1,10,'Un film','film.mkv')")
     else:
@@ -193,6 +196,8 @@ def test_kodi_portraits_directors_writers_and_youtube_trailer():
     db = sqlite3.connect(":memory:")
     db.row_factory = sqlite3.Row
     db.executescript("""
+    CREATE TABLE movie(idMovie INTEGER PRIMARY KEY);
+    INSERT INTO movie VALUES(1);
     CREATE TABLE movie_view(idMovie INTEGER,idFile INTEGER,c00 TEXT,c19 TEXT);
     INSERT INTO movie_view VALUES(1,10,'Un film','plugin://plugin.video.youtube/play/?video_id=C6PbWhWGUrY');
     CREATE TABLE actor(actor_id INTEGER,name TEXT);
