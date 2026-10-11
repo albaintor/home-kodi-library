@@ -73,7 +73,7 @@ def test_empty_kodi_library_is_valid_but_wont_wipe_nonempty_sql_snapshot():
 
     with patch("kodi_library.players.connection", fake_connection):
         assert asyncio.run(library_movie_ids({"host": "kodi"})) == set()
-    with pytest.raises(ConnectorError, match="videothèque de films vide"):
+    with pytest.raises(ConnectorError, match="films vide"):
         only_movies_in_library(
             [Record("movie:1:5", "movie", "Film", metadata={"kodi_id": 1})], set()
         )
