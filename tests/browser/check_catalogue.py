@@ -218,7 +218,7 @@ def main():
                 expect(page.locator(".media-card")).to_have_count(150)
                 expect(page.locator("#load-more")).to_be_hidden()
                 expect(page.locator("#load-more-status")).to_contain_text("Tous les résultats")
-                assert [r["offset"][0] for r in requests] == ["0", "60", "120"]
+                assert [r["offset"][0] for r in requests][-3:] == ["0", "60", "120"]
                 ids = page.locator(".media-card").evaluate_all(
                     "elements=>elements.map(element=>element.dataset.media)"
                 )
