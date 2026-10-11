@@ -10,3 +10,9 @@ data/
 !tests/fixtures/*.xml
 dist/
 *.egg-info/
+
+# Projet généré depuis ios/project.yml (XcodeGen)
+ios/*.xcodeproj/
+ios/*.xcworkspace/
+ios/.build/
+ios/DerivedData/
