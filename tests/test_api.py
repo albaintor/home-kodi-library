@@ -182,7 +182,13 @@ def test_api_does_not_require_frontend_cookie(client, admin):
 def test_jobs_feed_is_authorized_and_lists_active_or_completed_work(client, admin):
     assert client.get("/api/v1/jobs").status_code == 401
     sid = client.post(
-        "/api/v1/sources", headers=admin, json={"name": "Kodi", "type": "kodi", "config": {"host": "localhost", "username": "test"}}
+        "/api/v1/sources",
+        headers=admin,
+        json={
+            "name": "Kodi",
+            "type": "kodi",
+            "config": {"host": "localhost", "username": "test"},
+        },
     ).json()["id"]
     store = client.app.state.store
     job = store.new_job(sid)
