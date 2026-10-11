@@ -53,15 +53,27 @@ class SyncManager:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             if xml is not None:
+                await asyncio.to_thread(
+                    self.store.update_job_progress, job["id"], "parsing_clz"
+                )
                 records = await asyncio.to_thread(parse_clz, xml)
                 database = None
             else:
-                connector = KodiConnector(source["config"])
+                connector = KodiConnector(
+                    source["config"],
+                    progress=lambda phase, current, total: self.store.update_job_progress(
+                        job["id"], phase, current, total
+                    ),
+                )
                 records = await asyncio.to_thread(connector.fetch)
                 database = connector.database
+            await asyncio.to_thread(
+                self.store.update_job_progress, job["id"], "publishing"
+            )
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
             if database:
                 result["database"] = database
+                result.update(connector.snapshot_report)
             await asyncio.to_thread(self.store.finish_job, job["id"], result=result)
         except (ConnectorError, ValueError) as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))

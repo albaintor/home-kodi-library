@@ -438,3 +438,42 @@ def test_recent_jobs_include_running_and_completed_snapshots(store):
     assert report["status"] == "completed"
     assert report["result"]["database"] == "MyVideos131"
     assert report["result"]["removed_editions"] == 2
+
+
+def test_job_progress_tracks_actual_stage_counts_and_finishes(store):
+    sid = source(store, "kodi")
+    job = store.new_job(sid)
+    store.start_job(job["id"])
+    store.update_job_progress(job["id"], "movies", 12, 40)
+    current = store.job(job["id"])
+    assert current["status"] == "running"
+    assert current["progress_phase"] == "movies"
+    assert current["progress_current"] == 12
+    assert current["progress_total"] == 40
+    store.update_job_progress(job["id"], "publishing")
+    assert store.job(job["id"])["progress_phase"] == "publishing"
+    store.finish_job(job["id"], result={"imported": 40})
+    assert store.job(job["id"])["progress_phase"] == "completed"
+
+
+def test_job_progress_migration_preserves_old_jobs(tmp_path):
+    import sqlite3
+
+    from kodi_library.store import Store
+
+    database = tmp_path / "legacy.db"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            "CREATE TABLE jobs (id TEXT PRIMARY KEY, source_id TEXT NOT NULL, "
+            "status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, "
+            "result TEXT, error TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO jobs(id, source_id, status, created_at) VALUES('job', 'source', 'completed', '2026-01-01')"
+        )
+    migrated = Store(database)
+    migrated.initialize()
+    job = migrated.job("job")
+    assert job["progress_current"] == 0
+    assert job["progress_total"] == 0
+    assert job["status"] == "completed"

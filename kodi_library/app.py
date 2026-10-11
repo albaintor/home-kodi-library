@@ -288,6 +288,79 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {**value, "tmdb_available": bool(settings.tmdb_api_token.strip())}
         raise HTTPException(404, "Unknown media.")
 
+    @app.get(
+        API + "/media/{media_id}/diagnostics",
+        tags=["Catalogue"],
+        dependencies=[Depends(writable)],
+    )
+    async def diagnose_media(media_id: str):
+        """Explain exactly which sources keep a film in the catalogue.
+
+        Query the underlying Kodi movie table in the SAME MyVideos database
+        used by the connector. Never infer existence from title, watch status,
+        personal ratings, list membership or cached artwork.
+        """
+        detail = await asyncio.to_thread(store.detail, media_id)
+        if not detail:
+            raise HTTPException(404, "Unknown media.")
+        by_source = {}
+        for edition in detail["editions"]:
+            sid = edition["source_id"]
+            source_report = by_source.setdefault(
+                sid,
+                {
+                    "source_id": sid,
+                    "source_name": edition["source_name"],
+                    "source_type": edition["source_type"],
+                    "editions": [],
+                },
+            )
+            metadata = edition["metadata"]
+            source_report["editions"].append(
+                {
+                    "external_key": edition["external_key"],
+                    "kodi_id": metadata.get("kodi_id"),
+                    "file_id": metadata.get("file_id"),
+                    "file": metadata.get("file"),
+                    "database_at_import": metadata.get("database"),
+                    "exists_in_movie": None,
+                }
+            )
+        reports = []
+        for sid, report in by_source.items():
+            if report["source_type"] == "kodi":
+                source = await asyncio.to_thread(store.source, sid, private=True)
+                if not source:
+                    report["error"] = "Source no longer exists."
+                else:
+                    report["configured_database"] = source["config"].get("database") or None
+                    movie_ids = [
+                        entry["kodi_id"]
+                        for entry in report["editions"]
+                        if isinstance(entry["kodi_id"], int)
+                    ]
+                    if detail["kind"] == "movie" and movie_ids:
+                        try:
+                            checked = await asyncio.to_thread(
+                                KodiConnector(source["config"]).check_movie_ids, movie_ids
+                            )
+                            report["queried_database"] = checked["database"]
+                            present = set(checked["movie_ids_present"])
+                            for entry in report["editions"]:
+                                if isinstance(entry["kodi_id"], int):
+                                    entry["exists_in_movie"] = entry["kodi_id"] in present
+                        except ConnectorError as exc:
+                            report["error"] = str(exc)
+                    else:
+                        report["note"] = "Verification of the movie table applies to films."
+            reports.append(report)
+        return {
+            "media_id": detail["id"],
+            "title": detail["title"],
+            "sources": reports,
+            "has_clz": any(r["source_type"] == "clz" for r in reports),
+        }
+
     @app.patch(
         API + "/media/{media_id}/personal",
         response_model=MediaDetail,

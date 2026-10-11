@@ -97,6 +97,19 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 
 ## Diagnostic des suppressions Kodi
 
+Une synchronisation interroge **movie** et **movie_view** : la table `movie`
+constitue la source d'autorité pour les identifiants de films. Même si une
+ligne obsolète subsiste dans `movie_view`, elle ne sera pas importée si
+son `idMovie` est absent de `movie`. Le rapport de tâche contient
+`movie_table_count`, `orphaned_movie_view_rows` et un échantillon
+`orphaned_movie_view_examples` (limité à 10 lignes).
+
+La fiche film expose, en mode administrateur, le bouton
+**Vérifier dans Kodi (table movie)** : `GET /api/v1/media/{id}/diagnostics`
+contrôle en temps réel les identifiants Kodi de chaque édition dans la
+base `MyVideos` effectivement utilisée par sa source et signale les éditions
+CLZ qui justifient la conservation de la fiche. Ce diagnostic n'efface rien.
+
 Une synchronisation récupère un instantané **complet** des entrées de la base
 `MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées
 de SQLite dans la même transaction, puis les fiches sans aucune édition sont
@@ -118,6 +131,13 @@ renseignez alors explicitement la bonne base, puis synchronisez. Vérifiez aussi
 les autres sources Kodi et éditions CLZ de la fiche. Les fichiers simplement
 supprimés du NAS sans nettoyage de la médiathèque Kodi restent référencés dans
 la base et ne peuvent pas être distingués par ce connecteur en lecture seule.
+
+Les réponses `GET /jobs` et `GET /jobs/{id}` exposent également
+`progress_phase`, `progress_current` et `progress_total`. Le pourcentage
+concerne **l'étape courante** (films, séries, épisodes) et provient du nombre
+réel de lignes traitées. Les étapes dont le total n'est pas connu (connexion,
+analyse XML, publication atomique SQLite) ont un voyant indéterminé. L'interface
+n'affiche pas de faux pourcentage global.
 
 `GET /jobs` sert au voyant d'activité : les tâches planifiées et manuelles
 sont visibles au rechargement et leur état reste consultable même si le navigateur

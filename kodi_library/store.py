@@ -57,7 +57,9 @@ CREATE TABLE IF NOT EXISTS players (
 );
 CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
- status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT
+ status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT,
+ progress_phase TEXT, progress_current INTEGER NOT NULL DEFAULT 0,
+ progress_total INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS personal (
  work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
@@ -100,6 +102,15 @@ class Store:
                 )
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            # Compatible migration for existing NAS installations (schema v2).
+            job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
+            for column, definition in (
+                ("progress_phase", "TEXT"),
+                ("progress_current", "INTEGER NOT NULL DEFAULT 0"),
+                ("progress_total", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if column not in job_columns:
+                    conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
             conn.execute(
                 "UPDATE jobs SET status='failed',finished_at=?,error='Application restarted before the job completed' WHERE status IN ('pending','running')",
                 (now(),),
@@ -923,17 +934,29 @@ class Store:
             value["result"] = json.loads(value["result"]) if value["result"] else None
             return value
 
+    def update_job_progress(
+        self, job_id: str, phase: str, current: int = 0, total: int = 0
+    ) -> None:
+        """Commit phase counters independently of the Kodi read transaction."""
+        with self.connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET progress_phase=?,progress_current=?,progress_total=? "
+                "WHERE id=? AND status='running'",
+                (phase, max(0, current), max(0, total), job_id),
+            )
+
     def finish_job(
         self, job_id: str, *, result: dict[str, Any] | None = None, error: str | None = None
     ) -> None:
         with self.connect() as conn:
             conn.execute(
-                "UPDATE jobs SET status=?,finished_at=?,result=?,error=? WHERE id=?",
+                "UPDATE jobs SET status=?,finished_at=?,result=?,error=?,progress_phase=? WHERE id=?",
                 (
                     "failed" if error else "completed",
                     now(),
                     encode(result) if result else None,
                     error,
+                    "failed" if error else "completed",
                     job_id,
                 ),
             )
@@ -945,7 +968,11 @@ class Store:
 
     def start_job(self, job_id: str) -> None:
         with self.connect() as conn:
-            conn.execute("UPDATE jobs SET status='running' WHERE id=?", (job_id,))
+            conn.execute(
+                "UPDATE jobs SET status='running',progress_phase='connecting',"
+                "progress_current=0,progress_total=0 WHERE id=?",
+                (job_id,),
+            )
 
     def players(self) -> list[dict[str, Any]]:
         with self.connect() as conn:

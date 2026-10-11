@@ -112,3 +112,10 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 @keyframes activity-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.activity-spinner{animation:none;border-color:var(--accent)}}
 @media(max-width:700px){.activity-indicator{max-width:140px;font-size:10px;padding:6px}.activity-indicator #activity-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+
+/* Actual phase-based progress, not an estimated whole-job percentage. */
+.header-progress{width:48px;height:5px;flex:none;accent-color:var(--accent)}
+.sync-phase{display:flex;align-items:center;gap:9px;font-size:12px;line-height:1.4}
+.sync-progress{display:block;width:100%;height:8px;margin-top:8px;accent-color:var(--accent)}
+.source-progress{flex-basis:100%;margin-top:7px}
+@media(max-width:700px){.header-progress{display:none}.source-progress{width:100%}}

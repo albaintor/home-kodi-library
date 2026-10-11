@@ -240,6 +240,9 @@ class JobView(BaseModel):
     finished_at: str | None = None
     result: dict[str, Any] | None = None
     error: str | None = None
+    progress_phase: str | None = None
+    progress_current: int = 0
+    progress_total: int = 0
 
 
 class PlayerInput(StrictModel):

@@ -202,3 +202,36 @@ def test_jobs_feed_is_authorized_and_lists_active_or_completed_work(client, admi
     latest = client.get("/api/v1/jobs", headers=admin).json()[0]
     assert latest["status"] == "completed"
     assert latest["result"]["removed_editions"] == 1
+
+
+def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, monkeypatch):
+    sid = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={
+            "name": "NAS Kodi", "type": "kodi",
+            "config": {"host": "nas", "username": "reader", "database": "MyVideos131"},
+        },
+    ).json()["id"]
+    store = client.app.state.store
+    store.apply_snapshot(
+        sid,
+        [Record(
+            "movie:99:77", "movie", "Removed title",
+            metadata={"kodi_id": 99, "file_id": 77, "database": "MyVideos131"},
+        )],
+    )
+    item = store.media()["items"][0]
+    from kodi_library.connectors.kodi import KodiConnector
+    monkeypatch.setattr(
+        KodiConnector, "check_movie_ids",
+        lambda self, ids: {"database": "MyVideos131", "movie_ids_present": []},
+    )
+    read = {"Authorization": f"Bearer {READ}"}
+    assert client.get(f"/api/v1/media/{item['id']}/diagnostics", headers=read).status_code == 403
+    response = client.get(f"/api/v1/media/{item['id']}/diagnostics", headers=admin)
+    assert response.status_code == 200, response.text
+    diag = response.json()
+    edition = diag["sources"][0]["editions"][0]
+    assert diag["sources"][0]["queried_database"] == "MyVideos131"
+    assert edition["exists_in_movie"] is False

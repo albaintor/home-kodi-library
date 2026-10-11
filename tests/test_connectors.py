@@ -80,7 +80,9 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
         if query == "SHOW DATABASES":
             rows = [{"Database": "MyVideos121"}, {"Database": "MyVideos131"}]
         elif query == "SHOW FULL TABLES":
-            rows = [{"Tables": "movie_view"}]
+            rows = [{"Tables": "movie_view"}, {"Tables": "movie"}]
+        elif query == "SELECT idMovie FROM movie":
+            rows = [{"idMovie": 1}]
         elif query.startswith("SHOW COLUMNS"):
             rows = [{"Field": "VideoVersionTypeItemType"}]
         elif query.startswith("SELECT DISTINCT videoVersionTypeItemType"):
@@ -117,3 +119,62 @@ def test_invalid_database_is_rejected_before_connect():
                 {"host": "nas", "username": "reader", "database": "MyVideos; DROP TABLE movie"}
             ).fetch()
         connect.assert_not_called()
+
+
+def test_kodi_skips_orphaned_movie_view_rows_missing_from_movie_table():
+    """A derived view must not resurrect a movie deleted in Kodi's movie table."""
+    cursor = MagicMock()
+    calls = []
+
+    def execute(query):
+        calls.append(query)
+        if query == "SHOW FULL TABLES":
+            rows = [{"Tables": "movie"}, {"Tables": "movie_view"}]
+        elif query == "SELECT idMovie FROM movie":
+            rows = [{"idMovie": 10}]
+        elif query.startswith("SHOW COLUMNS"):
+            rows = [{"Field": "idMovie"}]
+        elif query.startswith("SELECT * FROM `movie_view`"):
+            rows = [
+                {"idMovie": 10, "idFile": 55, "c00": "Still in Kodi"},
+                {"idMovie": 99, "idFile": 77, "c00": "Deleted from Kodi"},
+            ]
+        else:
+            rows = []
+        cursor.fetchall.return_value = rows
+
+    cursor.execute.side_effect = execute
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+    updates = []
+    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+        connector = KodiConnector(
+            {"host": "nas", "username": "reader", "database": "MyVideos131"},
+            progress=lambda phase, current, total: updates.append((phase, current, total)),
+        )
+        records = connector.fetch()
+    assert [record.external_key for record in records] == ["movie:10:55"]
+    assert connector.snapshot_report["movie_table_count"] == 1
+    assert connector.snapshot_report["orphaned_movie_view_rows"] == 1
+    assert connector.snapshot_report["orphaned_movie_view_examples"][0]["kodi_id"] == 99
+    assert ("movies", 2, 2) in updates
+    assert "SELECT idMovie FROM movie" in calls
+
+
+def test_diagnostic_checks_real_movie_table_and_selected_database():
+    cursor = MagicMock()
+    def execute(query, *params):
+        if query.startswith("SELECT idMovie FROM movie WHERE"):
+            cursor.fetchall.return_value = [{"idMovie": 10}]
+        return None
+    cursor.execute.side_effect = execute
+    connection = MagicMock()
+    connection.__enter__.return_value = connection
+    connection.cursor.return_value.__enter__.return_value = cursor
+    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+        result = KodiConnector(
+            {"host": "nas", "username": "reader", "database": "MyVideos131"}
+        ).check_movie_ids([10, 99])
+    assert result == {"database": "MyVideos131", "movie_ids_present": [10]}
+    connection.select_db.assert_called_once_with("MyVideos131")

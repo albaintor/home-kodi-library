@@ -8,6 +8,7 @@ import math
 import re
 import socket
 from collections import defaultdict
+from typing import Callable
 from typing import Any
 from urllib.parse import unquote
 from xml.etree.ElementTree import ParseError
@@ -130,9 +131,19 @@ def normalize_row(
 
 
 class KodiConnector:
-    def __init__(self, config: dict[str, Any]):
+    def __init__(
+        self,
+        config: dict[str, Any],
+        progress: Callable[[str, int, int], None] | None = None,
+    ):
         self.config = config
         self.database: str | None = None
+        self.snapshot_report: dict[str, Any] = {}
+        self.progress = progress
+
+    def _report(self, phase: str, current: int = 0, total: int = 0) -> None:
+        if self.progress is not None:
+            self.progress(phase, current, total)
 
     def fetch(self) -> list[Record]:
         return self._read(self._snapshot)
@@ -140,6 +151,26 @@ class KodiConnector:
     def probe(self) -> dict[str, Any]:
         """Check authentication, the selected schema and view SELECT permissions."""
         return self._read(self._probe)
+
+    def check_movie_ids(self, movie_ids: list[int]) -> dict[str, Any]:
+        """Check a film's IDs in Kodi's real movie table, not its derived view.
+
+        The same database-selection logic is used by synchronization. Values
+        are bound SQL parameters and no user-supplied SQL identifiers are used.
+        """
+        ids = sorted({int(value) for value in movie_ids if int(value) > 0})
+        if len(ids) > 100:
+            raise ConnectorError("At most 100 Kodi movie IDs may be checked at once.")
+
+        def check(cursor):
+            if not ids:
+                return {"database": self.database, "movie_ids_present": []}
+            marks = ",".join("%s" for _ in ids)
+            cursor.execute(f"SELECT idMovie FROM movie WHERE idMovie IN ({marks})", ids)
+            present = sorted({int(row["idMovie"]) for row in cursor.fetchall()})
+            return {"database": self.database, "movie_ids_present": present}
+
+        return self._read(check)
 
     def _read(self, operation):
         config = self.config
@@ -247,10 +278,18 @@ class KodiConnector:
     def _snapshot(self, cursor: Any) -> list[Record]:
         cursor.execute("SHOW FULL TABLES")
         tables = {str(next(iter(r.values()))) for r in cursor.fetchall()}
-        if "movie_view" not in tables:
+        if "movie_view" not in tables or "movie" not in tables:
             raise ConnectorError(
-                "This database is not a supported Kodi MyVideos schema: movie_view is missing."
+                "This database must expose both Kodi movie and movie_view. "
+                "Grant read-only SELECT access to the movie table."
             )
+        # movie_view is a derived view which varies between Kodi versions.
+        # movie is authoritative for deletions, so never publish an ID absent
+        # from the real table, even if a view contains an obsolete row.
+        cursor.execute("SELECT idMovie FROM movie")
+        canonical_movie_ids = {int(row["idMovie"]) for row in cursor.fetchall()}
+        orphan_count = 0
+        orphan_examples = []
         artwork: dict[tuple[str, int], dict[str, str]] = defaultdict(dict)
         if "art" in tables:
             cursor.execute(
@@ -338,9 +377,24 @@ class KodiConnector:
                 if version_types:
                     condition += f" OR videoVersionTypeItemType = {version_types.pop()}"
             cursor.execute(f"SELECT * FROM `{view}`{condition}")
+            rows = cursor.fetchall()
+            phase = {"movie": "movies", "tvshow": "series", "episode": "episodes"}[kind]
+            total = len(rows)
+            self._report(phase, 0, total)
+            report_every = max(1, total // 100)
             seen = set()
-            for row in cursor.fetchall():
+            for index, row in enumerate(rows, start=1):
                 identity = (kind, int(row[id_field]))
+                if kind == "movie" and identity[1] not in canonical_movie_ids:
+                    orphan_count += 1
+                    if len(orphan_examples) < 10:
+                        orphan_examples.append({
+                            "kodi_id": identity[1],
+                            "title": str(row.get("c00") or "Untitled")[:160],
+                        })
+                    if index % report_every == 0 or index == total:
+                        self._report(phase, index, total)
+                    continue
                 record = normalize_row(kind, row, artwork.get(identity), uniqueids.get(identity))
                 crew = crews.get(identity, [])
                 if not any(p["category"] == "director" for p in crew):
@@ -363,9 +417,17 @@ class KodiConnector:
                     " · ".join(str(v) for v in (s["codec"], s["channels"], s["language"]) if v)
                     for s in technical["audio_streams"]
                 ]
-                if record.external_key in seen:
-                    continue  # tvshow_view can include one row for each linked path
-                seen.add(record.external_key)
-                record.metadata["database"] = self.database
-                result.append(record)
+                if record.external_key not in seen:
+                    seen.add(record.external_key)
+                    record.metadata["database"] = self.database
+                    result.append(record)
+                if index % report_every == 0 or index == total:
+                    self._report(phase, index, total)
+            if not total:
+                self._report(phase, 0, 0)
+        self.snapshot_report = {
+            "movie_table_count": len(canonical_movie_ids),
+            "orphaned_movie_view_rows": orphan_count,
+            "orphaned_movie_view_examples": orphan_examples,
+        }
         return result
