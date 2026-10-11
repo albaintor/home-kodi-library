@@ -397,7 +397,7 @@ def test_kodi_snapshot_replacement_removes_absent_editions_after_file_id_changes
     b = Record("movie:22:200", "movie", "Active movie", identifiers={"imdb": "tt0000022"})
     store.apply_snapshot(kodi, [a, b])
     doomed = store.media(q="Retired movie")["items"][0]["id"]
-    collection = store.save_list({"name": "Mes films"})
+    collection = store.save_list({"name": "Mes films", "description": ""})
     store.change_list_item(collection["id"], doomed)
     store.update_personal(doomed, {"watched": True})
 
