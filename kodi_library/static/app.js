@@ -360,7 +360,7 @@ async function refresh() {
 // Keep the activity indicator in the main header, including automated jobs
 // started by the server scheduler and jobs launched by another client.
 const jobPhaseLabels={
-  connecting:'Connexion à MariaDB',parsing_clz:'Analyse du fichier CLZ',
+  connecting:'Connexion à MariaDB',loading:'Lecture des métadonnées Kodi',parsing_clz:'Analyse du fichier CLZ',
   movies:'Films',series:'Séries',episodes:'Épisodes',
   publishing:'Mise à jour du catalogue',completed:'Terminé',failed:'Échec'
 };
@@ -368,13 +368,15 @@ function jobProgressLabel(job) {
   const phase=jobPhaseLabels[job.progress_phase]||'Préparation';
   const current=Math.max(0,Number(job.progress_current)||0);
   const total=Math.max(0,Number(job.progress_total)||0);
-  return phase+(total>0?' · '+Math.min(current,total).toLocaleString('fr-FR')+'/'+total.toLocaleString('fr-FR')+' ('+Math.floor(Math.min(current,total)/total*100)+' %)':'…');
+  const overall=Number(job.overall_percent);
+  const overallText=Number.isFinite(overall)&&job.progress_phase!=='parsing_clz'?' · ≈ '+overall+' % global':'';
+  return phase+(total>0?' · '+Math.min(current,total).toLocaleString('fr-FR')+'/'+total.toLocaleString('fr-FR'):'…')+overallText;
 }
 function jobProgressMarkup(job) {
-  const current=Math.max(0,Number(job.progress_current)||0);
-  const total=Math.max(0,Number(job.progress_total)||0);
+  const percent=Number(job.overall_percent);
+  const showProgress=Number.isFinite(percent)&&job.progress_phase!=='parsing_clz';
   return '<div class="sync-phase"><span class="activity-spinner" aria-hidden="true"></span><span>'+esc(jobProgressLabel(job))+'</span></div>'+
-    (total>0?'<progress class="sync-progress" value="'+Math.min(current,total)+'" max="'+total+'"></progress>':'');
+    (showProgress?'<progress class="sync-progress" value="'+Math.max(0,Math.min(percent,100))+'" max="100"></progress>':'');
 }
 function renderActivity() {
   const active=state.jobs.filter(j=>['pending','running'].includes(j.status));
@@ -386,14 +388,14 @@ function renderActivity() {
   const label=kinds.size>1?'Synchronisation / import en cours'
     :kinds.has('clz')?'Import CLZ en cours':'Synchronisation Kodi en cours';
   const first=active[0];
-  const total=Math.max(0,Number(first.progress_total)||0);
-  const current=Math.max(0,Number(first.progress_current)||0);
-  const percent=total>0?' · '+Math.floor(Math.min(current,total)/total*100)+' %':'';
+  const overall=Number(first.overall_percent);
+  const showProgress=Number.isFinite(overall)&&first.progress_phase!=='parsing_clz';
+  const percent=showProgress?' · ≈'+overall+' %':'';
   $('activity-label').textContent=active.length>1?`${active.length} tâches en cours`:label+percent;
-  $('activity-progress').hidden=total===0||active.length!==1;
-  if(total>0&&active.length===1){
-    $('activity-progress').max=total;
-    $('activity-progress').value=Math.min(current,total);
+  $('activity-progress').hidden=!showProgress||active.length!==1;
+  if(showProgress&&active.length===1){
+    $('activity-progress').max=100;
+    $('activity-progress').value=Math.max(0,Math.min(overall,100));
   }
   indicator.title=active.map(j=>`${sources.get(j.source_id)?.name||'Source'} : ${j.status}`).join(' · ');
 }
@@ -545,12 +547,16 @@ async function pollJob(job) {
       const details=[`${result.imported||0} entrées synchronisées`];
       if(result.database) details.unshift(`Base Kodi : ${result.database}`);
       if(result.created_editions) details.push(`${result.created_editions} nouvelles éditions`);
-      if(result.updated_editions) details.push(`${result.updated_editions} éditions actualisées`);
+      if(result.updated_editions) details.push(`${result.updated_editions} éditions reconnues`);
+      if(result.unchanged_editions) details.push(`${result.unchanged_editions} éditions inchangées (sans réindexation)`);
+      if(result.rebuilt_works!=null) details.push(`${result.rebuilt_works} fiches réindexées`);
       if(result.removed_editions) details.push(`${result.removed_editions} éditions retirées de cette source`);
       else if(result.database) details.push('Aucune suppression Kodi détectée');
       if(result.removed_works) details.push(`${result.removed_works} œuvres supprimées du catalogue`);
       if(result.orphaned_movie_view_rows) details.push(`${result.orphaned_movie_view_rows} lignes obsolètes dans movie_view ignorées`);
       if(result.movie_table_count!=null) details.push(`${result.movie_table_count} films présents dans movie`);
+      if(result.sqlite_publish_ms!=null) details.push(`Publication SQLite : ${result.sqlite_publish_ms} ms`);
+      if(result.sql_view_fetch_ms) details.push(`Lecture vues SQL : ${Object.entries(result.sql_view_fetch_ms).map(([kind,ms])=>kind+' '+ms+' ms').join(', ')}`);
       if(result.kept_clz_works) details.push(`${result.kept_clz_works} œuvres conservées via CLZ`);
       if(result.kept_other_sources) details.push(`${result.kept_other_sources} œuvres conservées par une autre source`);
       if(result.matching_conflicts) details.push(`${result.matching_conflicts} rapprochements ambigus conservés séparément`);

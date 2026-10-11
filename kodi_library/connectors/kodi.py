@@ -9,6 +9,7 @@ import re
 import socket
 from collections import defaultdict
 from collections.abc import Callable
+from time import monotonic
 from typing import Any
 from urllib.parse import unquote
 from xml.etree.ElementTree import ParseError
@@ -140,10 +141,24 @@ class KodiConnector:
         self.database: str | None = None
         self.snapshot_report: dict[str, Any] = {}
         self.progress = progress
+        self._progress_phase = None
+        self._last_progress_write = 0.0
 
     def _report(self, phase: str, current: int = 0, total: int = 0) -> None:
-        if self.progress is not None:
-            self.progress(phase, current, total)
+        # Never open a separate SQLite transaction for every hundredth row.
+        # Persist phase changes and completion, otherwise at most twice/second.
+        if self.progress is None:
+            return
+        timestamp = monotonic()
+        if (
+            phase == self._progress_phase
+            and timestamp - self._last_progress_write < 0.5
+            and (not total or current < total)
+        ):
+            return
+        self._progress_phase = phase
+        self._last_progress_write = timestamp
+        self.progress(phase, current, total)
 
     def fetch(self) -> list[Record]:
         return self._read(self._snapshot)
@@ -290,6 +305,7 @@ class KodiConnector:
         canonical_movie_ids = {int(row["idMovie"]) for row in cursor.fetchall()}
         orphan_count = 0
         orphan_examples = []
+        self._report("loading")
         artwork: dict[tuple[str, int], dict[str, str]] = defaultdict(dict)
         if "art" in tables:
             cursor.execute(
@@ -320,8 +336,7 @@ class KodiConnector:
             cursor.execute(
                 "SELECT l.media_type,l.media_id,a.actor_id,a.name,l.role,l.cast_order "
                 "FROM actor_link l JOIN actor a ON a.actor_id=l.actor_id "
-                "WHERE l.media_type IN ('movie','tvshow','episode') "
-                "ORDER BY l.cast_order IS NULL,l.cast_order,a.name"
+                "WHERE l.media_type IN ('movie','tvshow','episode')"
             )
             for row in cursor.fetchall():
                 if row.get("name"):
@@ -334,11 +349,22 @@ class KodiConnector:
                             "photos": portraits.get(int(row.get("actor_id") or 0), []),
                         }
                     )
+        # Global ORDER BY over all actor links forces a massive MariaDB sort.
+        # Sorting the small cast list for each title is cheaper and preserves
+        # the visible cast order (cast_order NULLs last, then name).
+        for members in casts.values():
+            members.sort(
+                key=lambda member: (
+                    member["order"] is None,
+                    member["order"] if member["order"] is not None else 0,
+                    member["name"],
+                )
+            )
         crews: dict[tuple[str, int], list[dict]] = defaultdict(list)
         for table, category in (("director_link", "director"), ("writer_link", "writer")):
             if {"actor", table}.issubset(tables):
                 cursor.execute(
-                    f"SELECT l.media_type,l.media_id,a.actor_id,a.name FROM {table} l JOIN actor a ON a.actor_id=l.actor_id WHERE l.media_type IN ('movie','tvshow','episode') ORDER BY a.name"
+                    f"SELECT l.media_type,l.media_id,a.actor_id,a.name FROM {table} l JOIN actor a ON a.actor_id=l.actor_id WHERE l.media_type IN ('movie','tvshow','episode')"
                 )
                 for row in cursor.fetchall():
                     crews[(row["media_type"], int(row["media_id"]))].append(
@@ -348,6 +374,9 @@ class KodiConnector:
                             "photos": portraits.get(int(row["actor_id"]), []),
                         }
                     )
+        for members in crews.values():
+            members.sort(key=lambda member: member["name"])
+        view_fetch_ms = {}
         for kind, view, id_field in (
             ("movie", "movie_view", "idMovie"),
             ("tvshow", "tvshow_view", "idShow"),
@@ -355,6 +384,8 @@ class KodiConnector:
         ):
             if view not in tables:
                 continue
+            phase = {"movie": "movies", "tvshow": "series", "episode": "episodes"}[kind]
+            self._report(phase)
             # View names are fixed constants, never client-supplied SQL identifiers.
             cursor.execute(f"SHOW COLUMNS FROM `{view}`")
             columns = {row["Field"].casefold() for row in cursor.fetchall()}
@@ -376,9 +407,10 @@ class KodiConnector:
                 condition = " WHERE videoVersionTypeItemType IS NULL"
                 if version_types:
                     condition += f" OR videoVersionTypeItemType = {version_types.pop()}"
+            fetch_started = monotonic()
             cursor.execute(f"SELECT * FROM `{view}`{condition}")
             rows = cursor.fetchall()
-            phase = {"movie": "movies", "tvshow": "series", "episode": "episodes"}[kind]
+            view_fetch_ms[kind] = round((monotonic() - fetch_started) * 1000)
             total = len(rows)
             self._report(phase, 0, total)
             report_every = max(1, total // 100)
@@ -431,5 +463,6 @@ class KodiConnector:
             "movie_table_count": len(canonical_movie_ids),
             "orphaned_movie_view_rows": orphan_count,
             "orphaned_movie_view_examples": orphan_examples,
+            "sql_view_fetch_ms": view_fetch_ms,
         }
         return result

@@ -208,10 +208,12 @@ class Store:
                 r["external_key"]: r
                 for r in conn.execute("SELECT * FROM records WHERE source_id=?", (source_id,))
             }
-            affected = {r["work_id"] for r in old.values()}
+            # Only changed/removed works need their metadata and FTS rebuilt.
+            # A no-op snapshot must not rewrite thousands of SQLite rows.
+            affected = set()
             seen = set()
             resolved = {}
-            inserted = updated = conflicts = 0
+            inserted = updated = unchanged = conflicts = reassigned = 0
             # Parents first ensures episode links are available in the same import.
             for record in sorted(records, key=lambda r: r.kind == "episode"):
                 if record.external_key in seen:
@@ -231,13 +233,14 @@ class Store:
                     if changed_identity:
                         work_id, conflict = self._match_work(conn, record, exclude=work_id)
                         conflicts += conflict
+                        affected.add(existing["work_id"])
+                        reassigned += work_id != existing["work_id"]
                     updated += 1
                 else:
                     work_id, conflict = self._match_work(conn, record)
                     record_id = str(uuid4())
                     conflicts += conflict
                     inserted += 1
-                affected.add(work_id)
                 resolved[record.external_key] = work_id
                 if record.parent_key:
                     payload["parent_id"] = resolved.get(record.parent_key)
@@ -247,9 +250,14 @@ class Store:
                             (source_id, record.parent_key),
                         ).fetchone()
                         payload["parent_id"] = parent[0] if parent else None
+                encoded = encode(payload)
+                if existing and existing["work_id"] == work_id and existing["payload"] == encoded:
+                    unchanged += 1
+                    continue
+                affected.add(work_id)
                 conn.execute(
                     "INSERT INTO records(id,work_id,source_id,external_key,payload) VALUES(?,?,?,?,?) ON CONFLICT(source_id,external_key) DO UPDATE SET work_id=excluded.work_id,payload=excluded.payload",
-                    (record_id, work_id, source_id, record.external_key, encode(payload)),
+                    (record_id, work_id, source_id, record.external_key, encoded),
                 )
                 # Register immediately so two physical editions in this same import
                 # can resolve to one work. Rebuild removes obsolete identifiers.
@@ -266,6 +274,7 @@ class Store:
                 if key not in seen:
                     conn.execute("DELETE FROM records WHERE id=?", (row["id"],))
                     removed_work_ids.add(row["work_id"])
+                    affected.add(row["work_id"])
                     title = json.loads(row["payload"]).get("title") or key
                     if title not in removed_title_set:
                         removed_title_set.add(title)
@@ -284,7 +293,8 @@ class Store:
                 raise RuntimeError("Snapshot reconciliation mismatch; transaction rolled back.")
             for work_id in affected:
                 self._rebuild(conn, work_id)
-            self._prune(conn)
+            if deleted or reassigned:
+                self._prune(conn)
 
             # An absent Kodi edition may have been the last source of a work,
             # or one of several editions of a film also owned in CLZ.
@@ -311,6 +321,8 @@ class Store:
                 "imported": len(records),
                 "created_editions": inserted,
                 "updated_editions": updated,
+                "unchanged_editions": unchanged,
+                "rebuilt_works": len(affected),
                 "removed_editions": deleted,
                 "removed_titles": removed_titles,
                 "removed_titles_total": len(removed_title_set),
@@ -910,6 +922,42 @@ class Store:
             )
         return self.job(job_id)
 
+    @staticmethod
+    def _job_view(row: sqlite3.Row) -> dict[str, Any]:
+        value = dict(row)
+        value["result"] = json.loads(row["result"]) if row["result"] else None
+        value["overall_percent"] = Store._progress_percent(value)
+        return value
+
+    @staticmethod
+    def _progress_percent(job: dict[str, Any]) -> int:
+        """Monotonic estimated overall progress; never restarts per media kind.
+
+        The time required for MariaDB queries and the final SQLite publication
+        cannot be known in advance, so this is explicitly an estimate.
+        """
+        if job["status"] == "completed":
+            return 100
+        phase = job.get("progress_phase")
+        start, end = {
+            "connecting": (1, 4),
+            "loading": (4, 8),
+            "movies": (8, 70),
+            "series": (70, 80),
+            "episodes": (80, 95),
+            "parsing_clz": (2, 92),
+            "publishing": (95, 99),
+        }.get(phase, (0, 0))
+        current = max(0, int(job.get("progress_current") or 0))
+        total = max(0, int(job.get("progress_total") or 0))
+        if total and phase in ("movies", "series", "episodes"):
+            return start + (end - start) * min(current, total) // total
+        if phase == "publishing":
+            return start
+        if phase in ("connecting", "loading"):
+            return start
+        return start
+
     def jobs(self, *, limit: int = 30) -> list[dict[str, Any]]:
         """Durable feed of manual and automatically scheduled jobs."""
         with self.connect() as conn:
@@ -917,22 +965,14 @@ class Store:
                 "SELECT * FROM jobs ORDER BY created_at DESC,rowid DESC LIMIT ?",
                 (min(100, max(1, limit)),),
             ).fetchall()
-            return [
-                {
-                    **dict(row),
-                    "result": json.loads(row["result"]) if row["result"] else None,
-                }
-                for row in rows
-            ]
+            return [self._job_view(row) for row in rows]
 
     def job(self, job_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute("SELECT * FROM jobs WHERE id=?", (job_id,)).fetchone()
             if row is None:
                 return None
-            value = dict(row)
-            value["result"] = json.loads(value["result"]) if value["result"] else None
-            return value
+            return self._job_view(row)
 
     def update_job_progress(
         self, job_id: str, phase: str, current: int = 0, total: int = 0

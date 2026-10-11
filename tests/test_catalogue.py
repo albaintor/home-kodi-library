@@ -477,3 +477,62 @@ def test_job_progress_migration_preserves_old_jobs(tmp_path):
     assert job["progress_current"] == 0
     assert job["progress_total"] == 0
     assert job["status"] == "completed"
+
+
+def test_repeat_sync_skips_identical_works_and_fts_writes(store, monkeypatch):
+    """A large unchanged MyVideos snapshot must not trigger reindexing."""
+    kodi = source(store, "kodi")
+    records = [
+        Record("movie:1:10", "movie", "Film A", identifiers={"imdb": "tt0000001"}),
+        Record("movie:2:20", "movie", "Film B", identifiers={"imdb": "tt0000002"}),
+    ]
+    store.apply_snapshot(kodi, records)
+    original = {v["title"]: v["id"] for v in store.media()["items"]}
+    from kodi_library.store import Store
+
+    rebuilt = []
+    original_rebuild = Store._rebuild
+
+    def record_rebuild(conn, work_id):
+        rebuilt.append(work_id)
+        return original_rebuild(conn, work_id)
+
+    monkeypatch.setattr(Store, "_rebuild", staticmethod(record_rebuild))
+    unchanged = store.apply_snapshot(kodi, records)
+    assert unchanged["updated_editions"] == 2
+    assert unchanged["unchanged_editions"] == 2
+    assert unchanged["rebuilt_works"] == 0
+    assert unchanged["removed_editions"] == 0
+    assert rebuilt == []
+    # Only the modified work is indexed; both UUIDs remain stable.
+    altered = store.apply_snapshot(kodi, [records[0], replace(records[1], title="Film B revu")])
+    assert altered["unchanged_editions"] == 1
+    assert altered["rebuilt_works"] == 1
+    assert len(rebuilt) == 1
+    assert store.media(q="Film B revu")["items"][0]["id"] == original["Film B"]
+
+
+def test_overall_progress_is_monotonic_between_movies_series_episodes(store):
+    source_id = source(store, "kodi")
+    job = store.new_job(source_id)
+    store.start_job(job["id"])
+    values = [store.job(job["id"])["overall_percent"]]
+    for phase, current, total in (
+        ("loading", 0, 0),
+        ("movies", 0, 30),
+        ("movies", 15, 30),
+        ("movies", 30, 30),
+        ("series", 0, 3),
+        ("series", 3, 3),
+        ("episodes", 0, 45),
+        ("episodes", 45, 45),
+        ("publishing", 0, 0),
+    ):
+        store.update_job_progress(job["id"], phase, current, total)
+        values.append(store.job(job["id"])["overall_percent"])
+    store.finish_job(job["id"], result={"imported": 78})
+    values.append(store.job(job["id"])["overall_percent"])
+    assert values == sorted(values)
+    assert values[-1] == 100
+    assert 100 not in values[:-1]
+    assert values[3] < values[4]

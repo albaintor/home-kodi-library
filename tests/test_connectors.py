@@ -180,3 +180,27 @@ def test_diagnostic_checks_real_movie_table_and_selected_database():
         ).check_movie_ids([10, 99])
     assert result == {"database": "MyVideos131", "movie_ids_present": [10]}
     connection.select_db.assert_called_once_with("MyVideos131")
+
+
+def test_kodi_progress_callbacks_are_throttled_to_avoid_sqlite_write_storm(monkeypatch):
+    from kodi_library.connectors import kodi as kodi_module
+
+    timestamps = iter([10.0, 10.1, 10.2, 10.6, 10.7, 10.8])
+    monkeypatch.setattr(kodi_module, "monotonic", lambda: next(timestamps))
+    progress = []
+    connector = KodiConnector(
+        {},
+        progress=lambda phase, current, total: progress.append((phase, current, total)),
+    )
+    connector._report("movies", 0, 100)
+    connector._report("movies", 1, 100)
+    connector._report("movies", 2, 100)
+    connector._report("movies", 50, 100)
+    connector._report("movies", 100, 100)
+    connector._report("episodes", 0, 5)
+    assert progress == [
+        ("movies", 0, 100),
+        ("movies", 50, 100),
+        ("movies", 100, 100),
+        ("episodes", 0, 5),
+    ]

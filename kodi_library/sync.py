@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from datetime import UTC, datetime
+from time import monotonic
 from typing import Any
 
 from .connectors.base import ConnectorError
@@ -63,12 +64,17 @@ class SyncManager:
                         job["id"], phase, current, total
                     ),
                 )
+                fetch_started = monotonic()
                 records = await asyncio.to_thread(connector.fetch)
+                mariadb_read_ms = round((monotonic() - fetch_started) * 1000)
                 database = connector.database
             await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
+            publish_started = monotonic()
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
+            result["sqlite_publish_ms"] = round((monotonic() - publish_started) * 1000)
             if database:
                 result["database"] = database
+                result["mariadb_read_ms"] = mariadb_read_ms
                 result.update(connector.snapshot_report)
             await asyncio.to_thread(self.store.finish_job, job["id"], result=result)
         except (ConnectorError, ValueError) as exc:

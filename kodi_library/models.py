@@ -243,6 +243,7 @@ class JobView(BaseModel):
     progress_phase: str | None = None
     progress_current: int = 0
     progress_total: int = 0
+    overall_percent: int = Field(default=0, ge=0, le=100)
 
 
 class PlayerInput(StrictModel):

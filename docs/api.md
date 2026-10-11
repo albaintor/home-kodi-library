@@ -132,12 +132,23 @@ les autres sources Kodi et éditions CLZ de la fiche. Les fichiers simplement
 supprimés du NAS sans nettoyage de la médiathèque Kodi restent référencés dans
 la base et ne peuvent pas être distingués par ce connecteur en lecture seule.
 
-Les réponses `GET /jobs` et `GET /jobs/{id}` exposent également
-`progress_phase`, `progress_current` et `progress_total`. Le pourcentage
-concerne **l'étape courante** (films, séries, épisodes) et provient du nombre
-réel de lignes traitées. Les étapes dont le total n'est pas connu (connexion,
-analyse XML, publication atomique SQLite) ont un voyant indéterminé. L'interface
-n'affiche pas de faux pourcentage global.
+Les réponses `GET /jobs` et `GET /jobs/{id}` exposent
+`progress_phase`, `progress_current` et `progress_total` (lignes de
+l'étape courante), ainsi que `overall_percent` (estimation monotone de 0 à
+100 % pour toute la tâche, sans retour à zéro entre films, séries et épisodes).
+La lecture MariaDB et la publication SQLite ayant des durées variables, ce
+pourcentage **global est une estimation**, pas une mesure du temps restant.
+Les étapes sans total connu affichent une animation indéterminée et conservent
+une progression globale estimée cohérente.
+
+Une nouvelle synchronisation ignore désormais les éditions dont la charge
+utile est identique à la précédente. Les rapports retournent
+`unchanged_editions`, `rebuilt_works` et, pour le diagnostic de lenteur,
+`mariadb_read_ms`, `sql_view_fetch_ms` et `sqlite_publish_ms`.
+Le serveur limite les mises à jour SQLite du compteur d'avancement à deux
+fois par seconde (plus les changements d'étape). Les extractions de casting
+évitent les tris globaux coûteux dans MariaDB et préservent l'ordre des acteurs
+par œuvre côté application.
 
 `GET /jobs` sert au voyant d'activité : les tâches planifiées et manuelles
 sont visibles au rechargement et leur état reste consultable même si le navigateur
