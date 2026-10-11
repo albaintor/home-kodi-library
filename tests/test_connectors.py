@@ -84,9 +84,9 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
         elif query == "SELECT idMovie FROM movie":
             rows = [{"idMovie": 1}]
         elif query.startswith("SHOW COLUMNS"):
-            rows = [{"Field": "VideoVersionTypeItemType"}]
-        elif query.startswith("SELECT DISTINCT videoVersionTypeItemType"):
-            rows = [{"videoVersionTypeItemType": 0}]
+            rows = [{"Field": "VideoVersionTypeItemType"}, {"Field": "isDefaultVersion"}]
+        elif query.startswith("SELECT idMovie, videoVersionTypeItemType"):
+            rows = [{"idMovie": 1, "videoVersionTypeItemType": 0}]
         elif query.startswith("SELECT *"):
             rows = [{"idMovie": 1, "idFile": 2, "c00": "Film"}]
         else:
@@ -105,6 +105,10 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
     assert "START TRANSACTION WITH CONSISTENT SNAPSHOT" in queries
     assert (
         "SELECT * FROM `movie_view` WHERE videoVersionTypeItemType IS NULL OR videoVersionTypeItemType = 0"
+        in queries
+    )
+    assert (
+        "SELECT idMovie, videoVersionTypeItemType FROM `movie_view` WHERE isDefaultVersion = 1"
         in queries
     )
     assert not any(q.startswith(("INSERT", "DELETE", "UPDATE", "ALTER")) for q in queries)
@@ -214,6 +218,10 @@ def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
             rows = [{"Tables": x} for x in ("movie", "files", "path", "videoversion")]
         elif query == "SHOW COLUMNS FROM `path`":
             rows = [{"Field": "noUpdate"}, {"Field": "exclude"}]
+        elif query == "SHOW COLUMNS FROM `movie_view`":
+            rows = [{"Field": "isDefaultVersion"}]
+        elif query.startswith("SELECT DISTINCT idMovie FROM movie_view"):
+            rows = [{"idMovie": 7}]
         elif "FROM movie m" in query:
             assert params == ([7, 8],)
             rows = [
@@ -268,3 +276,5 @@ def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
     assert movies[7]["versions"][0]["file"] == "smb://nas/long.mkv"
     assert movies[8]["file_row_exists"] is False
     assert movies[8]["path_row_exists"] is False
+    assert report["library_rule"] == "movie_view.isDefaultVersion = 1"
+    assert report["library_visible_movie_ids"] == [7]

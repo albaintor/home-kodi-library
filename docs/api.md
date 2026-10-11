@@ -105,43 +105,30 @@ son `idMovie` est absent de `movie`. Le rapport de tâche contient
 `orphaned_movie_view_examples` (limité à 10 lignes).
 
 La fiche film expose, en mode administrateur, le bouton
-**Diagnostiquer la présence Kodi / fichiers** : `GET /api/v1/media/{id}/diagnostics`
-interroge dans la même base `MyVideos` les tables `movie`, `files`,
-`path` et, lorsqu'elle existe, `videoversion`. Il signale les liens de
-fichiers manquants, le chemin enregistré et les éditions CLZ. S'il existe
-une instance Kodi associée à la source, il interroge son API
-`VideoLibrary.GetMovies` (liste effective des `movieid` de la vidéothèque)
-puis `VideoLibrary.GetMovieDetails`. **Une fiche encore accessible par ID
-n'implique pas qu'elle figure dans le listing de la vidéothèque.** Un lien `files/path` valide **ne prouve pas** que le
-fichier existe physiquement sur SMB/NFS ; le contrôle SQL et JSON-RPC ne
-teste pas l'accès physique au NAS. `path.exclude` et `path.noUpdate`
-ne sont pas des marques de suppression : ils concernent la découverte/
-l'actualisation du contenu. Aucun film n'est supprimé automatiquement
-sur la seule base de ces indicateurs et le diagnostic n'écrit jamais
-dans MyVideos.
+**Vérifier la présence dans la vidéothèque** :
+`GET /api/v1/media/{id}/diagnostics` interroge uniquement la base
+MariaDB MyVideos et vérifie si la ligne `movie_view` possède une version
+par défaut (`isDefaultVersion = 1`). Il distingue un film encore présent
+dans `movie` d'un film absent du parcours Kodi. Les liens
+`movie`/`files`/`path`/`videoversion` restent disponibles en diagnostic
+secondaire, sans aucun contrôle du stockage ni appel HTTP à Kodi.
 
-La synchronisation Kodi est à présent **basée sur l'appartenance à la
-vidéothèque** : lorsqu'une instance Kodi est associée à la source,
-`VideoLibrary.GetMovies` est interrogé par pages de 500 éléments puis ses
-identifiants `movieid` filtrent les films extraits de MariaDB. Les différentes
-versions d'un film sont conservées ensemble si le film figure dans Kodi.
-Les séries et épisodes restent synchronisés via MariaDB. Aucune vérification
-de la présence physique des fichiers du NAS n'est exécutée.
+Ce critère reproduit `CVideoDatabase::GetFilter` puis
+`GetMoviesByWhere` pour `videodb://movies/titles/`, en affichage
+standard (versions non aplaties). Le mode *versions aplaties* de Kodi
+emploie un autre prédicat (`videoVersionTypeItemType`) dépendant d'un
+réglage local qui n'est pas stocké dans MariaDB. Les éditions non par
+défaut d'un film listé sont conservées, mais les films sans version
+par défaut valide sont exclus, même si une ligne existe encore dans
+`movie`. Les extras ne sont pas importés. Pour les schémas anciens
+sans `isDefaultVersion`, le connecteur retombe sur le comportement
+historique et le rapport indique `library_verified=false` ; aucune
+suppression n'est déduite artificiellement d'un fichier manquant.
 
-Pour éviter une suppression accidentelle, une réponse JSON-RPC partielle,
-une instance indisponible, une vidéothèque vide face à une source SQL non
-vide, ou l'absence totale d'identifiants communs **fait échouer la tâche
-sans remplacer le catalogue SQLite**. Avec plusieurs lecteurs associés à une
-même source, le premier lecteur (trié par nom) est utilisé et son nom apparaît
-dans le rapport de tâche. En l'absence de lecteur associé, la synchronisation
-MariaDB reste possible mais **la présence en vidéothèque n'est pas vérifiée** ;
-le rapport l'indique explicitement. Cette vérification nécessite que l'instance
-Kodi liée soit démarrée et joignable sur son interface HTTP JSON-RPC.
-
-Le résultat de tâche expose `library_verified`, `library_player`,
-`library_movie_count`, `library_excluded_movie_ids`,
-`library_excluded_editions`, `library_extra_movie_ids` et, en l'absence de
-lecteur, `library_warning`.
+**Aucune instance Kodi n'est nécessaire**, y compris lorsqu'un lecteur
+est configuré pour la lecture. Le résultat de synchronisation expose
+`library_verified`, `library_rule`, `library_movie_count`,
+`library_excluded_editions` et `library_excluded_examples`.
 
 Une synchronisation récupère un instantané **complet** des entrées de la base
 `MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées

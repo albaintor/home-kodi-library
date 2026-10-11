@@ -60,7 +60,7 @@ def test_movies_versions_cast_and_streams_survive_each_schema(version_type, stor
                 (1, 10, "Un film", "film.mkv", 10, 1, version_type),
                 (1, 10, "Un film", "longue.3D.SBS.mkv", 11, 0, version_type),
                 (1, 10, "Un film", "bonus.mkv", 12, 0, version_type + 1),
-                (2, 20, "Film sans version", "ancien.mkv", None, None, None),
+                (2, 20, "Film sans version", "ancien.mkv", None, 1, None),
             ],
         )
     db.execute("CREATE TABLE tvshow_view(idShow INTEGER,c00 TEXT)")

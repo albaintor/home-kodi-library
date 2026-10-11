@@ -57,8 +57,7 @@ from .models import (
     SourceView,
     WatchStatus,
 )
-from .players import connection as kodi_rpc_connection
-from .players import library_movie_ids, play
+from .players import play
 from .players import probe as probe_player
 from .settings import Settings
 from .store import Store
@@ -295,19 +294,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(writable)],
     )
     async def diagnose_media(media_id: str):
-        """Explain exactly which sources keep a film in the catalogue.
-
-        Query the underlying Kodi movie table in the SAME MyVideos database
-        used by the connector. Never infer existence from title, watch status,
-        personal ratings, list membership or cached artwork.
-        """
+        """Inspect Kodi's movie-navigation SQL using MariaDB only."""
         detail = await asyncio.to_thread(store.detail, media_id)
         if not detail:
             raise HTTPException(404, "Unknown media.")
         by_source = {}
         for edition in detail["editions"]:
             sid = edition["source_id"]
-            source_report = by_source.setdefault(
+            report = by_source.setdefault(
                 sid,
                 {
                     "source_id": sid,
@@ -317,7 +311,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 },
             )
             metadata = edition["metadata"]
-            source_report["editions"].append(
+            report["editions"].append(
                 {
                     "external_key": edition["external_key"],
                     "kodi_id": metadata.get("kodi_id"),
@@ -325,8 +319,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "file": metadata.get("file"),
                     "database_at_import": metadata.get("database"),
                     "exists_in_movie": None,
+                    "in_library": None,
                 }
             )
+
         reports = []
         for sid, report in by_source.items():
             if report["source_type"] == "kodi":
@@ -336,95 +332,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 else:
                     report["configured_database"] = source["config"].get("database") or None
                     movie_ids = [
-                        entry["kodi_id"]
-                        for entry in report["editions"]
-                        if isinstance(entry["kodi_id"], int)
+                        edition["kodi_id"]
+                        for edition in report["editions"]
+                        if isinstance(edition["kodi_id"], int)
                     ]
                     if detail["kind"] == "movie" and movie_ids:
                         try:
-                            checked = await asyncio.to_thread(
+                            inspected = await asyncio.to_thread(
                                 KodiConnector(source["config"]).inspect_movie_links, movie_ids
                             )
-                            report["queried_database"] = checked["database"]
-                            movie_rows = {int(k): v for k, v in checked["movies"].items()}
-                            for entry in report["editions"]:
-                                if isinstance(entry["kodi_id"], int):
-                                    row = movie_rows.get(entry["kodi_id"])
-                                    entry["exists_in_movie"] = row is not None
-                                    entry["sql_links"] = row
-                            # A database file/path link is not proof of file existence
-                            # on SMB/NFS. A configured Kodi player can separately
-                            # tell us whether it resolves this movie ID.
-                            report["physical_file_verified"] = False
-                            report["players"] = []
-                            player_list = await asyncio.to_thread(store.players)
-                            for public_player in player_list:
-                                if public_player["source_id"] != sid:
-                                    continue
-                                configured_player = await asyncio.to_thread(
-                                    store.player, public_player["id"]
-                                )
-                                if not configured_player:
-                                    continue
-                                player_report = {
-                                    "name": public_player["name"],
-                                    "movies": [],
-                                }
-                                try:
-                                    # GetMovieDetails can return a retained SQL
-                                    # record even if it is not listed in the
-                                    # active Kodi video library. GetMovies is
-                                    # the authoritative membership check.
-                                    visible_movies = await library_movie_ids(
-                                        configured_player["config"]
-                                    )
-                                    async with kodi_rpc_connection(
-                                        configured_player["config"]
-                                    ) as rpc:
-                                        for kodi_id in sorted(set(movie_ids)):
-                                            try:
-                                                answer = await rpc(
-                                                    "VideoLibrary.GetMovieDetails",
-                                                    {
-                                                        "movieid": kodi_id,
-                                                        "properties": ["file"],
-                                                    },
-                                                )
-                                                item = (
-                                                    answer.get("moviedetails")
-                                                    if isinstance(answer, dict)
-                                                    else None
-                                                )
-                                                player_report["movies"].append(
-                                                    {
-                                                        "kodi_id": kodi_id,
-                                                        "in_library": kodi_id in visible_movies,
-                                                        "recognized": bool(item),
-                                                        "file": item.get("file") if item else None,
-                                                    }
-                                                )
-                                            except ConnectorError as exc:
-                                                player_report["movies"].append(
-                                                    {
-                                                        "kodi_id": kodi_id,
-                                                        "in_library": kodi_id in visible_movies,
-                                                        "recognized": None,
-                                                        "error": str(exc),
-                                                    }
-                                                )
-                                except ConnectorError as exc:
-                                    player_report["error"] = str(exc)
-                                report["players"].append(player_report)
+                            report["queried_database"] = inspected["database"]
+                            report["library_rule"] = inspected["library_rule"]
+                            report["library_verified"] = inspected["library_verified"]
+                            listed = set(inspected["library_visible_movie_ids"])
+                            movie_rows = {int(k): v for k, v in inspected["movies"].items()}
+                            for edition in report["editions"]:
+                                movie_id = edition["kodi_id"]
+                                if isinstance(movie_id, int):
+                                    edition["exists_in_movie"] = movie_id in movie_rows
+                                    edition["sql_links"] = movie_rows.get(movie_id)
+                                    edition["in_library"] = movie_id in listed
                         except ConnectorError as exc:
                             report["error"] = str(exc)
                     else:
-                        report["note"] = "Verification of the movie table applies to films."
+                        report["note"] = "Movie navigation applies to films only."
             reports.append(report)
         return {
             "media_id": detail["id"],
             "title": detail["title"],
             "sources": reports,
-            "has_clz": any(r["source_type"] == "clz" for r in reports),
+            "has_clz": any(report["source_type"] == "clz" for report in reports),
         }
 
     @app.patch(

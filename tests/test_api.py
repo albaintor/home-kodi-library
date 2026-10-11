@@ -232,7 +232,13 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
     monkeypatch.setattr(
         KodiConnector,
         "inspect_movie_links",
-        lambda self, ids: {"database": "MyVideos131", "movies": {}},
+        lambda self, ids: {
+            "database": "MyVideos131",
+            "movies": {},
+            "library_visible_movie_ids": [],
+            "library_rule": "movie_view.isDefaultVersion = 1",
+            "library_verified": True,
+        },
     )
     read = {"Authorization": f"Bearer {READ}"}
     assert client.get(f"/api/v1/media/{item['id']}/diagnostics", headers=read).status_code == 403
@@ -244,10 +250,7 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
     assert edition["exists_in_movie"] is False
 
 
-def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, monkeypatch):
-    import contextlib
-
-    import kodi_library.app as app_module
+def test_media_diagnostics_identifies_sql_movie_absent_from_navigation(client, admin, monkeypatch):
     from kodi_library.connectors.kodi import KodiConnector
 
     sid = client.post(
@@ -271,6 +274,9 @@ def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, m
         "inspect_movie_links",
         lambda self, ids: {
             "database": "MyVideos131",
+            "library_visible_movie_ids": [],
+            "library_rule": "movie_view.isDefaultVersion = 1",
+            "library_verified": True,
             "movies": {
                 7: {
                     "title": "Phantom",
@@ -286,24 +292,10 @@ def test_media_diagnostics_identifies_sql_files_and_kodi_player(client, admin, m
         },
     )
 
-    @contextlib.asynccontextmanager
-    async def fake_connection(config):
-        async def rpc(method, params):
-            assert method == "VideoLibrary.GetMovieDetails"
-            assert params["movieid"] == 7
-            return {"moviedetails": {"movieid": 7, "file": "smb://nas/films/phantom.mkv"}}
-
-        yield rpc
-
-    async def fake_library(config):
-        return {7}
-
-    monkeypatch.setattr(app_module, "kodi_rpc_connection", fake_connection)
-    monkeypatch.setattr(app_module, "library_movie_ids", fake_library)
     response = client.get(f"/api/v1/media/{movie['id']}/diagnostics", headers=admin)
     assert response.status_code == 200, response.text
     info = response.json()["sources"][0]
     assert info["editions"][0]["sql_links"]["file_row_exists"] is True
-    assert info["players"][0]["movies"][0]["recognized"] is True
-    assert info["players"][0]["movies"][0]["in_library"] is True
-    assert info["physical_file_verified"] is False
+    assert info["editions"][0]["exists_in_movie"] is True
+    assert info["editions"][0]["in_library"] is False
+    assert info["library_verified"] is True

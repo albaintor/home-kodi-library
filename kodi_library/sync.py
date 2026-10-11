@@ -9,45 +9,8 @@ from typing import Any
 from .connectors.base import ConnectorError
 from .connectors.clz import parse_clz
 from .connectors.kodi import KodiConnector
-from .players import library_movie_ids
 
 LOGGER = logging.getLogger(__name__)
-
-
-def only_movies_in_library(records, library_movie_ids: set[int]):
-    """Keep non-movie media and Kodi versions of movies visible via JSON-RPC.
-
-    A movie can have several files/versions; membership is by movie ID, not
-    file availability, filenames, dates or local watch/list status.
-    """
-    sql_movie_ids = {
-        record.metadata.get("kodi_id")
-        for record in records
-        if record.kind == "movie" and isinstance(record.metadata.get("kodi_id"), int)
-    }
-    # Reject a different Kodi instance/library before publishing mass deletions.
-    if sql_movie_ids and library_movie_ids and not sql_movie_ids.intersection(library_movie_ids):
-        raise ConnectorError(
-            "L'instance Kodi et la source MariaDB n'ont aucun film en commun. "
-            "Vérifiez que l'instance utilise la base MyVideos de cette source."
-        )
-    if sql_movie_ids and not library_movie_ids:
-        raise ConnectorError(
-            "Kodi renvoie une vidéothèque de films vide alors que MariaDB "
-            "contient des films. Synchronisation annulée pour éviter une suppression massive."
-        )
-    omitted = sql_movie_ids - library_movie_ids
-    kept = [
-        record
-        for record in records
-        if record.kind != "movie" or record.metadata.get("kodi_id") in library_movie_ids
-    ]
-    return kept, {
-        "library_movie_count": len(library_movie_ids),
-        "library_excluded_movie_ids": len(omitted),
-        "library_excluded_editions": len(records) - len(kept),
-        "library_extra_movie_ids": len(library_movie_ids - sql_movie_ids),
-    }
 
 
 class BusyError(Exception):
@@ -105,31 +68,6 @@ class SyncManager:
                 records = await asyncio.to_thread(connector.fetch)
                 mariadb_read_ms = round((monotonic() - fetch_started) * 1000)
                 database = connector.database
-                library_report = {"library_verified": False}
-                players = await asyncio.to_thread(self.store.players)
-                linked = [player for player in players if player["source_id"] == source["id"]]
-                if linked:
-                    # Use a single deterministic reference player. It is
-                    # explicitly reported, to avoid silently combining
-                    # libraries from devices on different databases.
-                    player = linked[0]
-                    configured = await asyncio.to_thread(self.store.player, player["id"])
-                    if configured is None:
-                        raise ConnectorError("L'instance Kodi configurée est introuvable.")
-                    await asyncio.to_thread(
-                        self.store.update_job_progress, job["id"], "verifying_library"
-                    )
-                    ids = await library_movie_ids(configured["config"])
-                    records, checked = only_movies_in_library(records, ids)
-                    library_report.update(checked)
-                    library_report["library_verified"] = True
-                    library_report["library_player"] = player["name"]
-                else:
-                    library_report["library_warning"] = (
-                        "Aucune instance Kodi associée à cette source : "
-                        "impossible de vérifier les suppressions dans la vidéothèque. "
-                        "Seul l'état MariaDB est synchronisé."
-                    )
             await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
             publish_started = monotonic()
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
@@ -138,7 +76,6 @@ class SyncManager:
                 result["database"] = database
                 result["mariadb_read_ms"] = mariadb_read_ms
                 result.update(connector.snapshot_report)
-                result.update(library_report)
             await asyncio.to_thread(self.store.finish_job, job["id"], result=result)
         except (ConnectorError, ValueError) as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))

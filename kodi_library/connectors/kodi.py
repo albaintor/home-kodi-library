@@ -268,7 +268,32 @@ class KodiConnector:
                                 else None,
                             }
                         )
-            return {"database": self.database, "movies": movies}
+            # Exactly the default Kodi movie-navigation predicate on MyVideos:
+            # CVideoDatabase::GetFilter(videodb://movies/titles/) adds
+            # movie_view.isDefaultVersion = 1 (non-flattened versions).
+            if "movie_view" not in tables:
+                raise ConnectorError("Kodi movie_view is unavailable.")
+            cursor.execute("SHOW COLUMNS FROM `movie_view`")
+            view_columns = {str(row["Field"]).casefold() for row in cursor.fetchall()}
+            has_default = "isdefaultversion" in view_columns
+            rule = (
+                "movie_view.isDefaultVersion = 1"
+                if has_default
+                else "legacy movie_view (no isDefaultVersion column)"
+            )
+            sql = (
+                f"SELECT DISTINCT idMovie FROM movie_view WHERE idMovie IN ({marks})"
+                + (" AND isDefaultVersion = 1" if has_default else "")
+            )
+            cursor.execute(sql, ids)
+            listed = sorted({int(row["idMovie"]) for row in cursor.fetchall()})
+            return {
+                "database": self.database,
+                "movies": movies,
+                "library_visible_movie_ids": listed,
+                "library_rule": rule,
+                "library_verified": has_default,
+            }
 
         return self._read(inspect)
 
@@ -390,6 +415,10 @@ class KodiConnector:
         canonical_movie_ids = {int(row["idMovie"]) for row in cursor.fetchall()}
         orphan_count = 0
         orphan_examples = []
+        not_in_library_count = 0
+        not_in_library_examples = []
+        library_movie_ids: set[int] | None = None
+        library_rule = "legacy movie_view (no isDefaultVersion column)"
         self._report("loading")
         artwork: dict[tuple[str, int], dict[str, str]] = defaultdict(dict)
         if "art" in tables:
@@ -475,23 +504,47 @@ class KodiConnector:
             cursor.execute(f"SHOW COLUMNS FROM `{view}`")
             columns = {row["Field"].casefold() for row in cursor.fetchall()}
             condition = ""
-            if kind == "movie" and "videoversiontypeitemtype" in columns:
-                # Kodi 21 uses VERSION=0/EXTRA=1; newer schemas use 1/2.
-                # Default movie files identify the version type without guessing
-                # from a MyVideos suffix or accidentally importing extras.
-                cursor.execute(
-                    "SELECT DISTINCT videoVersionTypeItemType FROM `movie_view` "
-                    "WHERE isDefaultVersion = 1 AND videoVersionTypeItemType IS NOT NULL"
-                )
-                version_types = {int(next(iter(row.values()))) for row in cursor.fetchall()}
-                if len(version_types) > 1 or not version_types.issubset({0, 1}):
-                    raise ConnectorError(
-                        "Cannot identify movie versions in this Kodi schema. "
-                        "Default movie files have inconsistent asset types."
+            if kind == "movie":
+                has_default = "isdefaultversion" in columns
+                has_asset_type = "videoversiontypeitemtype" in columns
+                # CVideoDatabase::GetFilter, videodb://movies/titles/, adds
+                # "isDefaultVersion = 1" to movie_view (non-flattened view).
+                # The view may still contain rows for a movie whose default
+                # version has been detached. Such a movie is NOT listed by Kodi.
+                if has_default:
+                    default_fields = (
+                        "idMovie, videoVersionTypeItemType"
+                        if has_asset_type
+                        else "idMovie"
                     )
-                condition = " WHERE videoVersionTypeItemType IS NULL"
-                if version_types:
-                    condition += f" OR videoVersionTypeItemType = {version_types.pop()}"
+                    cursor.execute(
+                        f"SELECT {default_fields} FROM `movie_view` "
+                        "WHERE isDefaultVersion = 1"
+                    )
+                    default_rows = cursor.fetchall()
+                    library_movie_ids = {int(row["idMovie"]) for row in default_rows}
+                    library_rule = "movie_view.isDefaultVersion = 1"
+                if has_asset_type and has_default:
+                    # Import all versions of listed movies, not only their
+                    # default file. Exclude EXTRAs by using the Kodi schema's
+                    # version item type, taken from its default version rows.
+                    version_types = {
+                        int(row["videoVersionTypeItemType"])
+                        for row in default_rows
+                        if row["videoVersionTypeItemType"] is not None
+                    }
+                    if len(version_types) > 1 or not version_types.issubset({0, 1}):
+                        raise ConnectorError(
+                            "Cannot identify movie versions in this Kodi schema. "
+                            "Default movie files have inconsistent asset types."
+                        )
+                    condition = " WHERE videoVersionTypeItemType IS NULL"
+                    if version_types:
+                        condition += f" OR videoVersionTypeItemType = {version_types.pop()}"
+                elif has_asset_type:
+                    # Older/nonstandard Kodi views cannot reliably tell
+                    # which movie is in the usual library navigation.
+                    library_rule = "legacy movie_view (no isDefaultVersion column)"
             fetch_started = monotonic()
             cursor.execute(f"SELECT * FROM `{view}`{condition}")
             rows = cursor.fetchall()
@@ -510,6 +563,19 @@ class KodiConnector:
                                 "kodi_id": identity[1],
                                 "title": str(row.get("c00") or "Untitled")[:160],
                             }
+                        )
+                    if index % report_every == 0 or index == total:
+                        self._report(phase, index, total)
+                    continue
+                if (
+                    kind == "movie"
+                    and library_movie_ids is not None
+                    and identity[1] not in library_movie_ids
+                ):
+                    not_in_library_count += 1
+                    if len(not_in_library_examples) < 10:
+                        not_in_library_examples.append(
+                            {"kodi_id": identity[1], "title": str(row.get("c00") or "")[:160]}
                         )
                     if index % report_every == 0 or index == total:
                         self._report(phase, index, total)
@@ -548,6 +614,11 @@ class KodiConnector:
             "movie_table_count": len(canonical_movie_ids),
             "orphaned_movie_view_rows": orphan_count,
             "orphaned_movie_view_examples": orphan_examples,
+            "library_verified": library_movie_ids is not None,
+            "library_rule": library_rule,
+            "library_movie_count": len(library_movie_ids) if library_movie_ids is not None else None,
+            "library_excluded_editions": not_in_library_count,
+            "library_excluded_examples": not_in_library_examples,
             "sql_view_fetch_ms": view_fetch_ms,
         }
         return result
