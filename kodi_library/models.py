@@ -106,6 +106,12 @@ class ArtworkLinks(BaseModel):
     fanart: str | None = None
 
 
+class MediaSource(BaseModel):
+    id: str
+    name: str
+    type: Literal["kodi", "clz"]
+
+
 class MediaSummary(BaseModel):
     id: str
     kind: Kind
@@ -129,6 +135,7 @@ class MediaSummary(BaseModel):
     formats: list[str] = Field(default_factory=list)
     collections: list[str] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)
+    media_sources: list[MediaSource] = Field(default_factory=list)
     artwork: ArtworkLinks
 
 

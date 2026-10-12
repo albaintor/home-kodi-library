@@ -536,6 +536,36 @@ class Store:
             value.pop(name, None)
         return value
 
+    @staticmethod
+    def _sources_for_works(conn: sqlite3.Connection, work_ids: list[str]) -> dict[str, list[dict]]:
+        """Fetch exact source names in a single query for a page (not one query per item)."""
+        if not work_ids:
+            return {}
+        slots = ",".join("?" for _ in work_ids)
+        rows = conn.execute(
+            "SELECT DISTINCT r.work_id,s.id,s.name,s.type "
+            "FROM records r JOIN sources s ON s.id=r.source_id "
+            f"WHERE r.work_id IN ({slots}) "
+            "ORDER BY s.type,s.name COLLATE NOCASE,s.id",
+            work_ids,
+        )
+        found: dict[str, list[dict]] = defaultdict(list)
+        for row in rows:
+            found[row["work_id"]].append(
+                {"id": row["id"], "name": row["name"], "type": row["type"]}
+            )
+        return found
+
+    @classmethod
+    def _summaries_with_sources(
+        cls, conn: sqlite3.Connection, rows: list[sqlite3.Row]
+    ) -> list[dict[str, Any]]:
+        by_work = cls._sources_for_works(conn, [row["id"] for row in rows])
+        return [
+            {**cls._summary(row), "media_sources": by_work.get(row["id"], [])}
+            for row in rows
+        ]
+
     def media(
         self,
         *,
@@ -628,7 +658,7 @@ class Store:
                 (*params, limit, offset),
             ).fetchall()
             return {
-                "items": [self._summary(r) for r in rows],
+                "items": self._summaries_with_sources(conn, rows),
                 "total": total,
                 "limit": limit,
                 "offset": offset,
@@ -642,6 +672,7 @@ class Store:
             if row is None:
                 return None
             value = self._summary(row)
+            value["media_sources"] = self._sources_for_works(conn, [work_id]).get(work_id, [])
             ids: dict[str, list[str]] = defaultdict(list)
             for identity in conn.execute(
                 "SELECT namespace,value FROM identifiers WHERE work_id=? ORDER BY namespace,value",
@@ -888,7 +919,7 @@ class Store:
                 (list_id, limit, offset),
             ).fetchall()
             return {
-                "items": [self._summary(r) for r in rows],
+                "items": self._summaries_with_sources(conn, rows),
                 "total": total,
                 "limit": limit,
                 "offset": offset,

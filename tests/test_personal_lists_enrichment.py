@@ -123,6 +123,58 @@ def test_list_api_order_sort_concurrency_and_persistence(client, admin):
     assert client.get(base + "/items", headers=admin).status_code == 404
 
 
+
+def test_page_and_detail_include_real_sources_without_repeated_editions(client, admin):
+    store = client.app.state.store
+    kodi_a = store.save_source({"name": "Kodi Films", "type": "kodi"})
+    kodi_b = store.save_source({"name": "Kodi Archives", "type": "kodi"})
+    physical = store.save_source({"name": "Ma collection", "type": "clz"})
+    sources = [kodi_a, kodi_b, physical]
+    for i, source in enumerate(sources):
+        store.apply_snapshot(
+            source["id"],
+            [
+                Record(
+                    f"movie:{i}:1", "movie", "Film commun",
+                    identifiers={"imdb": "tt7777777"},
+                ),
+                Record(
+                    f"movie:{i}:2", "movie", "Film commun",
+                    identifiers={"imdb": "tt7777777"},
+                ),
+            ],
+        )
+    page = client.get("/api/v1/media", headers=admin).json()
+    assert page["total"] == 1
+    item = page["items"][0]
+    expected = {
+        ("Kodi Films", "kodi"), ("Kodi Archives", "kodi"),
+        ("Ma collection", "clz"),
+    }
+    assert {(s["name"], s["type"]) for s in item["media_sources"]} == expected
+    assert len(item["media_sources"]) == 3
+    assert {s["id"] for s in item["media_sources"]} == {s["id"] for s in sources}
+
+    media_id = item["id"]
+    detail = client.get(f"/api/v1/media/{media_id}", headers=admin).json()
+    assert detail["media_sources"] == item["media_sources"]
+
+    created = client.post("/api/v1/lists", headers=admin, json={"name": "À revoir"}).json()
+    client.post(
+        f"/api/v1/lists/{created['id']}/items",
+        headers=admin,
+        json={"media_id": media_id},
+    )
+    listed = client.get(f"/api/v1/lists/{created['id']}/items", headers=admin).json()
+    assert listed["items"][0]["media_sources"] == item["media_sources"]
+
+    store.delete_source(kodi_a["id"])
+    after = client.get(f"/api/v1/lists/{created['id']}/items", headers=admin).json()
+    assert {s["name"] for s in after["items"][0]["media_sources"]} == {
+        "Kodi Archives", "Ma collection"
+    }
+
+
 def test_schema_v1_is_migrated_without_losing_catalogue(store):
     _, _, ids = seed(store)
     with store.connect() as db:
