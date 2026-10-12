@@ -88,3 +88,7 @@ uvicorn==0.54.0
     # via kodi-library (pyproject.toml)
 yarl==1.25.1
     # via aiohttp
+
+# Bonjour service publication (home-kodi-library)
+ifaddr==0.2.0
+zeroconf==0.147.0
