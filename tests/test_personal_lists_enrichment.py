@@ -122,6 +122,7 @@ def test_list_api_order_sort_concurrency_and_persistence(client, admin):
     assert store.media()["total"] == 1
     assert client.get(base + "/items", headers=admin).status_code == 404
 
+
 def test_page_and_detail_include_real_sources_without_repeated_editions(client, admin):
     store = client.app.state.store
     kodi_a = store.save_source({"name": "Kodi Films", "type": "kodi"})
