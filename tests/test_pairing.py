@@ -1,9 +1,8 @@
 """Pairing security, device-specific token persistence and revocation."""
 import time
 
-from fastapi.testclient import TestClient
-
 from conftest import ADMIN, READ
+from fastapi.testclient import TestClient
 
 from kodi_library.app import create_app
 from kodi_library.settings import Settings
