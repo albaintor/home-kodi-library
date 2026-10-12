@@ -122,8 +122,6 @@ def test_list_api_order_sort_concurrency_and_persistence(client, admin):
     assert store.media()["total"] == 1
     assert client.get(base + "/items", headers=admin).status_code == 404
 
-
-
 def test_page_and_detail_include_real_sources_without_repeated_editions(client, admin):
     store = client.app.state.store
     kodi_a = store.save_source({"name": "Kodi Films", "type": "kodi"})
@@ -135,11 +133,15 @@ def test_page_and_detail_include_real_sources_without_repeated_editions(client, 
             source["id"],
             [
                 Record(
-                    f"movie:{i}:1", "movie", "Film commun",
+                    f"movie:{i}:1",
+                    "movie",
+                    "Film commun",
                     identifiers={"imdb": "tt7777777"},
                 ),
                 Record(
-                    f"movie:{i}:2", "movie", "Film commun",
+                    f"movie:{i}:2",
+                    "movie",
+                    "Film commun",
                     identifiers={"imdb": "tt7777777"},
                 ),
             ],
@@ -148,7 +150,8 @@ def test_page_and_detail_include_real_sources_without_repeated_editions(client, 
     assert page["total"] == 1
     item = page["items"][0]
     expected = {
-        ("Kodi Films", "kodi"), ("Kodi Archives", "kodi"),
+        ("Kodi Films", "kodi"),
+        ("Kodi Archives", "kodi"),
         ("Ma collection", "clz"),
     }
     assert {(s["name"], s["type"]) for s in item["media_sources"]} == expected
@@ -171,7 +174,8 @@ def test_page_and_detail_include_real_sources_without_repeated_editions(client, 
     store.delete_source(kodi_a["id"])
     after = client.get(f"/api/v1/lists/{created['id']}/items", headers=admin).json()
     assert {s["name"] for s in after["items"][0]["media_sources"]} == {
-        "Kodi Archives", "Ma collection"
+        "Kodi Archives",
+        "Ma collection",
     }
 
 

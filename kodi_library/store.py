@@ -561,10 +561,7 @@ class Store:
         cls, conn: sqlite3.Connection, rows: list[sqlite3.Row]
     ) -> list[dict[str, Any]]:
         by_work = cls._sources_for_works(conn, [row["id"] for row in rows])
-        return [
-            {**cls._summary(row), "media_sources": by_work.get(row["id"], [])}
-            for row in rows
-        ]
+        return [{**cls._summary(row), "media_sources": by_work.get(row["id"], [])} for row in rows]
 
     def media(
         self,
