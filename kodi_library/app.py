@@ -93,6 +93,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         discovery = None
         if settings.discovery_enabled:
             from .discovery import BonjourPublisher
+
             discovery = BonjourPublisher(settings.discovery_name, settings.discovery_port)
             await asyncio.to_thread(discovery.start)
         try:
