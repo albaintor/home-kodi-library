@@ -65,6 +65,10 @@ CREATE TABLE IF NOT EXISTS personal (
  work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
  user_rating REAL, watched INTEGER
 );
+CREATE TABLE IF NOT EXISTS device_tokens (
+ token_hash TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
+ created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS enrichment (
  work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
  payload TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -128,6 +132,30 @@ class Store:
                 yield conn
         finally:
             conn.close()
+
+    def device_tokens(self) -> list[dict[str, str]]:
+        with self.connect() as conn:
+            return [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT token_hash,name,role,created_at FROM device_tokens ORDER BY created_at DESC"
+                )
+            ]
+
+    def register_device_token(self, token_hash: str, name: str, role: str) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO device_tokens(token_hash,name,role,created_at) VALUES(?,?,?,?)",
+                (token_hash, name, role, now()),
+            )
+
+    def revoke_device_token(self, token_hash: str) -> bool:
+        with self.connect() as conn:
+            return bool(
+                conn.execute(
+                    "DELETE FROM device_tokens WHERE token_hash=?", (token_hash,)
+                ).rowcount
+            )
 
     def sources(self) -> list[dict[str, Any]]:
         with self.connect() as conn:

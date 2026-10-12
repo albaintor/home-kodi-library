@@ -1,6 +1,8 @@
 """Bearer clients, private browser sessions and a distinct trusted ingress credential."""
 
+import hashlib
 import secrets
+from threading import RLock
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass
@@ -25,8 +27,15 @@ class Principal:
 
 
 class Auth:
-    def __init__(self, settings):
+    def __init__(self, settings, store=None):
         self.settings = settings
+        self.store = store
+        self.devices: dict[str, str] = {}
+        self.pairing: tuple[str, float, str] | None = None
+        self.pairing_failures = 0
+        self.pairing_attempts: dict[str, deque[float]] = defaultdict(deque)
+        self.pairing_global: deque[float] = deque()
+        self.pairing_lock = RLock()
         self.sessions: dict[str, tuple[float, Principal]] = {}
         self.attempts: dict[str, deque[float]] = defaultdict(deque)
         self.local_networks = [ip_network(n) for n in settings.local_auth_networks]
@@ -61,12 +70,71 @@ class Auth:
         except ValueError:
             return False
 
+    def load_devices(self) -> None:
+        if self.store is not None:
+            with self.pairing_lock:
+                self.devices = {
+                    row["token_hash"]: row["role"] for row in self.store.device_tokens()
+                }
+
+    @staticmethod
+    def _digest(secret: str) -> str:
+        return hashlib.sha256(secret.encode("utf-8")).hexdigest()
+
     def token_role(self, token: str) -> str | None:
         if secure_equal(token, self.settings.api_token):
             return "admin"
         if self.settings.read_token and secure_equal(token, self.settings.read_token):
             return "read"
-        return None
+        with self.pairing_lock:
+            return self.devices.get(self._digest(token))
+
+    def start_pairing(self, role: str) -> dict[str, str | int]:
+        if role not in ("admin", "read"):
+            raise ValueError("Invalid pairing role.")
+        with self.pairing_lock:
+            code = f"{secrets.randbelow(100_000_000):08d}"
+            self.pairing = (self._digest(code), time.monotonic() + 300, role)
+            self.pairing_failures = 0
+            return {"code": code, "expires_in": 300, "role": role}
+
+    def redeem_pairing(self, code: str, name: str, address: str) -> dict[str, str]:
+        with self.pairing_lock:
+            current = time.monotonic()
+            attempts = self.pairing_attempts[address]
+            while attempts and attempts[0] < current - 60:
+                attempts.popleft()
+            while self.pairing_global and self.pairing_global[0] < current - 60:
+                self.pairing_global.popleft()
+            if len(attempts) >= 5 or len(self.pairing_global) >= 25:
+                raise HTTPException(429, "Too many pairing attempts. Try again later.")
+            attempts.append(current)
+            self.pairing_global.append(current)
+            pending = self.pairing
+            if not pending or current >= pending[1]:
+                self.pairing = None
+                raise HTTPException(400, "No active pairing code or code expired.")
+            if not secure_equal(self._digest(code), pending[0]):
+                self.pairing_failures += 1
+                if self.pairing_failures >= 5:
+                    self.pairing = None
+                raise HTTPException(400, "Invalid pairing code.")
+            if self.store is None:
+                raise HTTPException(503, "Device pairing unavailable.")
+            token = secrets.token_urlsafe(48)
+            token_hash = self._digest(token)
+            self.store.register_device_token(token_hash, name, pending[2])
+            self.devices[token_hash] = pending[2]
+            self.pairing = None  # One-use code, consumed only after persistence.
+            return {"token": token, "role": pending[2]}
+
+    def revoke_device(self, token_hash: str) -> bool:
+        if self.store is None:
+            return False
+        with self.pairing_lock:
+            removed = self.store.revoke_device_token(token_hash)
+            self.devices.pop(token_hash, None)
+            return removed
 
     def login(self, token: str, address: str) -> tuple[str, Principal]:
         current = time.monotonic()

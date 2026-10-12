@@ -23,6 +23,9 @@ class Settings:
     local_auth_networks: list[str] = field(default_factory=list)
     trusted_proxy_networks: list[str] = field(default_factory=list)
     tmdb_api_token: str = ""
+    discovery_enabled: bool = False
+    discovery_name: str = "Home Kodi Library"
+    discovery_port: int = 8099
 
     def validate(self) -> None:
         if len(self.api_token) < 24:
@@ -41,6 +44,8 @@ class Settings:
             raise ValueError("API_READ_TOKEN and INGRESS_TOKEN must be distinct.")
         if "*" in self.cors_origins:
             raise ValueError("CORS_ORIGINS must list exact origins, not a wildcard.")
+        if not (1 <= self.discovery_port <= 65535) or not self.discovery_name.strip():
+            raise ValueError("Invalid Bonjour discovery name or port.")
         if self.sync_interval < 60:
             raise ValueError("SYNC_INTERVAL must be at least 60 seconds.")
         for name, networks in (
@@ -70,6 +75,9 @@ class Settings:
             local_auth_networks=json.loads(os.environ.get("LOCAL_AUTH_NETWORKS", "[]")),
             trusted_proxy_networks=json.loads(os.environ.get("TRUSTED_PROXY_NETWORKS", "[]")),
             tmdb_api_token=os.environ.get("TMDB_API_TOKEN", ""),
+            discovery_enabled=os.environ.get("DISCOVERY_ENABLED", "false").lower() == "true",
+            discovery_name=os.environ.get("DISCOVERY_NAME", "Home Kodi Library"),
+            discovery_port=int(os.environ.get("DISCOVERY_PORT", os.environ.get("PORT", "8099"))),
         )
         value.validate()
         return value

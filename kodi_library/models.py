@@ -280,6 +280,21 @@ class PlayResult(BaseModel):
     status: Literal["started"] = "started"
 
 
+class PairingRequest(StrictModel):
+    role: Literal["admin", "read"] = "admin"
+
+
+class PairingRedeem(StrictModel):
+    code: str = Field(pattern=r"^[0-9]{8}$")
+    device_name: str = Field(min_length=1, max_length=80)
+
+
+class PairingResult(BaseModel):
+    code: str
+    expires_in: int
+    role: Literal["admin", "read"]
+
+
 class SessionInput(StrictModel):
     token: SecretStr
 

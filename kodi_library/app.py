@@ -50,6 +50,9 @@ from .models import (
     PlayerView,
     PlayInput,
     PlayResult,
+    PairingRequest,
+    PairingRedeem,
+    PairingResult,
     SessionInput,
     SessionView,
     SortField,
@@ -80,13 +83,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings.validate()
     store = Store(settings.data_dir / "catalogue.db")
     sync = SyncManager(store, settings)
+    auth = Auth(settings, store)
 
     @asynccontextmanager
     async def lifespan(app):
         await asyncio.to_thread(store.initialize)
+        await asyncio.to_thread(auth.load_devices)
         sync.start()
-        yield
-        await sync.close()
+        discovery = None
+        if settings.discovery_enabled:
+            from .discovery import BonjourPublisher
+            discovery = BonjourPublisher(settings.discovery_name, settings.discovery_port)
+            await asyncio.to_thread(discovery.start)
+        try:
+            yield
+        finally:
+            if discovery:
+                await asyncio.to_thread(discovery.stop)
+            await sync.close()
 
     app = FastAPI(
         title="Kodi Library API",
@@ -100,7 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             code: {"model": ErrorResponse} for code in (401, 403, 404, 409, 413, 422, 429, 502)
         },
     )
-    app.state.store, app.state.auth, app.state.sync = store, Auth(settings), sync
+    app.state.store, app.state.auth, app.state.sync = store, auth, sync
     app.state.artwork = Artwork(settings)
     enrichment_lock = asyncio.Lock()
     if settings.cors_origins:
@@ -180,6 +194,47 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get(API + "/openapi.json", include_in_schema=False, dependencies=[Depends(authenticated)])
     def schema():
         return app.openapi()
+
+    @app.get(API + "/discovery", include_in_schema=False)
+    def discovery_info():
+        # Deliberately public, with no credentials, file paths or catalogue data.
+        return {"service": "home-kodi-library", "api_version": "v1", "pairing": True}
+
+    @app.post(
+        API + "/pairing/start",
+        response_model=PairingResult,
+        dependencies=[Depends(writable)],
+        tags=["Authentication"],
+    )
+    def start_pairing(request: PairingRequest):
+        return auth.start_pairing(request.role)
+
+    @app.post(API + "/pairing/redeem", tags=["Authentication"])
+    def redeem_pairing(request: PairingRedeem, http_request: Request):
+        # The sole unauthenticated mutation; bounded lifetime, one use,
+        # per-peer and global throttles, with five failures per issued code.
+        peer = http_request.client.host if http_request.client else "unknown"
+        return auth.redeem_pairing(request.code, request.device_name, peer)
+
+    @app.get(
+        API + "/pairing/devices",
+        dependencies=[Depends(writable)],
+        tags=["Authentication"],
+    )
+    def paired_devices():
+        return store.device_tokens()
+
+    @app.delete(
+        API + "/pairing/devices/{token_hash}",
+        status_code=204,
+        dependencies=[Depends(writable)],
+        tags=["Authentication"],
+    )
+    def revoke_paired_device(token_hash: str):
+        if len(token_hash) != 64 or any(char not in "0123456789abcdef" for char in token_hash):
+            raise HTTPException(404, "Unknown paired device.")
+        if not auth.revoke_device(token_hash):
+            raise HTTPException(404, "Unknown paired device.")
 
     @app.post(API + "/auth/session", response_model=SessionView, tags=["Authentication"])
     def login(data: SessionInput, request: Request, response: Response):
