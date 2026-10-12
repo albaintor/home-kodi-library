@@ -152,9 +152,7 @@ class Store:
     def revoke_device_token(self, token_hash: str) -> bool:
         with self.connect() as conn:
             return bool(
-                conn.execute(
-                    "DELETE FROM device_tokens WHERE token_hash=?", (token_hash,)
-                ).rowcount
+                conn.execute("DELETE FROM device_tokens WHERE token_hash=?", (token_hash,)).rowcount
             )
 
     def sources(self) -> list[dict[str, Any]]:
