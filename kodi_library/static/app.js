@@ -1,3 +1,5 @@
+import { startI18n, displayLocale, tr, localizedPrompt, localizedConfirm } from './i18n.js';
+startI18n();
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const stateLabels = {watched:'Vu',unwatched:'Non vu',in_progress:'En cours',unknown:'État non renseigné'};
@@ -27,7 +29,7 @@ function updateFormatSelections() {
   const selected=new Set(state.formats);
   const categories={video:'video-formats',audio:'audio-formats',disc:'disc-formats'};
   const values=[...new Set((state.facets?.formats||[]).map(canonicalFormat))]
-    .sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+    .sort((a,b)=>a.localeCompare(b,displayLocale(),{numeric:true}));
   for(const [category,id] of Object.entries(categories)) {
     $(id).innerHTML=values.filter(v=>formatCategory(v)===category).map(label=>{
       const isSelected=selected.has(label);
@@ -66,8 +68,8 @@ const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver
   if(entries.some(entry=>entry.isIntersecting)&&!state.loading&&!state.loadError&&state.hasMore&&!$('app').hidden&&!document.querySelector('dialog[open]')) loadMedia({append:true});
 },{rootMargin:'600px 0px'}) : null;
 let toastTimer;
-function toast(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,5500); }
-function error(message) { $('error-banner').textContent=message; $('error-banner').hidden=false; }
+function toast(message) { $('toast').textContent=tr(message); $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,5500); }
+function error(message) { $('error-banner').textContent=tr(message); $('error-banner').hidden=false; }
 async function api(path, options={}) {
   const headers=new Headers(options.headers || {});
   if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type','application/json');
@@ -82,7 +84,7 @@ async function api(path, options={}) {
   return value;
 }
 function showLogin() { ++state.seq; state.controller?.abort(); state.loading=false; moreObserver?.disconnect(); $('app').hidden=true; $('login').hidden=false; }
-function date(value) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('fr-FR'); }
+function date(value) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(displayLocale()); }
 function playbackTime(seconds) {
   const total=Math.max(0,Math.floor(Number(seconds)||0));
   const hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),secs=total%60;
@@ -111,7 +113,7 @@ function formatBadges(values, compact=false, provenance=null) {
   const seen=new Set();
   const order={video:0,hdr:0,audio:1,disc:2};
   const labels=values.map(canonicalFormat).filter(label=>{const key=formatLogos[label]?.[0]||label;if(seen.has(key))return false;seen.add(key);return true;})
-    .sort((a,b)=>(order[formatLogos[a]?.[1]]??0)-(order[formatLogos[b]?.[1]]??0)||a.localeCompare(b,'fr',{numeric:true}));
+    .sort((a,b)=>(order[formatLogos[a]?.[1]]??0)-(order[formatLogos[b]?.[1]]??0)||a.localeCompare(b,displayLocale(),{numeric:true}));
   const visible=compact?labels.slice(0,4):labels;
   return visible.map(label=>{
     const logo=formatLogos[label];
@@ -132,7 +134,7 @@ function detailFormatBadges(item) {
       if(!origins.get(label).includes(name))origins.get(label).push(name);
     }
   }
-  return formatBadges([...origins.keys()].sort((a,b)=>a.localeCompare(b,'fr')),false,origins);
+  return formatBadges([...origins.keys()].sort((a,b)=>a.localeCompare(b,displayLocale())),false,origins);
 }
 const personCategories = {cast:'Casting',director:'Réalisation',writer:'Scénario',producer:'Production',composer:'Musique · Composition',photography:'Photographie',crew:'Autres fonctions'};
 function castMarkup(people=[]) {
@@ -323,7 +325,7 @@ function observeMore() {
 }
 function updateLoadingState() {
   $('pagination').hidden=!state.items.length&&!state.loadError;
-  $('page-info').textContent=`${state.items.length.toLocaleString('fr-FR')} / ${state.total.toLocaleString('fr-FR')} titres affichés`;
+  $('page-info').textContent=`${state.items.length.toLocaleString(displayLocale())} / ${state.total.toLocaleString(displayLocale())} titres affichés`;
   $('load-more').hidden=!state.hasMore&&!state.loadError;
   $('load-more').disabled=state.loading;
   $('load-more').textContent=state.loadError?'Réessayer':'Charger la suite';
@@ -357,7 +359,7 @@ async function loadMedia({append=false}={}) {
     for(const item of added) state.ids.add(item.id);
     state.items.push(...added); state.total=page.total; state.nextOffset=offset+page.items.length;
     state.hasMore=page.has_more&&page.items.length>0;
-    $('result-count').textContent=`${page.total.toLocaleString('fr-FR')} résultat${page.total>1?'s':''}${state.recent?' · ajoutés depuis 30 jours':''}`;
+    $('result-count').textContent=`${page.total.toLocaleString(displayLocale())} résultat${page.total>1?'s':''}${state.recent?' · ajoutés depuis 30 jours':''}`;
     if (!append&&!page.items.length) {
       const empty=!state.facets?.sources.length || state.facets.sources.every(s=>!s.item_count);
       $('results').innerHTML=`<div class="empty-state"><span class="empty-icon" aria-hidden="true">▦</span><h2>${empty?'Votre bibliothèque commence ici.':'Aucun titre ne correspond.'}</h2><p>${empty?'Connectez la base Kodi ou importez un export CLZ Movies.':'Modifiez les filtres ou essayez un autre mot.'}</p>${state.role==='admin'&&empty?'<button class="primary" data-action="connections">Ajouter une source →</button>':'<button class="secondary" data-action="reset">Effacer les filtres</button>'}</div>`;
@@ -381,7 +383,7 @@ async function refresh() {
     updateFormatSelections();
   }
   restoreFilters();
-  $('catalogue-status').textContent=`${status.works.toLocaleString('fr-FR')} titres · ${status.editions.toLocaleString('fr-FR')} fichiers et éditions · ${status.sources.length} source${status.sources.length>1?'s':''}`;
+  $('catalogue-status').textContent=`${status.works.toLocaleString(displayLocale())} titres · ${status.editions.toLocaleString(displayLocale())} fichiers et éditions · ${status.sources.length} source${status.sources.length>1?'s':''}`;
   const latest=status.sources.map(s=>s.last_sync).filter(Boolean).sort().at(-1);
   $('sync-status').textContent=latest?`Dernière mise à jour : ${date(latest)}`:'Aucune source importée';
   await loadMedia();
@@ -400,7 +402,7 @@ function jobProgressLabel(job) {
   const total=Math.max(0,Number(job.progress_total)||0);
   const overall=Number(job.overall_percent);
   const overallText=Number.isFinite(overall)&&job.progress_phase!=='parsing_clz'?' · ≈ '+overall+' % global':'';
-  return phase+(total>0?' · '+Math.min(current,total).toLocaleString('fr-FR')+'/'+total.toLocaleString('fr-FR'):'…')+overallText;
+  return phase+(total>0?' · '+Math.min(current,total).toLocaleString(displayLocale())+'/'+total.toLocaleString(displayLocale()):'…')+overallText;
 }
 function jobProgressMarkup(job) {
   const percent=Number(job.overall_percent);
@@ -690,7 +692,7 @@ document.addEventListener('submit',async event=>{
       await pollJob(await api(`sources/${source.id}/sync`,{method:'POST'}));
     } else if(formId==='clz-form') {
       let id=data.get('source_id');
-      if(!id) { const name=prompt('Nom de cette collection','Collection Blu-ray'); if(!name) return; const source=await api('sources',{method:'POST',body:JSON.stringify({name,type:'clz'})}); id=source.id; }
+      if(!id) { const name=localizedPrompt('Nom de cette collection','Collection Blu-ray'); if(!name) return; const source=await api('sources',{method:'POST',body:JSON.stringify({name,type:'clz'})}); id=source.id; }
       const body=new FormData(); body.set('source_id',id); body.set('file',data.get('file'));
       await pollJob(await api('imports/clz',{method:'POST',body}));
     } else {
@@ -725,7 +727,7 @@ document.addEventListener('click',async event=>{
     return;
   }
   if(button.dataset.revokeDevice) {
-    if(confirm('Révoquer cet appareil iOS ? Il devra être appairé de nouveau.')) {
+    if(localizedConfirm('Révoquer cet appareil iOS ? Il devra être appairé de nouveau.')) {
       try {await api('pairing/devices/'+encodeURIComponent(button.dataset.revokeDevice),{method:'DELETE'});await connections();}
       catch(e){toast(e.message);}
     }
@@ -738,8 +740,8 @@ document.addEventListener('click',async event=>{
   try {
     if(button.dataset.testConnection) {const form=$(button.dataset.testConnection); const fields=['host','port',...(form.getAttribute('id')==='kodi-form'?['username']:[])];if(fields.every(name=>form.elements.namedItem(name).reportValidity())) await testConnection(form);}
     if(button.dataset.sync) {button.disabled=true; await pollJob(await api(`sources/${button.dataset.sync}/sync`,{method:'POST'}));}
-    if(button.dataset.removeSource && confirm('Retirer cette source et ses données importées ?')) {await api(`sources/${button.dataset.removeSource}`,{method:'DELETE'});await refresh();await connections();}
-    if(button.dataset.removePlayer && confirm('Retirer cette instance Kodi ?')) {await api(`players/${button.dataset.removePlayer}`,{method:'DELETE'});await connections();}
+    if(button.dataset.removeSource && localizedConfirm('Retirer cette source et ses données importées ?')) {await api(`sources/${button.dataset.removeSource}`,{method:'DELETE'});await refresh();await connections();}
+    if(button.dataset.removePlayer && localizedConfirm('Retirer cette instance Kodi ?')) {await api(`players/${button.dataset.removePlayer}`,{method:'DELETE'});await connections();}
     if(button.dataset.editSource) {const s=state.facets.sources.find(s=>s.id===button.dataset.editSource); fillForm('kodi-form',{id:s.id,name:s.name,...s.config});}
     if(button.dataset.editPlayer) {const p=state.players.find(p=>p.id===button.dataset.editPlayer); fillForm('player-form',p);}
     if(button.id==='test-tmdb'){button.disabled=true;const tested=await api('connections/tmdb/test',{method:'POST'});result.textContent=tested.message;result.className='success-text play-status';}
@@ -892,10 +894,10 @@ document.addEventListener('click',async event=>{
     if(button.id==='new-list-toggle'){$('new-list-form').hidden=false;$('new-list-form').elements.name.focus();}
     if(button.id==='list-add-button'){$('list-search-area').hidden=!$('list-search-area').hidden;if(!$('list-search-area').hidden)$('list-search').focus();}
     if(button.id==='rename-list'){
-      const name=prompt('Nom de la liste',$('selected-list').selectedOptions[0].textContent.replace(/ · \d+$/,''));
+      const name=localizedPrompt('Nom de la liste',$('selected-list').selectedOptions[0].textContent.replace(/ · \d+$/,''));
       if(name?.trim()){const existing=(await api('lists')).find(l=>l.id===state.listId);await api(`lists/${state.listId}`,{method:'PUT',body:JSON.stringify({name:name.trim(),description:existing.description})});await openLists();}
     }
-    if(button.id==='delete-list'&&confirm('Supprimer cette liste ? Les médias restent dans le catalogue.')){await api(`lists/${state.listId}`,{method:'DELETE'});await openLists();}
+    if(button.id==='delete-list'&&localizedConfirm('Supprimer cette liste ? Les médias restent dans le catalogue.')){await api(`lists/${state.listId}`,{method:'DELETE'});await openLists();}
     if(button.id==='list-load-more'){button.disabled=true;await loadList({append:true});}
     if(button.id==='list-sort-order'){state.listOrder=state.listOrder==='asc'?'desc':'asc';button.textContent=state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant';savePreferences();await loadList();}
     if(button.dataset.addListMedia){button.disabled=true;await api(`lists/${state.listId}/items`,{method:'POST',body:JSON.stringify({media_id:button.dataset.addListMedia})});await loadList();await searchList();}
@@ -904,7 +906,7 @@ document.addEventListener('click',async event=>{
     if(button.dataset.copyFile){
       const file=state.detail.editions.find(e=>e.id===button.dataset.copyFile).metadata.file;
       if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(file);toast('Chemin copié.');}
-      else prompt('Copiez le chemin du fichier',file);
+      else localizedPrompt('Copiez le chemin du fichier',file);
     }
   }catch(e){toast(e.message);}finally{button.disabled=false;}
 });
