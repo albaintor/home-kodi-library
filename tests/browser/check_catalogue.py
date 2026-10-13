@@ -543,6 +543,23 @@ def main():
                 page.locator("#connections-button").click()
                 expect(page.locator("#settings-preferences-title")).to_have_text("Préférences")
                 expect(page.locator("#settings-language")).to_have_value("fr")
+                expect(page.locator("#settings-language")).to_be_visible()
+                page.locator("#connections-dialog").evaluate(
+                    "element => element.scrollTop = element.scrollHeight"
+                )
+                assert page.locator("#settings-language").evaluate(
+                    """element => {
+                      const select = element.getBoundingClientRect();
+                      const dialog = element.closest("dialog").getBoundingClientRect();
+                      return select.top >= dialog.top - 2 && select.bottom <= dialog.bottom + 2;
+                    }"""
+                )
+                page.locator('[data-close="connections-dialog"]').click()
+                page.locator("#connections-button").click()
+                assert page.locator("#connections-dialog").evaluate(
+                    "element => element.scrollTop === 0"
+                )
+                expect(page.locator("#settings-language")).to_be_visible()
                 page.locator("#test-tmdb").click()
                 expect(page.locator("#tmdb-test-result")).to_contain_text("Connexion TMDB réussie")
                 page.locator("[data-test-player]").click()

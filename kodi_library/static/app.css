@@ -188,7 +188,7 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 @media(max-width:680px){.main-header nav{gap:5px}.header-language select{min-width:49px;padding:6px 14px 6px 5px}.brand{letter-spacing:.6px}}
 
 /* Personal preferences at the top of Settings, separate from server settings. */
-.settings-preferences{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 18px;margin:16px 0 22px;background:var(--raised);border:1px solid var(--border);border-radius:12px}
+.settings-preferences{position:sticky;top:0;z-index:1;display:flex;align-items:center;justify-content:space-between;gap:20px;padding:16px 18px;margin:16px 0 22px;background:var(--raised);border:1px solid var(--accent);border-radius:12px;box-shadow:0 9px 18px #0005}
 .settings-preferences-info{min-width:0}
 .settings-preferences-info h3{font-size:14px;margin:0 0 6px}
 .settings-preferences-info p{font-size:12px;margin:0;line-height:1.5}
