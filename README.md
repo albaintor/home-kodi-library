@@ -130,7 +130,6 @@ For Kodi artwork stored on SMB/NFS/local paths, configure `ARTWORK_MOUNTS` as de
 - [Home Assistant access through hass_ingress](docs/home-assistant.md), including remote access through the same Home Assistant URL.
 - [API contract, authentication, and curl examples](docs/api.md).
 - [OpenAPI v1 schema](docs/openapi-v1.json), generated from the server; interactive Swagger documentation is available at `/docs` after web login.
-- [Sample Swift client using URLSession](examples/KodiLibraryClient.swift).
 - [Data model, watched/unwatched rules, matching, and backups](docs/model.md).
 - [Initial validation results and limitations](docs/validation.md).
 
