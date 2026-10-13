@@ -181,6 +181,8 @@ def test_page_and_detail_include_real_sources_without_repeated_editions(client, 
 
 
 
+
+
 def test_search_mode_api_and_configured_source_counts(client, admin):
     store = client.app.state.store
     first = store.save_source({"name": "Kodi NAS", "type": "kodi"})

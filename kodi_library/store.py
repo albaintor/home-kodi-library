@@ -290,9 +290,7 @@ class Store:
                         reassigned += work_id != existing["work_id"]
                     updated += 1
                 else:
-                    work_id, conflict = self._match_work(
-                        conn, record, source_type=source["type"]
-                    )
+                    work_id, conflict = self._match_work(conn, record, source_type=source["type"])
                     record_id = str(uuid4())
                     conflicts += conflict
                     inserted += 1
@@ -397,7 +395,7 @@ class Store:
         return {
             key
             for name in (title, original)
-            if name and (key := " ".join(re.findall(r"\\w+", fold(name))))
+            if name and (key := " ".join(re.findall(r"\w+", fold(name))))
         }
 
     @staticmethod
@@ -418,8 +416,11 @@ class Store:
 
     @classmethod
     def _match_work(
-        cls, conn: sqlite3.Connection, record: Record,
-        exclude: str | None = None, source_type: str | None = None,
+        cls,
+        conn: sqlite3.Connection,
+        record: Record,
+        exclude: str | None = None,
+        source_type: str | None = None,
     ) -> tuple[str, int]:
         candidates = set()
         for namespace, value in record.identifiers.items():
@@ -484,15 +485,13 @@ class Store:
         Preserve notes, watch overrides, playlist membership and the surviving ID.
         """
         rows = conn.execute(
-            "SELECT id,title,original_title,year FROM works "
-            "WHERE kind='movie' AND year IS NOT NULL"
+            "SELECT id,title,original_title,year FROM works WHERE kind='movie' AND year IS NOT NULL"
         ).fetchall()
         if not rows:
             return 0
         types: dict[str, set[str]] = defaultdict(set)
         for row in conn.execute(
-            "SELECT DISTINCT r.work_id,s.type FROM records r "
-            "JOIN sources s ON s.id=r.source_id"
+            "SELECT DISTINCT r.work_id,s.type FROM records r JOIN sources s ON s.id=r.source_id"
         ):
             types[row["work_id"]].add(row["type"])
         lookup: dict[tuple[int, str], set[str]] = defaultdict(set)
@@ -515,9 +514,7 @@ class Store:
                 continue
             if not cls._ids_compatible(
                 cls._work_ids(conn, left), cls._work_ids(conn, right)
-            ) or not cls._ids_compatible(
-                cls._work_ids(conn, right), cls._work_ids(conn, left)
-            ):
+            ) or not cls._ids_compatible(cls._work_ids(conn, right), cls._work_ids(conn, left)):
                 continue
             # Keep the identity already referenced by playlists, then CLZ.
             priority = {}
@@ -529,16 +526,16 @@ class Store:
                     int(
                         conn.execute(
                             "SELECT 1 FROM personal WHERE work_id=?", (work_id,)
-                        ).fetchone() is not None
+                        ).fetchone()
+                        is not None
                     ),
                     int("clz" in types[work_id]),
                 )
             keep = max((left, right), key=lambda work_id: priority[work_id])
             drop = right if keep == left else left
             affected_lists = [
-                row[0] for row in conn.execute(
-                    "SELECT list_id FROM list_items WHERE work_id=?", (drop,)
-                )
+                row[0]
+                for row in conn.execute("SELECT list_id FROM list_items WHERE work_id=?", (drop,))
             ]
             conn.execute(
                 "INSERT OR IGNORE INTO list_items(list_id,work_id,position) "
@@ -555,8 +552,8 @@ class Store:
             ).fetchone()
             if former:
                 conn.execute(
-                    "INSERT OR IGNORE INTO personal(work_id,user_rating,watched) "
-                    "VALUES(?,?,?)", (keep, former["user_rating"], former["watched"])
+                    "INSERT OR IGNORE INTO personal(work_id,user_rating,watched) VALUES(?,?,?)",
+                    (keep, former["user_rating"], former["watched"]),
                 )
                 conn.execute(
                     "UPDATE personal SET user_rating=COALESCE(user_rating,?),"
