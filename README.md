@@ -1,5 +1,7 @@
 # <img src="kodi_library/static/cinema.svg" width="36" alt=""> Media Catalog
 
+
+
 **Bring your Kodi library and physical movie collection together.**
 
 Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
@@ -49,3 +51,12 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 Media Catalog is not a media streaming/transcoding service. Use **HTTPS or a VPN** for remote access.
 
 [Support the project on Buy Me a Coffee](https://www.buymeacoffee.com/albaintor)
+
+## Support
+
+If you have any issues check first if it has not already been reported then [raise a ticket](https://github.com/albaintor/home-kodi-library/issues)
+
+
+
+
+
