@@ -124,3 +124,27 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .pairing-code{font-variant-numeric:tabular-nums;letter-spacing:.17em;font-size:24px;font-weight:750;color:var(--accent);white-space:pre-wrap}
 .paired-devices{display:grid;gap:8px}
 .paired-devices .connection-card{justify-content:space-between;align-items:center}
+
+/* Compact multi-select format chips and collapsed filter panel. */
+.filter-toggle{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.filter-toggle .filter-chevron{display:inline-block;transition:transform .15s;font-size:17px;line-height:1}
+.filter-toggle[aria-expanded=true] .filter-chevron{transform:rotate(180deg)}
+.filters .format-picker{grid-column:1/-1;display:grid;grid-template-columns:1fr;gap:12px;min-width:0;border:1px solid var(--border);border-radius:12px;padding:14px;background:#131923}
+.format-category{min-width:0}
+.format-category-title{display:block;margin-bottom:8px;color:var(--muted);font-size:11px;font-weight:650}
+.format-choices{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.format-option{display:inline-flex;align-items:center;justify-content:center;width:auto;min-height:40px;padding:4px 6px;border:1px solid var(--border);border-radius:13px;background:var(--surface)}
+.format-option:hover{background:var(--raised)}
+.format-option[aria-pressed=true]{border-color:var(--accent);background:#bcdb8020;box-shadow:inset 0 0 0 1px #bcdb8050}
+.format-option .format-badges{margin:0;gap:0}
+.format-option .format-badge{border:0;background:transparent;padding:0 3px}
+.format-option .format-badge svg{width:76px;height:25px}
+.format-option .format-chip{border:0;padding:3px 7px;color:var(--text)}
+.format-help{display:block;color:var(--muted);font-size:11px}
+.deep-search-option{display:flex;flex-wrap:wrap;align-items:center;gap:8px;align-self:end;min-height:40px;padding:6px 8px;color:var(--text);font-size:11px}
+.deep-search-option input{width:17px;height:17px;min-height:17px;margin:0;accent-color:var(--accent)}
+.deep-search-option small{display:block;flex-basis:100%;padding-left:25px;font-size:10px;color:var(--muted)}
+.resume-progress{display:flex;align-items:center;gap:10px;margin:10px 0 15px}
+.resume-progress .resume-time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.resume-progress progress{flex:1;width:100%;height:7px;accent-color:var(--purple)}
+@media(max-width:700px){.filters .format-picker{padding:11px;gap:11px}.format-choices{gap:5px}.format-option{min-height:38px;padding:3px 5px}.format-option .format-badge svg{width:65px;height:22px}.deep-search-option{grid-column:1/-1}}

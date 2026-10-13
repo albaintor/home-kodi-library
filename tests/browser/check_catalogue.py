@@ -195,6 +195,10 @@ def main():
                 prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
+                expect(page.locator("#filters")).to_be_hidden()
+                expect(page.locator("#toggle-filters")).to_have_attribute("aria-expanded", "false")
+                page.locator("#toggle-filters").click()
+                expect(page.locator("#filters")).to_be_visible()
                 # A job started by another client / the scheduler must be
                 # visible even without reopening the settings dialog.
                 background = store.new_job(source["id"])
@@ -287,10 +291,18 @@ def main():
                 }
                 for control, value in selections.items():
                     page.locator("#" + control).select_option(value)
-                page.locator("#video-format").select_option("4K")
-                page.locator("#video-format").select_option("HDR10+")
-                page.locator("#audio-format").select_option("Dolby Atmos")
-                expect(page.locator("#selected-formats .selected-format")).to_have_count(3)
+                page.locator('[data-toggle-format="4K"]').click()
+                page.locator('[data-toggle-format="HDR10+"]').click()
+                page.locator('[data-toggle-format="Dolby Atmos"]').click()
+                expect(page.locator('.format-option[aria-pressed="true"]')).to_have_count(3)
+                assert page.locator("#video-formats").evaluate(
+                    "e=>getComputedStyle(e).flexWrap"
+                ) == "wrap"
+                assert page.locator("#video-formats .format-option").count() >= 3
+                assert page.locator("#format-selection-count").inner_text().startswith("3 sélectionnés")
+                page.locator("#deep-search").check()
+                assert requests[-1].get("deep_search") == ["true"]
+                page.locator("#deep-search").uncheck()
                 assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 page.locator("#search").fill("démonstration")
                 page.locator("#sort-order").click()
@@ -301,7 +313,7 @@ def main():
                 for control, value in selections.items():
                     expect(page.locator("#" + control)).to_have_value(value)
                 expect(page.locator("#search")).to_have_value("démonstration")
-                expect(page.locator("#selected-formats .selected-format")).to_have_count(3)
+                expect(page.locator('.format-option[aria-pressed="true"]')).to_have_count(3)
                 assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 expect(page.locator("#sort-order")).to_have_text("↑ Croissant")
                 expect(page.locator("#filters")).to_be_hidden()
@@ -446,6 +458,8 @@ def main():
                 page.locator('[data-close="play-dialog"]').click()
                 expect(page.locator(".cast-member").first).to_contain_text("Personnage 0")
                 expect(page.locator(".detail-intro .format-badge")).to_have_count(7)
+                # Individual format logos are distinct; 1080p has no FHD caption.
+                assert page.request.get(prefix + "static/format-logos.svg").status == 200
                 intro = page.locator(".detail-intro").bounding_box()
                 body = page.locator(".detail-body").bounding_box()
                 assert abs(intro["x"] - body["x"]) < 2 and body["width"] > 500

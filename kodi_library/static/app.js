@@ -13,29 +13,34 @@ if(typeof preferences!=='object'||Array.isArray(preferences)) preferences={};
 const filterIds = ['search','kind','source-type','genre','collection','watch-status','sort'];
 let filtersRestored=false;
 const savedView = ['grid','list'].includes(preferences.view)?preferences.view:readStorage('kodi_library_view');
-const canonicalFormat = value => /^4k(?:\s+uhd)?$/i.test(String(value).trim())?'4K':String(value).trim();
+const canonicalFormat = value => {
+  const label=String(value).trim();
+  return /^(4k uhd|4k blu-ray|blu-ray 4k|uhd blu-ray|ultra hd blu-ray)$/i.test(label)?'Blu-ray 4K':/^4k$/i.test(label)?'4K':label;
+};
 function formatCategory(label) {
   if (/^(dolby atmos|dolby truehd|dolby digital|dts(?:[-:]|$)|aac|flac|pcm|lpcm|ac3|eac3|mp3|opus)/i.test(label)) return 'audio';
-  if (/^(blu-ray|dvd|hd dvd|uhd blu-ray|ultra hd blu-ray)/i.test(label)) return 'disc';
+  if (/^(blu-ray|dvd|hd dvd|uhd blu-ray|ultra hd blu-ray|4k uhd)/i.test(label)) return 'disc';
   return 'video';
 }
-function formatSelects() { return {video:'video-format',audio:'audio-format',disc:'disc-format'}; }
+// Media formats are always multi-select chips, grouped video → audio → discs.
 function updateFormatSelections() {
   const selected=new Set(state.formats);
-  const values=[...new Set((state.facets?.formats||[]).map(canonicalFormat))].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
-  for(const [category,id] of Object.entries(formatSelects())) {
-    const labels={video:'+ Format vidéo',audio:'+ Format audio',disc:'+ Support'};
-    $(id).innerHTML='<option value="">'+labels[category]+'</option>'+values
-      .filter(v=>formatCategory(v)===category&&!selected.has(v))
-      .map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join('');
+  const categories={video:'video-formats',audio:'audio-formats',disc:'disc-formats'};
+  const values=[...new Set((state.facets?.formats||[]).map(canonicalFormat))]
+    .sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+  for(const [category,id] of Object.entries(categories)) {
+    $(id).innerHTML=values.filter(v=>formatCategory(v)===category).map(label=>{
+      const isSelected=selected.has(label);
+      return `<button type="button" class="format-option" data-toggle-format="${esc(label)}" aria-label="${esc(label)}" aria-pressed="${isSelected}" title="${esc(label)}">${formatBadges([label])}</button>`;
+    }).join('')||'<span class="format-help">Aucun format disponible.</span>';
   }
-  $('selected-formats').innerHTML=state.formats.map(v=>`<button type="button" class="selected-format" data-remove-format="${esc(v)}" aria-label="Retirer ${esc(v)}">${esc(v)} <span aria-hidden="true">×</span></button>`).join('');
-  $('selected-formats').hidden=!state.formats.length;
+  $('format-selection-count').textContent=state.formats.length?`${state.formats.length} sélectionné${state.formats.length>1?'s':''} · filtres cumulés (ET)`:'Sélectionnez plusieurs formats pour les cumuler (ET).';
 }
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
-  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
+  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
 }
 function restoreFilters() {
   if(filtersRestored)return;
@@ -51,7 +56,8 @@ function restoreFilters() {
     .filter(v=>available.has(v)).slice(0,20);
   updateFormatSelections();
   $('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';
-  $('filters').hidden=preferences.filtersHidden===true;
+  $('filters').hidden=preferences.filtersHidden!==false;
+  $('deep-search').checked=state.deepSearch;
   $('toggle-filters').setAttribute('aria-expanded',!$('filters').hidden);
   filtersRestored=true;
 }
@@ -76,14 +82,22 @@ async function api(path, options={}) {
 }
 function showLogin() { ++state.seq; state.controller?.abort(); state.loading=false; moreObserver?.disconnect(); $('app').hidden=true; $('login').hidden=false; }
 function date(value) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('fr-FR'); }
+function playbackTime(seconds) {
+  const total=Math.max(0,Math.floor(Number(seconds)||0));
+  const hours=Math.floor(total/3600),minutes=Math.floor(total%3600/60),secs=total%60;
+  return hours?`${hours}:${String(minutes).padStart(2,'0')}:${String(secs).padStart(2,'0')}`:`${minutes}:${String(secs).padStart(2,'0')}`;
+}
 function badges(item) { return item.source_types.map(s=>`<span class="source-badge ${s==='clz'?'physical':''}">${s==='clz'?'COLLECTION':'KODI'}</span>`).join(''); }
 function poster(item, detail=false) {
   const progress=item.total_seconds>0 ? Math.min(100,100*item.resume_seconds/item.total_seconds):0;
   return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail&&item.watch_status==='watched'?'<span class="state" title="Vu">✓</span>':''}${!detail&&item.watch_status==='in_progress'?'<span class="state progress" title="En cours">◐</span>':''}${progress>0&&item.watch_status==='in_progress'?`<span class="progress-track"><span style="width:${progress}%"></span></span>`:''}</div>`;
 }
-const formatLogos = {'4K':['4k','video'],'4K UHD':['4k','video'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshd','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio']};
+const formatLogos = {'4K':['4k','video'],'Blu-ray 4K':['bluray4k','disc'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshd','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio']};
 function formatBadges(values, compact=false, provenance=null) {
-  const seen=new Set(); const labels=values.map(canonicalFormat).filter(label=>{const key=formatLogos[label]?.[0]||label;if(seen.has(key))return false;seen.add(key);return true;});
+  const seen=new Set();
+  const order={video:0,hdr:0,audio:1,disc:2};
+  const labels=values.map(canonicalFormat).filter(label=>{const key=formatLogos[label]?.[0]||label;if(seen.has(key))return false;seen.add(key);return true;})
+    .sort((a,b)=>(order[formatLogos[a]?.[1]]??0)-(order[formatLogos[b]?.[1]]??0)||a.localeCompare(b,'fr',{numeric:true}));
   const visible=compact?labels.slice(0,4):labels;
   return visible.map(label=>{
     const logo=formatLogos[label];
@@ -279,11 +293,12 @@ function currentParams(offset=0) {
   const params=new URLSearchParams({limit:state.limit,offset,sort:$('sort').value,order:state.order});
   for (const [id,name] of [['search','q'],['kind','kind'],['source-type','source_type'],['genre','genre'],['collection','collection'],['watch-status','watch_status']]) if ($(id).value) params.set(name,$(id).value);
   for (const value of state.formats) params.append('format',value);
+  if(state.deepSearch) params.set('deep_search','true');
   if (state.recent) params.set('recent_days','30');
   return params;
 }
 function updateFilterState() {
-  let count=['search','kind','source-type','genre','collection','watch-status'].filter(id=>$(id).value).length + state.formats.length + Number(state.recent);
+  let count=['search','kind','source-type','genre','collection','watch-status'].filter(id=>$(id).value).length + state.formats.length + Number(state.recent) + Number(state.deepSearch);
   $('filter-count').textContent=count || '';
   $('reset-filters').hidden=!count;
   document.querySelectorAll('[data-quick]').forEach(b=>b.classList.toggle('active', b.dataset.quick==='recent'?state.recent:b.dataset.quick==='all'?!state.recent&&!$('watch-status').value:!state.recent&&b.dataset.quick===$('watch-status').value));
@@ -434,7 +449,7 @@ async function initialize() {
     setView(state.view,false); await refresh(); await pollActivity();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
-function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[]; updateFormatSelections(); state.recent=false; loadMedia(); }
+function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
 function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
 let pagePosition=null;
 function lockPage() {
@@ -474,11 +489,19 @@ function updatePlayEdition() {
   selector.innerHTML=editions.map(e=>`<option value="${esc(e.id)}">${esc(e.metadata.version||e.metadata.file?.split('/').pop()||'Fichier Kodi')}${e.metadata.is_default?' · Par défaut':''}</option>`).join('');
   if([...selector.options].some(option=>option.value===previous))selector.value=previous;
 }
+function resumeProgress(item) {
+  if(!(item.total_seconds>0&&item.resume_seconds>0)) return '';
+  const percent=Math.min(100,Math.max(0,100*item.resume_seconds/item.total_seconds));
+  return `<div class="resume-progress" aria-label="Position de lecture : ${esc(playbackTime(item.resume_seconds))}">
+    <time class="resume-time">${esc(playbackTime(item.resume_seconds))}</time>
+    <progress value="${percent}" max="100" aria-label="Progression de lecture"></progress>
+  </div>`;
+}
 function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div><div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${item.source_types.length===1&&item.source_types[0]==='clz'?'<p class="hint">Cette fiche provient uniquement de CLZ. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${item.source_types.length===1&&item.source_types[0]==='clz'?'<p class="hint">Cette fiche provient uniquement de CLZ. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -669,8 +692,11 @@ document.addEventListener('click',async event=>{
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
   if(button.dataset.genre) {$('genre').value=button.dataset.genre; $('detail-dialog').close();  loadMedia();}
-  if(button.dataset.removeFormat) {
-    state.formats=state.formats.filter(v=>v!==button.dataset.removeFormat);
+  if(button.hasAttribute('data-toggle-format')) {
+    const value=canonicalFormat(button.dataset.toggleFormat);
+    if(state.formats.includes(value))state.formats=state.formats.filter(v=>v!==value);
+    else if(state.formats.length<20)state.formats.push(value);
+    else {toast('20 formats maximum.');return;}
     updateFormatSelections();loadMedia();return;
   }
   if(button.dataset.action==='connections') connections(); if(button.dataset.action==='reset') reset();
@@ -721,11 +747,7 @@ $('toggle-filters').addEventListener('click',()=>{const hidden=!$('filters').hid
 $('reset-filters').addEventListener('click',reset);
 let searchTimer; $('search').addEventListener('input',()=>{savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
 ['kind','source-type','genre','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
-for(const id of Object.values(formatSelects())) $(id).addEventListener('change',()=>{
-  const value=canonicalFormat($(id).value);
-  if(value&&!state.formats.includes(value)&&state.formats.length<20)state.formats.push(value);
-  updateFormatSelections();loadMedia();
-});
+$('deep-search').addEventListener('change',()=>{state.deepSearch=$('deep-search').checked;loadMedia();});
 $('sort-order').addEventListener('click',()=>{state.order=state.order==='asc'?'desc':'asc';$('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';loadMedia();});
 $('load-more').addEventListener('click',()=>loadMedia({append:state.items.length>0}));
 document.addEventListener('keydown',event=>{if(event.key==='/'&&!['INPUT','SELECT','TEXTAREA'].includes(event.target.tagName)&&!$('app').hidden&&!document.querySelector('dialog[open]')){event.preventDefault();$('search').focus();}});
