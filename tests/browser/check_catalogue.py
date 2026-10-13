@@ -196,9 +196,12 @@ def main():
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
                 expect(page).to_have_title("Home Kodi Library")
-                expect(page.locator(".heading-row h1")).to_have_text("Home Kodi Library")
+                expect(page.locator(".heading-row h1")).to_have_text("Bibliothèque")
                 expect(page.locator("#filters")).to_be_hidden()
-                expect(page.locator("#search")).to_be_hidden()
+                expect(page.locator("#search")).to_be_visible()
+                assert page.locator("#search").evaluate(
+                    "element => !element.closest('#filters-panel')"
+                )
                 expect(page.locator("#filters-panel")).not_to_have_attribute("open", "")
                 expect(page.locator("#toggle-filters")).to_have_attribute("aria-expanded", "false")
                 for label in ["Tout", "À voir", "En cours", "Vus", "Derniers ajouts"]:
@@ -330,7 +333,7 @@ def main():
                 assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 expect(page.locator("#sort-order")).to_have_text("↑ Croissant")
                 expect(page.locator("#filters")).to_be_hidden()
-                expect(page.locator("#search")).to_be_hidden()
+                expect(page.locator("#search")).to_be_visible()
                 expect(page.locator(".quick-filters")).to_be_visible()
                 assert requests[-1]["order"] == ["asc"] and requests[-1]["sort"] == ["title"]
                 page.locator("#toggle-filters").click()
@@ -610,6 +613,7 @@ def main():
                 unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
                 expect(unconfigured.locator("#filters")).to_be_hidden()
+                expect(unconfigured.locator("#search")).to_be_visible()
                 expect(unconfigured.locator(".quick-filters")).to_be_visible()
                 unconfigured.locator("#toggle-filters").click()
                 unconfigured.locator("#kind").select_option("movie")
