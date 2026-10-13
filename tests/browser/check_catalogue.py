@@ -594,6 +594,8 @@ def main():
                 store.delete_player(player["id"])
                 unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
+                expect(unconfigured.locator("#filters")).to_be_hidden()
+                unconfigured.locator("#toggle-filters").click()
                 unconfigured.locator("#kind").select_option("movie")
                 unconfigured.locator(".media-card").first.click()
                 expect(unconfigured.locator("#enrichment-status")).to_contain_text(
