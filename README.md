@@ -1,4 +1,4 @@
-# Media Catalog
+# <img src="kodi_library/static/cinema.svg" width="50"> Media Catalog
 
 An independent media catalog for browsing a Kodi library and third party home (physical) collections such as CLZ Movies collection. A Docker container provides a responsive web interface and a **versioned REST API**, also used by the native iOS application. Home Assistant can serve as an entry point through Ingress.
 
