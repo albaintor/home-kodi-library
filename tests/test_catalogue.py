@@ -37,6 +37,8 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
 
 
 
+
+
 def test_user_michael_clz_xml_fields_and_kodi_identity(store):
     xml = b"""<collectorz><data><movieinfo><movielist><movie>
       <datasetversion>15</datasetversion>
@@ -71,8 +73,8 @@ def test_user_michael_clz_xml_fields_and_kodi_identity(store):
     kodi = source(store, "kodi")
     store.apply_snapshot(clz, items)
     store.apply_snapshot(
-        kodi, [Record("movie:10:1", "movie", "Michael", year=2026,
-                      identifiers={"imdb": "tt11378946"})],
+        kodi,
+        [Record("movie:10:1", "movie", "Michael", year=2026, identifiers={"imdb": "tt11378946"})],
     )
     page = store.media(q="Michael")
     assert page["total"] == 1
@@ -84,22 +86,25 @@ def test_import_update_reconciles_matching_imdb_despite_distinct_title_and_year(
     clz = source(store)
     kodi = source(store, "kodi")
     store.apply_snapshot(
-        clz, [Record("physical", "movie", "Michael", year=2026)],
+        clz,
+        [Record("physical", "movie", "Michael", year=2026)],
     )
     first_id = store.media()["items"][0]["id"]
     saved = store.save_list({"name": "Films", "description": ""})
     store.change_list_item(saved["id"], first_id)
     store.apply_snapshot(
         kodi,
-        [Record("movie:4", "movie", "Michael Jackson", year=2025,
-                identifiers={"imdb": "tt11378946"})],
+        [
+            Record(
+                "movie:4", "movie", "Michael Jackson", year=2025, identifiers={"imdb": "tt11378946"}
+            )
+        ],
     )
     assert store.media()["total"] == 2
     # Simulates a source gaining an IMDb ID after its initial import.
     store.apply_snapshot(
         clz,
-        [Record("physical", "movie", "Michael", year=2026,
-                identifiers={"imdb": "tt11378946"})],
+        [Record("physical", "movie", "Michael", year=2026, identifiers={"imdb": "tt11378946"})],
     )
     assert store.media()["total"] == 1
     assert store.detail(first_id)["source_types"] == ["clz", "kodi"]
@@ -111,15 +116,30 @@ def test_shared_imdb_with_contradictory_tmdb_must_not_reconcile(store):
     kodi = source(store, "kodi")
     store.apply_snapshot(
         clz,
-        [Record("physical", "movie", "Michael", year=2026,
-                identifiers={"imdb": "tt11378946", "tmdb": "111"})],
+        [
+            Record(
+                "physical",
+                "movie",
+                "Michael",
+                year=2026,
+                identifiers={"imdb": "tt11378946", "tmdb": "111"},
+            )
+        ],
     )
     store.apply_snapshot(
         kodi,
-        [Record("movie:4", "movie", "Michael", year=2026,
-                identifiers={"imdb": "tt11378946", "tmdb": "222"})],
+        [
+            Record(
+                "movie:4",
+                "movie",
+                "Michael",
+                year=2026,
+                identifiers={"imdb": "tt11378946", "tmdb": "222"},
+            )
+        ],
     )
     assert store.media()["total"] == 2
+
 
 def test_match_clz_without_imdb_by_original_title_and_year(store):
     clz = source(store)

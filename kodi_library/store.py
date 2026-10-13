@@ -518,9 +518,7 @@ class Store:
             "JOIN works w ON w.id=i.work_id"
         ):
             if types[row["work_id"]] in ({"kodi"}, {"clz"}):
-                identities[(row["kind"], row["namespace"], row["value"])].add(
-                    row["work_id"]
-                )
+                identities[(row["kind"], row["namespace"], row["value"])].add(row["work_id"])
         id_pairs = set()
         for ids in identities.values():
             if len(ids) == 2:
@@ -534,9 +532,7 @@ class Store:
 
         def unambiguous(pairs):
             counts = Counter(work_id for pair in pairs for work_id in pair)
-            return sorted(
-                pair for pair in pairs if all(counts[work_id] == 1 for work_id in pair)
-            )
+            return sorted(pair for pair in pairs if all(counts[work_id] == 1 for work_id in pair))
 
         used = set()
         merged = 0
