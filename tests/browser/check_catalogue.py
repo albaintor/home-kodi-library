@@ -198,9 +198,15 @@ def main():
                 expect(page).to_have_title("Home Kodi Library")
                 expect(page.locator(".heading-row h1")).to_have_text("Home Kodi Library")
                 expect(page.locator("#filters")).to_be_hidden()
+                expect(page.locator("#search")).to_be_hidden()
+                expect(page.locator("#filters-panel")).not_to_have_attribute("open", "")
                 expect(page.locator("#toggle-filters")).to_have_attribute("aria-expanded", "false")
+                for label in ["Tout", "À voir", "En cours", "Vus", "Derniers ajouts"]:
+                    expect(page.locator(".quick-filters button", has_text=label)).to_be_visible()
                 page.locator("#toggle-filters").click()
                 expect(page.locator("#filters")).to_be_visible()
+                expect(page.locator("#search")).to_be_visible()
+                expect(page.locator("#toggle-filters")).to_have_attribute("aria-expanded", "true")
                 # A job started by another client / the scheduler must be
                 # visible even without reopening the settings dialog.
                 background = store.new_job(source["id"])
@@ -324,6 +330,8 @@ def main():
                 assert requests[-1].get("format") == ["4K", "HDR10+", "Dolby Atmos"]
                 expect(page.locator("#sort-order")).to_have_text("↑ Croissant")
                 expect(page.locator("#filters")).to_be_hidden()
+                expect(page.locator("#search")).to_be_hidden()
+                expect(page.locator(".quick-filters")).to_be_visible()
                 assert requests[-1]["order"] == ["asc"] and requests[-1]["sort"] == ["title"]
                 page.locator("#toggle-filters").click()
                 page.locator(".media-card").first.click()
@@ -602,6 +610,7 @@ def main():
                 unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
                 expect(unconfigured.locator("#filters")).to_be_hidden()
+                expect(unconfigured.locator(".quick-filters")).to_be_visible()
                 unconfigured.locator("#toggle-filters").click()
                 unconfigured.locator("#kind").select_option("movie")
                 unconfigured.locator(".media-card").first.click()

@@ -40,7 +40,7 @@ function updateFormatSelections() {
 const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
-  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,filtersHidden:$('filters').hidden,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
+  writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
 }
 function restoreFilters() {
   if(filtersRestored)return;
@@ -56,9 +56,10 @@ function restoreFilters() {
     .filter(v=>available.has(v)).slice(0,20);
   updateFormatSelections();
   $('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';
-  $('filters').hidden=preferences.filtersHidden!==false;
+  // Always start collapsed, even if an older version persisted the expanded state.
+  $('filters-panel').open=false;
   $('deep-search').checked=state.deepSearch;
-  $('toggle-filters').setAttribute('aria-expanded',!$('filters').hidden);
+  $('toggle-filters').setAttribute('aria-expanded','false');
   filtersRestored=true;
 }
 const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries=>{
@@ -756,7 +757,11 @@ $('lists-button').addEventListener('click',()=>openLists());
 $('create-list-button').addEventListener('click',()=>openLists(state.listId,{create:true}));
 $('logout-button').addEventListener('click',async()=>{try{await api('auth/session',{method:'DELETE'});showLogin();}catch(e){toast(e.message);}});
 $('grid-view').addEventListener('click',()=>setView('grid')); $('list-view').addEventListener('click',()=>setView('list'));
-$('toggle-filters').addEventListener('click',()=>{const hidden=!$('filters').hidden;$('filters').hidden=hidden;$('toggle-filters').setAttribute('aria-expanded',!hidden);savePreferences();});
+// Native <details> handles opening/closing without JavaScript; the event keeps
+// accessible state synchronized while retaining filter values independently.
+$('filters-panel').addEventListener('toggle',()=>{
+  $('toggle-filters').setAttribute('aria-expanded',String($('filters-panel').open));
+});
 $('reset-filters').addEventListener('click',reset);
 let searchTimer; $('search').addEventListener('input',()=>{savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
 ['kind','source-type','genre','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
