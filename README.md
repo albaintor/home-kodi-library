@@ -1,6 +1,8 @@
-# Home Kodi Library
+# Media Catalog
 
-An independent media catalog for browsing a Kodi library and a physical CLZ Movies collection. A Docker container provides a responsive web interface and a **versioned REST API**, also used by the native iOS application. Home Assistant can serve as an entry point through Ingress.
+An independent media catalog for browsing a Kodi library and third party home (physical) collections such as CLZ Movies collection. A Docker container provides a responsive web interface and a **versioned REST API**, also used by the native iOS application. Home Assistant can serve as an entry point through Ingress.
+
+Pre-requisite : browsing Kodi library expects a configured Kodi library with an external database (MariaDB/MysQL) as it interacts with database queries. This mode lets have a shared and centralized Kodi database with multiple Kodi clients, and also lets access the media database with no Kodi instances running.
 
 **Support development:** [Buy Me a Coffee](https://buymeacoffee.com/albaintor).
 
@@ -20,6 +22,13 @@ An independent media catalog for browsing a Kodi library and a physical CLZ Movi
 - Administrator token, optional read-only token, browser sessions with CSRF protection, and a separate Ingress secret.
 
 The web interface uses exactly the same API as other clients. No essential server-side business logic lives exclusively in the frontend.
+
+
+## Native iOS / iPadOS app
+
+After installing the web server (see next chapters), search for `Media Catalog` app from `App Store` from Albaintor.
+Once installed, the app is able to automatically discover the server and provides a easy token paring : just generate a token from the web interface / settings.
+
 
 ## Getting started with Docker on a NAS
 
@@ -227,6 +236,3 @@ A reverse proxy also hides the browser's IP address: host networking does not re
 
 When using a reverse proxy, declare only its exact address, for example `TRUSTED_PROXY_NETWORKS='["172.18.0.2/32"]'`, and configure it to correctly replace or append the real client IP in `X-Forwarded-For`. The backend walks the chain from right to left until it finds the first untrusted peer. Missing, invalid, or entirely trusted-proxy chains require a token. `/0` network ranges are rejected. Do not declare ordinary client subnets as trusted proxies. When running Uvicorn manually, keep `--no-proxy-headers` enabled; for HTTPS through a reverse proxy also set `COOKIE_SECURE=true`.
 
-## Native iOS / iPadOS app
-
-The native SwiftUI app has moved to the [**private home-kodi-library-ios repository**](https://github.com/albaintor/home-kodi-library-ios), which is accessible only to authorized collaborators. It connects directly to REST API v1 and stores its device token in the iOS Keychain. The server, Docker deployment, and web application remain available independently in this public repository.
