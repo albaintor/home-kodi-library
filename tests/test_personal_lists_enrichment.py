@@ -180,6 +180,30 @@ def test_page_and_detail_include_real_sources_without_repeated_editions(client, 
     }
 
 
+
+def test_search_mode_api_and_configured_source_counts(client, admin):
+    store = client.app.state.store
+    first = store.save_source({"name": "Kodi NAS", "type": "kodi"})
+    second = store.save_source({"name": "Collection Blu-ray", "type": "clz"})
+    store.apply_snapshot(
+        first["id"],
+        [Record("film-1", "movie", "Film recherché", plot="Un voyage sur Mars")],
+    )
+    store.apply_snapshot(
+        second["id"],
+        [Record("disc-1", "movie", "Autre film", plot="Voyage lunaire")],
+    )
+    response = client.get("/api/v1/media?q=Mars", headers=admin).json()
+    assert response["total"] == 0
+    response = client.get("/api/v1/media?q=Mars&deep_search=true", headers=admin).json()
+    assert response["total"] == 1
+    assert response["items"][0]["media_sources"][0]["type_count"] == 1
+    second_kodi = store.save_source({"name": "Kodi secondaire", "type": "kodi"})
+    response = client.get("/api/v1/media?q=recherché", headers=admin).json()
+    assert response["items"][0]["media_sources"][0]["type_count"] == 2
+    store.delete_source(second_kodi["id"])
+
+
 def test_schema_v1_is_migrated_without_losing_catalogue(store):
     _, _, ids = seed(store)
     with store.connect() as db:

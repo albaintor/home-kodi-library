@@ -118,9 +118,47 @@ def test_free_text_accents_prefixes_and_query_characters(store):
         ],
     )
     assert store.media(q="ete seou")["total"] == 1
-    assert store.media(q="équipe cité")["total"] == 1
+    assert store.media(q="équipe cité")["total"] == 0
+    assert store.media(q="équipe cité", deep_search=True)["total"] == 1
     assert store.media(q='"OR" NOT *')["total"] == 0
     assert store.media(q="'")["total"] == 2
+
+
+
+def test_default_search_only_title_and_original_across_editions(store):
+    a = source(store, "kodi")
+    b = source(store, "clz")
+    store.apply_snapshot(
+        a,
+        [
+            Record(
+                "movie:1:1", "movie", "Le Voyage magique",
+                original_title="The Magical Journey",
+                identifiers={"imdb": "tt0123456"},
+                plot="Exploration à Tokyo avec Clara",
+                genres=["Aventure"],
+            ),
+            Record("movie:2:2", "movie", "Tokyo Story", plot="Une histoire magique"),
+        ],
+    )
+    store.apply_snapshot(
+        b,
+        [
+            Record(
+                "physical-1", "movie", "La Traversée",
+                original_title="The Magical Journey",
+                identifiers={"imdb": "tt0123456"},
+                plot="Parcours dans les Alpes",
+            )
+        ],
+    )
+    assert store.media(q="voyage mag")["total"] == 1
+    assert store.media(q="Magical Journey")["total"] == 1
+    assert store.media(q="traversée")["total"] == 1
+    assert store.media(q="clara")["total"] == 0
+    assert store.media(q="clara", deep_search=True)["total"] == 1
+    assert store.media(q="alpes", deep_search=True)["total"] == 1
+    assert store.media(q="tokyo")["total"] == 1
 
 
 def test_sort_pagination_combined_filters_and_unknown_watch(store):

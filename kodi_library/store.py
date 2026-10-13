@@ -50,6 +50,8 @@ CREATE INDEX IF NOT EXISTS work_sort_title ON works(sort_title,id);
 CREATE INDEX IF NOT EXISTS work_date ON works(date_added,id);
 CREATE INDEX IF NOT EXISTS work_kind_watch ON works(kind,watch_status);
 CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(work_id UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
+CREATE VIRTUAL TABLE IF NOT EXISTS works_title_fts USING fts5(work_id UNINDEXED, titles, tokenize='unicode61 remove_diacritics 2');
+CREATE INDEX IF NOT EXISTS work_kind_year ON works(kind,year);
 CREATE TABLE IF NOT EXISTS players (
  id TEXT PRIMARY KEY, name TEXT NOT NULL,
  source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -106,6 +108,16 @@ class Store:
                 )
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            # Backfill the new title-only index for existing installations without
+            # requiring users to reimport their Kodi or CLZ data.
+            if not conn.execute("SELECT 1 FROM works_title_fts LIMIT 1").fetchone():
+                conn.executemany(
+                    "INSERT INTO works_title_fts(work_id,titles) VALUES(?,?)",
+                    (
+                        (row["id"], fold(" ".join(filter(None, (row["title"], row["original_title"])))))
+                        for row in conn.execute("SELECT id,title,original_title FROM works")
+                    ),
+                )
             # Compatible migration for existing NAS installations (schema v2).
             job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
             for column, definition in (
@@ -398,6 +410,7 @@ class Store:
         ).fetchall()
         conn.execute("DELETE FROM identifiers WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM works_fts WHERE work_id=?", (work_id,))
+        conn.execute("DELETE FROM works_title_fts WHERE work_id=?", (work_id,))
         if not rows:
             return
         entries = [(json.loads(row["payload"]), row["type"]) for row in rows]
@@ -503,6 +516,15 @@ class Store:
             "INSERT INTO works_fts(work_id,search_text) VALUES(?,?)",
             (work_id, values["search_text"]),
         )
+        title_text = " ".join(
+            str(p.get(name) or "")
+            for p, _ in entries
+            for name in ("title", "original_title")
+        )
+        conn.execute(
+            "INSERT INTO works_title_fts(work_id,titles) VALUES(?,?)",
+            (work_id, fold(title_text)),
+        )
         for payload, _ in entries:
             for namespace, value in payload.get("identifiers", {}).items():
                 conn.execute(
@@ -517,6 +539,9 @@ class Store:
         )
         conn.execute(
             "DELETE FROM works_fts WHERE work_id IN (SELECT id FROM works w WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id))"
+        )
+        conn.execute(
+            "DELETE FROM works_title_fts WHERE work_id IN (SELECT id FROM works w WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=w.id))"
         )
         conn.execute(
             "DELETE FROM works WHERE NOT EXISTS(SELECT 1 FROM records r WHERE r.work_id=works.id)"
@@ -542,6 +567,10 @@ class Store:
         if not work_ids:
             return {}
         slots = ",".join("?" for _ in work_ids)
+        type_counts = {
+            row["type"]: row["count"]
+            for row in conn.execute("SELECT type,COUNT(*) AS count FROM sources GROUP BY type")
+        }
         rows = conn.execute(
             "SELECT DISTINCT r.work_id,s.id,s.name,s.type "
             "FROM records r JOIN sources s ON s.id=r.source_id "
@@ -552,7 +581,12 @@ class Store:
         found: dict[str, list[dict]] = defaultdict(list)
         for row in rows:
             found[row["work_id"]].append(
-                {"id": row["id"], "name": row["name"], "type": row["type"]}
+                {
+                    "id": row["id"],
+                    "name": row["name"],
+                    "type": row["type"],
+                    "type_count": type_counts[row["type"]],
+                }
             )
         return found
 
@@ -567,6 +601,7 @@ class Store:
         self,
         *,
         q: str = "",
+        deep_search: bool = False,
         kind: str | None = None,
         watch_status: str | None = None,
         genre: str | None = None,
@@ -585,7 +620,8 @@ class Store:
         clauses, params = [], []
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
-            clauses.append("w.id IN (SELECT work_id FROM works_fts WHERE works_fts MATCH ?)")
+            index = "works_fts" if deep_search else "works_title_fts"
+            clauses.append(f"w.id IN (SELECT work_id FROM {index} WHERE {index} MATCH ?)")
             params.append(" AND ".join('"' + word.replace('"', '""') + '"*' for word in words))
         for name, value in (
             ("kind", kind),

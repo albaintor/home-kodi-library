@@ -110,6 +110,7 @@ class MediaSource(BaseModel):
     id: str
     name: str
     type: Literal["kodi", "clz"]
+    type_count: int = 1
 
 
 class MediaSummary(BaseModel):
