@@ -36,9 +36,6 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
     assert detail["watch_status"] == "unknown"
 
 
-
-
-
 def test_match_clz_without_imdb_by_original_title_and_year(store):
     clz = source(store)
     kodi = source(store, "kodi")
@@ -107,7 +104,6 @@ def test_legacy_title_reconciliation_retains_lists_and_rating(store):
     assert detail["source_types"] == ["clz", "kodi"]
     assert detail["personal"]["user_rating"] == 8.5
     assert store.list_page(playlist["id"])["items"][0]["id"] == clz_id
-
 
 
 def test_kodi_and_clz_merge_by_imdb_and_watch_state(store, clz_xml):
@@ -196,7 +192,6 @@ def test_free_text_accents_prefixes_and_query_characters(store):
     assert store.media(q="équipe cité", deep_search=True)["total"] == 1
     assert store.media(q='"OR" NOT *')["total"] == 0
     assert store.media(q="'")["total"] == 2
-
 
 
 def test_default_search_only_title_and_original_across_editions(store):
