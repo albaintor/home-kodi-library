@@ -160,7 +160,7 @@ def main():
                     executable_path=os.getenv("PLAYWRIGHT_CHROMIUM_EXECUTABLE"),
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                 )
-                page = browser.new_page(viewport={"width": 1440, "height": 1000})
+                page = browser.new_page(locale="fr-FR", viewport={"width": 1440, "height": 1000})
                 errors, requests = [], []
                 page.on("pageerror", lambda error: errors.append(str(error)))
                 page.on(
@@ -195,7 +195,7 @@ def main():
                 prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
-                expect(page).to_have_title("Home Kodi Library")
+                expect(page).to_have_title("Media Catalog")
                 expect(page.locator(".heading-row h1")).to_have_count(0)
                 expect(page.locator(".heading-row .eyebrow")).to_have_count(0)
                 expect(page.locator("#catalogue-status")).to_be_visible()
@@ -604,7 +604,7 @@ def main():
                 if screenshots:
                     page.evaluate("scrollTo(0,0)")
                     page.screenshot(path=str(Path(screenshots) / "lists-catalogue-mobile.png"))
-                fallback = browser.new_page(viewport={"width": 1440, "height": 1000})
+                fallback = browser.new_page(locale="fr-FR", viewport={"width": 1440, "height": 1000})
                 fallback.add_init_script("delete window.IntersectionObserver")
                 fallback.goto(prefix, wait_until="domcontentloaded")
                 expect(fallback.locator(".media-card")).to_have_count(60)
@@ -613,7 +613,7 @@ def main():
                 # Missing configuration leaves explicit actions in the film sheet.
                 settings.tmdb_api_token = ""
                 store.delete_player(player["id"])
-                unconfigured = browser.new_page(viewport={"width": 390, "height": 844})
+                unconfigured = browser.new_page(locale="fr-FR", viewport={"width": 390, "height": 844})
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
                 expect(unconfigured.locator("#filters")).to_be_hidden()
                 expect(unconfigured.locator("#search")).to_be_visible()
@@ -638,7 +638,7 @@ def main():
                 expect(unconfigured.locator("#connection-content")).to_contain_text(
                     "TMDB_API_TOKEN"
                 )
-                reader = browser.new_page(viewport={"width": 390, "height": 844})
+                reader = browser.new_page(locale="fr-FR", viewport={"width": 390, "height": 844})
                 reader.route(
                     "**/auth/session",
                     lambda route: route.fulfill(
@@ -658,6 +658,36 @@ def main():
                 reader.locator('[data-action="lists"]').click()
                 expect(reader.locator("#lists-content")).to_contain_text("Accès en lecture seule")
                 expect(reader.locator("#new-list-form")).to_have_count(0)
+                # English follows browser language, including async-rendered text.
+                english = browser.new_page(locale="en-US", viewport={"width": 1150, "height": 800})
+                english_errors = []
+                english.on("pageerror", lambda error: english_errors.append(str(error)))
+                english.goto(prefix, wait_until="domcontentloaded")
+                expect(english).to_have_title("Media Catalog")
+                expect(english.locator("html")).to_have_attribute("lang", "en")
+                expect(english.locator("#header-language")).to_have_value("en")
+                expect(english.locator("#lists-button")).to_have_text("My lists")
+                expect(english.locator(".media-card")).to_have_count(60)
+                expect(english.locator("#toggle-filters")).to_contain_text("Filters and sorting")
+                expect(english.locator('#search')).to_have_attribute(
+                    "placeholder", "Search original or localized titles…"
+                )
+                expect(english.locator('[data-quick="unwatched"]')).to_have_text("To watch")
+                english.locator(".media-card").first.click()
+                expect(english.locator("#add-to-list")).to_contain_text("Add to a list")
+                english.locator('[data-close="detail-dialog"]').click()
+                english.locator("#connections-button").click()
+                expect(english.locator("#connections-dialog h2")).to_have_text("Settings")
+                expect(english.locator("#connection-content")).to_contain_text("Generate pairing code")
+                english.locator('[data-close="connections-dialog"]').click()
+                english.locator("#header-language").select_option("fr")
+                english.wait_for_url(prefix)
+                expect(english.locator("html")).to_have_attribute("lang", "fr")
+                expect(english.locator("#lists-button")).to_have_text("Mes listes")
+                english.reload(wait_until="domcontentloaded")
+                expect(english.locator("#header-language")).to_have_value("fr")
+                english.close()
+                assert not english_errors, english_errors
                 assert not errors, errors
                 browser.close()
                 print(
