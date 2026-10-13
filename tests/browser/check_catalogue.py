@@ -541,6 +541,8 @@ def main():
                 assert len(enriched_calls) == initial_calls + 2
                 page.locator('[data-close="detail-dialog"]').click()
                 page.locator("#connections-button").click()
+                expect(page.locator("#settings-preferences-title")).to_have_text("Préférences")
+                expect(page.locator("#settings-language")).to_have_value("fr")
                 page.locator("#test-tmdb").click()
                 expect(page.locator("#tmdb-test-result")).to_contain_text("Connexion TMDB réussie")
                 page.locator("[data-test-player]").click()
@@ -682,16 +684,25 @@ def main():
                 english.locator('[data-close="detail-dialog"]').click()
                 english.locator("#connections-button").click()
                 expect(english.locator("#connections-dialog h2")).to_have_text("Settings")
+                expect(english.locator("#settings-preferences-title")).to_have_text("Preferences")
+                expect(english.locator("label[for='settings-language'] span")).to_have_text(
+                    "Language"
+                )
+                expect(english.locator("#settings-language")).to_have_value("en")
                 expect(english.locator("#connection-content")).to_contain_text(
                     "Generate pairing code"
                 )
-                english.locator('[data-close="connections-dialog"]').click()
-                english.locator("#header-language").select_option("fr")
-                english.wait_for_url(prefix)
+                english.locator("#settings-language").select_option("fr")
                 expect(english.locator("html")).to_have_attribute("lang", "fr")
                 expect(english.locator("#lists-button")).to_have_text("Mes listes")
+                expect(english.locator("#header-language")).to_have_value("fr")
                 english.reload(wait_until="domcontentloaded")
                 expect(english.locator("#header-language")).to_have_value("fr")
+                english.locator("#connections-button").click()
+                expect(english.locator("#settings-language")).to_have_value("fr")
+                english.locator("#settings-language").select_option("en")
+                expect(english.locator("html")).to_have_attribute("lang", "en")
+                expect(english.locator("#header-language")).to_have_value("en")
                 english.close()
                 assert not english_errors, english_errors
                 assert not errors, errors

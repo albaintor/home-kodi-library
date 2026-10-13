@@ -3,6 +3,9 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Préférences": "Preferences",
+  "Langue": "Language",
+  "Choisissez la langue de l’interface. Ce choix est mémorisé dans ce navigateur.": "Choose the interface language. Your choice is saved in this browser.",
   "Votre bibliothèque,": "Your library,",
   "à portée de main.": "at your fingertips.",
   "Films, séries et éditions physiques dans un même catalogue.": "Movies, TV shows and physical editions in one catalog.",
