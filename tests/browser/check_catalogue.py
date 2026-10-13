@@ -604,7 +604,9 @@ def main():
                 if screenshots:
                     page.evaluate("scrollTo(0,0)")
                     page.screenshot(path=str(Path(screenshots) / "lists-catalogue-mobile.png"))
-                fallback = browser.new_page(locale="fr-FR", viewport={"width": 1440, "height": 1000})
+                fallback = browser.new_page(
+                    locale="fr-FR", viewport={"width": 1440, "height": 1000}
+                )
                 fallback.add_init_script("delete window.IntersectionObserver")
                 fallback.goto(prefix, wait_until="domcontentloaded")
                 expect(fallback.locator(".media-card")).to_have_count(60)
@@ -613,7 +615,9 @@ def main():
                 # Missing configuration leaves explicit actions in the film sheet.
                 settings.tmdb_api_token = ""
                 store.delete_player(player["id"])
-                unconfigured = browser.new_page(locale="fr-FR", viewport={"width": 390, "height": 844})
+                unconfigured = browser.new_page(
+                    locale="fr-FR", viewport={"width": 390, "height": 844}
+                )
                 unconfigured.goto(prefix, wait_until="domcontentloaded")
                 expect(unconfigured.locator("#filters")).to_be_hidden()
                 expect(unconfigured.locator("#search")).to_be_visible()
@@ -669,7 +673,7 @@ def main():
                 expect(english.locator("#lists-button")).to_have_text("My lists")
                 expect(english.locator(".media-card")).to_have_count(60)
                 expect(english.locator("#toggle-filters")).to_contain_text("Filters and sorting")
-                expect(english.locator('#search')).to_have_attribute(
+                expect(english.locator("#search")).to_have_attribute(
                     "placeholder", "Search original or localized titles…"
                 )
                 expect(english.locator('[data-quick="unwatched"]')).to_have_text("To watch")
@@ -678,7 +682,9 @@ def main():
                 english.locator('[data-close="detail-dialog"]').click()
                 english.locator("#connections-button").click()
                 expect(english.locator("#connections-dialog h2")).to_have_text("Settings")
-                expect(english.locator("#connection-content")).to_contain_text("Generate pairing code")
+                expect(english.locator("#connection-content")).to_contain_text(
+                    "Generate pairing code"
+                )
                 english.locator('[data-close="connections-dialog"]').click()
                 english.locator("#header-language").select_option("fr")
                 english.wait_for_url(prefix)
