@@ -196,7 +196,10 @@ def main():
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
                 expect(page).to_have_title("Home Kodi Library")
-                expect(page.locator(".heading-row h1")).to_have_text("Bibliothèque")
+                expect(page.locator(".heading-row h1")).to_have_count(0)
+                expect(page.locator(".heading-row .eyebrow")).to_have_count(0)
+                expect(page.locator("#catalogue-status")).to_be_visible()
+                expect(page.locator(".view-switch")).to_be_visible()
                 expect(page.locator("#filters")).to_be_hidden()
                 expect(page.locator("#search")).to_be_visible()
                 assert page.locator("#search").evaluate(
