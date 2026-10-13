@@ -2,7 +2,7 @@
 
 L'interface dédiée fournit recherche libre, filtres combinables, tris et fiches avec éditions. Les cartes Kodi/media-player standard pilotent surtout la lecture. Kodi Search couvre certains usages de bibliothèque, sans constituer à lui seul cette interface multi-source. JellyHA dépend de Jellyfin ; les cartes Arr dépendent de Radarr/Sonarr. La solution retenue est donc un service Docker autonome et une vue Ingress.
 
-## Docker externe sur le NAS
+## Serveur Docker accessible depuis Home Assistant
 
 Le composant communautaire [hass_ingress](https://github.com/lovelylain/hass_ingress) fait le relais entre Home Assistant et un service externe. Il ne s'agit pas de l'Ingress Supervisor d'un add-on officiel.
 
@@ -16,7 +16,7 @@ ingress:
     work_mode: ingress
     title: Bibliothèque
     icon: mdi:movie-open
-    url: http://IP_DU_NAS:8099
+    url: http://HOTE_DOCKER:8099
     headers:
       X-Kodi-Library-Ingress-Token: !secret kodi_library_ingress_token
 ```
@@ -28,9 +28,9 @@ kodi_library_ingress_token: "SECRET_ALEATOIRE_IDENTIQUE_A_INGRESS_TOKEN"
 
 4. Redémarrer Home Assistant. La vue apparaît dans sa barre latérale et s'authentifie grâce au secret transmis côté serveur. Vérifier l'accès depuis le réseau mobile.
 
-Home Assistant doit pouvoir joindre `IP_DU_NAS:8099`. Les fichiers statiques et appels API sont relatifs au chemin du service pour fonctionner derrière un préfixe Ingress. Le navigateur ne reçoit pas le secret Ingress. Les utilisateurs autorisés à ouvrir cette vue disposent des droits d'administration du catalogue : limiter l'accès à la vue à des personnes de confiance selon la configuration de hass_ingress.
+Home Assistant doit pouvoir joindre `HOTE_DOCKER:8099`. Les fichiers statiques et appels API sont relatifs au chemin du service pour fonctionner derrière un préfixe Ingress. Le navigateur ne reçoit pas le secret Ingress. Les utilisateurs autorisés à ouvrir cette vue disposent des droits d'administration du catalogue : limiter l'accès à la vue à des personnes de confiance selon la configuration de hass_ingress.
 
-Une iframe pointant directement vers `http://IP_DU_NAS:8099` dépend de l'accès du navigateur au réseau privé et peut être bloquée depuis Home Assistant en HTTPS. Ingress donne au navigateur une URL sur le même domaine Home Assistant, puis Home Assistant contacte le NAS. C'est cette configuration qu'il faut privilégier pour un accès distant.
+Une iframe pointant directement vers `http://HOTE_DOCKER:8099` dépend de l'accès du navigateur au réseau privé et peut être bloquée depuis Home Assistant en HTTPS. Ingress donne au navigateur une URL sur le même domaine Home Assistant, puis Home Assistant contacte le serveur Docker. C'est cette configuration qu'il faut privilégier pour un accès distant.
 
 Pour un accès exclusivement HTTPS, `COOKIE_SECURE=true` renforce les sessions web directes. L'authentification Ingress fonctionne par en-tête et ne dépend pas de ce cookie. Ne pas configurer un proxy public qui ajoute le secret Ingress pour tous les visiteurs.
 
@@ -46,4 +46,4 @@ Une application iOS utilise directement l'API du service Docker avec un jeton Be
 - [hass_ingress, configuration et exemples](https://github.com/lovelylain/hass_ingress)
 - [Kodi Search Card](https://github.com/jtbgroup/kodi-search-card)
 
-La compatibilité avec le chemin de proxy est vérifiable localement. La configuration réelle de Home Assistant, ses droits d'accès et le réseau du NAS restent à valider sur l'installation cible.
+La compatibilité avec le chemin de proxy est vérifiable localement. La configuration réelle de Home Assistant, ses droits d'accès et le réseau du serveur Docker restent à valider sur l'installation cible.
