@@ -10,14 +10,3 @@ data/
 !tests/fixtures/*.xml
 dist/
 *.egg-info/
-
-# Projet généré depuis ios/project.yml (XcodeGen)
-ios/*.xcodeproj/
-ios/*.xcworkspace/
-ios/.build/
-ios/DerivedData/
-
-# Per-developer signing details must never be committed.
-ios/Signing.local.xcconfig
-# App icon is rendered from the server's design during Xcode build.
-ios/HomeKodiLibrary/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png

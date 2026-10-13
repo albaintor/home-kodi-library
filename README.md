@@ -229,4 +229,4 @@ When using a reverse proxy, declare only its exact address, for example `TRUSTED
 
 ## Native iOS / iPadOS app
 
-The [`ios/`](ios/) directory contains a **native SwiftUI app** that talks directly to REST API v1: catalog (posters/list), search and combinable filters, movies and episodes, Kodi/CLZ data, ratings and watch status, cast, trailers, personal lists, Kodi playback control, and administration of sources and imports. Docker and the web interface continue to work independently. The Bearer token is stored in the iOS Keychain. See the [XcodeGen build and secure connection instructions](ios/README.md).
+The native SwiftUI app has moved to the [**private home-kodi-library-ios repository**](https://github.com/albaintor/home-kodi-library-ios), which is accessible only to authorized collaborators. It connects directly to REST API v1 and stores its device token in the iOS Keychain. The server, Docker deployment, and web application remain available independently in this public repository.
