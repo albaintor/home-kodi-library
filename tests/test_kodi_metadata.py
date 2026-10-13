@@ -114,7 +114,7 @@ def test_movies_versions_cast_and_streams_survive_each_schema(version_type, stor
     assert store.media(kind="movie", source_type="kodi")["total"] == (
         1 if version_type is None else 2
     )
-    found = store.media(q="Camille")["items"][0]
+    found = store.media(q="Camille", deep_search=True)["items"][0]
     assert store.detail(found["id"])["cast"][0]["name"] == "Camille Exemple"
     db.close()
 
@@ -183,7 +183,7 @@ def test_cast_is_available_in_api(client, admin):
             )
         ],
     )
-    item = client.get("/api/v1/media?q=Camille", headers=admin).json()["items"][0]
+    item = client.get("/api/v1/media?q=Camille&deep_search=true", headers=admin).json()["items"][0]
     response = client.get(f"/api/v1/media/{item['id']}", headers=admin)
     assert response.status_code == 200
     assert response.json()["cast"][0]["name"] == "Camille Exemple"
