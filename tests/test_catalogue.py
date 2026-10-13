@@ -36,9 +36,6 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
     assert detail["watch_status"] == "unknown"
 
 
-
-
-
 def test_user_michael_clz_xml_fields_and_kodi_identity(store):
     xml = b"""<collectorz><data><movieinfo><movielist><movie>
       <datasetversion>15</datasetversion>
