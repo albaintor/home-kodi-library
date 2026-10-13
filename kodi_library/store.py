@@ -12,7 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .connectors.base import Record
-from .media_formats import canonical_format
+from .media_formats import canonical_format, canonical_source_format
 from .people import person_view, youtube_url
 from .utils import fold, now
 
@@ -143,6 +143,25 @@ class Store:
                 self._reconcile_titles(conn)
                 conn.execute(
                     "INSERT OR REPLACE INTO catalogue_meta(key,value) VALUES('identity_matching_v2',?)",
+                    (now(),),
+                )
+            # Rebuild affected works from their CLZ source records once, so an
+            # existing NAS database gets physical 4K UHD disc badges on upgrade.
+            if not conn.execute(
+                "SELECT 1 FROM catalogue_meta WHERE key='uhd_disc_formats_v1'"
+            ).fetchone():
+                old_uhd_works = [
+                    row["work_id"]
+                    for row in conn.execute(
+                        "SELECT DISTINCT r.work_id FROM records r "
+                        "JOIN sources s ON s.id=r.source_id "
+                        "WHERE s.type='clz' AND r.payload LIKE '%4K UHD%'"
+                    )
+                ]
+                for work_id in old_uhd_works:
+                    self._rebuild(conn, work_id)
+                conn.execute(
+                    "INSERT INTO catalogue_meta(key,value) VALUES('uhd_disc_formats_v1',?)",
                     (now(),),
                 )
         self.path.chmod(0o600)
@@ -640,7 +659,8 @@ class Store:
         playback = progress or (kodi_watch[0] if kodi_watch else {})
         genres = sorted({v for p, _ in entries for v in p.get("genres", [])}, key=fold)
         fmts = sorted(
-            {canonical_format(v) for p, _ in entries for v in p.get("formats", [])}, key=fold
+            {canonical_source_format(v, source_type) for p, source_type in entries for v in p.get("formats", [])},
+            key=fold
         )
         collections = sorted({v for p, _ in entries for v in p.get("collections", [])}, key=fold)
         types = sorted({t for _, t in entries})
@@ -841,8 +861,13 @@ class Store:
             for label in requested_formats
         ):
             raise ValueError("Invalid format filters.")
-        for label in dict.fromkeys(canonical_format(value) for value in requested_formats):
-            aliases = ("4K", "4K UHD") if label == "4K" else (label,)
+        for label in dict.fromkeys(
+            canonical_source_format(value, "clz")
+            if value.strip().casefold() == "4k uhd"
+            else canonical_format(value)
+            for value in requested_formats
+        ):
+            aliases = ("Blu-ray 4K", "4K UHD") if label == "Blu-ray 4K" else (label,)
             placeholders = ",".join("?" for _ in aliases)
             clauses.append(
                 f"EXISTS(SELECT 1 FROM json_each(w.formats) "

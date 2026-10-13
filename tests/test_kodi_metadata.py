@@ -165,7 +165,7 @@ def test_clz_audio_and_explicit_hdr_tags(clz_xml):
         b"<nrdiscs>2</nrdiscs>",
         "<audiotracks><audiotrack><displayname>Dolby Atmos [Français]</displayname></audiotrack></audiotracks><tags><tag><displayname>Dolby Vision</displayname></tag></tags><nrdiscs>2</nrdiscs>".encode(),
     )
-    assert set(parse_clz(data)[0].formats) == {"4K UHD", "Dolby Atmos", "Dolby Vision"}
+    assert set(parse_clz(data)[0].formats) == {"Blu-ray 4K", "Dolby Atmos", "Dolby Vision"}
 
 
 def test_cast_is_available_in_api(client, admin):

@@ -26,9 +26,23 @@ STEREOSCOPIC_LAYOUTS = {
 
 
 def canonical_format(value: str) -> str:
-    """Use the same label for Kodi 4K and physical UHD sources."""
+    """Normalize video resolution without changing disc-format identities."""
     label = value.strip()
     return "4K" if label.casefold() in {"4k", "4k uhd"} else label
+
+
+def canonical_source_format(value: str, source_type: str) -> str:
+    """Do not confuse an Ultra HD Blu-ray disc with Kodi's 4K video resolution."""
+    label = value.strip()
+    if source_type == "clz" and label.casefold() in {
+        "4k uhd",
+        "blu-ray 4k",
+        "4k blu-ray",
+        "uhd blu-ray",
+        "ultra hd blu-ray",
+    }:
+        return "Blu-ray 4K"
+    return canonical_format(label)
 
 
 THREE_D_FILENAME = re.compile(

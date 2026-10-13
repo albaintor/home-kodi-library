@@ -32,7 +32,7 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
     assert page["total"] == 1
     detail = store.detail(page["items"][0]["id"])
     assert len(detail["editions"]) == 2
-    assert detail["formats"] == ["4K", "Blu-ray"]
+    assert detail["formats"] == ["Blu-ray", "Blu-ray 4K"]
     assert detail["watch_status"] == "unknown"
 
 
@@ -64,7 +64,7 @@ def test_user_michael_clz_xml_fields_and_kodi_identity(store):
     assert item.metadata["clz_movie_id"] == "573347"
     assert item.metadata["clz_media_id"] == "1456697"
     assert item.user_rating is None
-    assert {"4K UHD", "Dolby Digital+", "Dolby Atmos"} <= set(item.formats)
+    assert {"Blu-ray 4K", "Dolby Digital+", "Dolby Atmos"} <= set(item.formats)
 
     clz = source(store)
     kodi = source(store, "kodi")
@@ -225,7 +225,7 @@ def test_kodi_and_clz_merge_by_imdb_and_watch_state(store, clz_xml):
         date_added="2026-10-01T10:00:00",
     )
     store.apply_snapshot(kodi, [record])
-    page = store.media(source_type="kodi", watch_status="in_progress", format="4K UHD")
+    page = store.media(source_type="kodi", watch_status="in_progress", format="Blu-ray 4K")
     assert page["total"] == 1
     work_id = page["items"][0]["id"]
     detail = store.detail(work_id)
@@ -380,8 +380,6 @@ def test_sort_pagination_combined_filters_and_unknown_watch(store):
 
 
 def test_cumulative_formats_and_legacy_4k_aliases(store):
-    import json
-
     sid = source(store)
     store.apply_snapshot(
         sid,
@@ -392,18 +390,23 @@ def test_cumulative_formats_and_legacy_4k_aliases(store):
         ],
     )
     assert store.media(format=["4K", "HDR10+", "Dolby Atmos"])["total"] == 1
-    assert store.media(format=["4K UHD", "Dolby Atmos"])["total"] == 2
-    assert store.media(format="4K")["total"] == 3
-    assert "4K UHD" not in store.facets()["formats"]
-    with store.connect() as conn:
-        conn.execute(
-            "UPDATE works SET formats=? WHERE title=?",
-            (json.dumps(["4K UHD", "HDR10+", "Dolby Atmos"]), "Toutes options"),
-        )
-    assert store.media(format=["4K", "HDR10+"])["total"] == 2
-    assert "4K UHD" not in store.media(format="4K")["items"][0]["formats"]
+    assert store.media(format=["Blu-ray 4K", "Dolby Atmos"])["total"] == 1
+    assert store.media(format=["4K UHD", "Dolby Atmos"])["total"] == 1
+    assert store.media(format="4K")["total"] == 2
+    assert "Blu-ray 4K" in store.facets()["formats"]
     with pytest.raises(ValueError):
         store.media(format=["x"] * 21)
+
+
+def test_4k_disc_is_separate_from_kodi_video_resolution(store):
+    clz = source(store)
+    kodi = source(store, "kodi")
+    store.apply_snapshot(clz, [Record("disc", "movie", "Disque", formats=["4K UHD", "DVD"])])
+    store.apply_snapshot(kodi, [Record("file", "movie", "Vidéo", formats=["4K"])])
+    assert store.media(format="Blu-ray 4K")["total"] == 1
+    assert store.media(format="4K UHD")["total"] == 1
+    assert store.media(format="4K")["total"] == 1
+    assert store.media(format="DVD")["total"] == 1
 
 
 def test_conflicting_external_ids_do_not_merge(store):

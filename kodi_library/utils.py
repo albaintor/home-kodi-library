@@ -74,5 +74,5 @@ def identifiers(values: dict[str, Any]) -> dict[str, str]:
 
 
 def formats(values: list[str]) -> list[str]:
-    names = {"blu-ray": "Blu-ray", "blu-ray 3d": "Blu-ray 3D", "4k uhd": "4K UHD", "dvd": "DVD"}
+    names = {"blu-ray": "Blu-ray", "blu-ray 3d": "Blu-ray 3D", "4k uhd": "Blu-ray 4K", "dvd": "DVD"}
     return sorted({names.get(v.casefold().strip(), v.strip()) for v in values if v.strip()})
