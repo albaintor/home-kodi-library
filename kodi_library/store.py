@@ -136,12 +136,13 @@ class Store:
                 (now(),),
             )
             # Reconcile pre-existing separate Kodi/CLZ works once when upgrading.
+            # v2 includes strong ID matches even when titles or years differ.
             if not conn.execute(
-                "SELECT 1 FROM catalogue_meta WHERE key='title_matching_v1'"
+                "SELECT 1 FROM catalogue_meta WHERE key='identity_matching_v2'"
             ).fetchone():
                 self._reconcile_titles(conn)
                 conn.execute(
-                    "INSERT INTO catalogue_meta(key,value) VALUES('title_matching_v1',?)",
+                    "INSERT OR REPLACE INTO catalogue_meta(key,value) VALUES('identity_matching_v2',?)",
                     (now(),),
                 )
         self.path.chmod(0o600)
@@ -479,7 +480,7 @@ class Store:
 
     @classmethod
     def _reconcile_titles(cls, conn: sqlite3.Connection) -> int:
-        """Safely reunite legacy Kodi and CLZ works with exact title/year matches.
+        """Safely reunite legacy Kodi and CLZ works using IDs or titles/years.
 
         Skip ambiguous titles, conflicting identifiers and same-provider pairs.
         Preserve notes, watch overrides, playlist membership and the surviving ID.
@@ -500,16 +501,46 @@ class Store:
                 continue
             for key in cls._title_keys(row["title"], row["original_title"]):
                 lookup[(row["year"], key)].add(row["id"])
-        pairs = set()
+        title_pairs = set()
         for ids in lookup.values():
             if len(ids) != 2:
                 continue
             left, right = sorted(ids)
             if types[left] != types[right]:
-                pairs.add((left, right))
+                title_pairs.add((left, right))
+
+        # A strong IMDb/TMDb/TVDb identity must also reconcile works that were
+        # imported years ago with different titles or years. Never merge an
+        # identifier with more than two separate work identities.
+        identities: dict[tuple[str, str, str], set[str]] = defaultdict(set)
+        for row in conn.execute(
+            "SELECT i.kind,i.namespace,i.value,i.work_id FROM identifiers i "
+            "JOIN works w ON w.id=i.work_id"
+        ):
+            if types[row["work_id"]] in ({"kodi"}, {"clz"}):
+                identities[(row["kind"], row["namespace"], row["value"])].add(
+                    row["work_id"]
+                )
+        id_pairs = set()
+        for ids in identities.values():
+            if len(ids) == 2:
+                left, right = sorted(ids)
+                if types[left] != types[right]:
+                    id_pairs.add((left, right))
+
+        # Ambiguous matches are never resolved arbitrarily. Identifier matches
+        # take precedence over title/year matches and can resolve ambiguity.
+        from collections import Counter
+
+        def unambiguous(pairs):
+            counts = Counter(work_id for pair in pairs for work_id in pair)
+            return sorted(
+                pair for pair in pairs if all(counts[work_id] == 1 for work_id in pair)
+            )
+
         used = set()
         merged = 0
-        for left, right in sorted(pairs):
+        for left, right in unambiguous(id_pairs) + unambiguous(title_pairs):
             if left in used or right in used:
                 continue
             if not cls._ids_compatible(
