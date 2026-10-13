@@ -4,7 +4,9 @@ An independent media catalog for browsing a Kodi library and third party home (p
 
 Pre-requisite : browsing Kodi library expects a configured Kodi library with an external database (MariaDB/MysQL) as it interacts with database queries. This mode lets have a shared and centralized Kodi database with multiple Kodi clients, and also lets access the media database with no Kodi instances running.
 
-**Support development:** [Buy Me a Coffee](https://buymeacoffee.com/albaintor).
+**Support development:**
+
+<a href="https://www.buymeacoffee.com/albaintor" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
 ## Features
 
