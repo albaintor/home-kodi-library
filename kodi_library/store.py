@@ -52,6 +52,7 @@ CREATE INDEX IF NOT EXISTS work_kind_watch ON works(kind,watch_status);
 CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(work_id UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
 CREATE VIRTUAL TABLE IF NOT EXISTS works_title_fts USING fts5(work_id UNINDEXED, titles, tokenize='unicode61 remove_diacritics 2');
 CREATE INDEX IF NOT EXISTS work_kind_year ON works(kind,year);
+CREATE TABLE IF NOT EXISTS catalogue_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS players (
  id TEXT PRIMARY KEY, name TEXT NOT NULL,
  source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
@@ -114,7 +115,10 @@ class Store:
                 conn.executemany(
                     "INSERT INTO works_title_fts(work_id,titles) VALUES(?,?)",
                     (
-                        (row["id"], fold(" ".join(filter(None, (row["title"], row["original_title"])))))
+                        (
+                            row["id"],
+                            fold(" ".join(filter(None, (row["title"], row["original_title"])))),
+                        )
                         for row in conn.execute("SELECT id,title,original_title FROM works")
                     ),
                 )
@@ -131,6 +135,15 @@ class Store:
                 "UPDATE jobs SET status='failed',finished_at=?,error='Application restarted before the job completed' WHERE status IN ('pending','running')",
                 (now(),),
             )
+            # Reconcile pre-existing separate Kodi/CLZ works once when upgrading.
+            if not conn.execute(
+                "SELECT 1 FROM catalogue_meta WHERE key='title_matching_v1'"
+            ).fetchone():
+                self._reconcile_titles(conn)
+                conn.execute(
+                    "INSERT INTO catalogue_meta(key,value) VALUES('title_matching_v1',?)",
+                    (now(),),
+                )
         self.path.chmod(0o600)
 
     @contextmanager
@@ -269,13 +282,17 @@ class Store:
                         for k, v in previous.get("identifiers", {}).items()
                     )
                     if changed_identity:
-                        work_id, conflict = self._match_work(conn, record, exclude=work_id)
+                        work_id, conflict = self._match_work(
+                            conn, record, exclude=work_id, source_type=source["type"]
+                        )
                         conflicts += conflict
                         affected.add(existing["work_id"])
                         reassigned += work_id != existing["work_id"]
                     updated += 1
                 else:
-                    work_id, conflict = self._match_work(conn, record)
+                    work_id, conflict = self._match_work(
+                        conn, record, source_type=source["type"]
+                    )
                     record_id = str(uuid4())
                     conflicts += conflict
                     inserted += 1
@@ -333,6 +350,10 @@ class Store:
                 self._rebuild(conn, work_id)
             if deleted or reassigned:
                 self._prune(conn)
+            # Includes legacy works imported before title matching existed. Only
+            # perform the scan if the source snapshot has actual changes.
+            if affected:
+                self._reconcile_titles(conn)
 
             # An absent Kodi edition may have been the last source of a work,
             # or one of several editions of a film also owned in CLZ.
@@ -372,8 +393,33 @@ class Store:
             }
 
     @staticmethod
+    def _title_keys(title: str | None, original: str | None = None) -> set[str]:
+        return {
+            key
+            for name in (title, original)
+            if name and (key := " ".join(re.findall(r"\\w+", fold(name))))
+        }
+
+    @staticmethod
+    def _ids_compatible(first: dict[str, set[str]], second: dict[str, set[str]]) -> bool:
+        return not any(
+            namespace in second and not values.intersection(second[namespace])
+            for namespace, values in first.items()
+        )
+
+    @staticmethod
+    def _work_ids(conn: sqlite3.Connection, work_id: str) -> dict[str, set[str]]:
+        result: dict[str, set[str]] = defaultdict(set)
+        for row in conn.execute(
+            "SELECT namespace,value FROM identifiers WHERE work_id=?", (work_id,)
+        ):
+            result[row["namespace"]].add(row["value"])
+        return result
+
+    @classmethod
     def _match_work(
-        conn: sqlite3.Connection, record: Record, exclude: str | None = None
+        cls, conn: sqlite3.Connection, record: Record,
+        exclude: str | None = None, source_type: str | None = None,
     ) -> tuple[str, int]:
         candidates = set()
         for namespace, value in record.identifiers.items():
@@ -385,22 +431,147 @@ class Store:
                 )
                 if r[0] != exclude
             )
+        new_ids = {key: {value} for key, value in record.identifiers.items()}
         if len(candidates) == 1:
             candidate = next(iter(candidates))
-            known: dict[str, set[str]] = defaultdict(set)
-            for row in conn.execute(
-                "SELECT namespace,value FROM identifiers WHERE work_id=?", (candidate,)
-            ):
-                known[row[0]].add(row[1])
-            if not any(
-                namespace in known and value not in known[namespace]
-                for namespace, value in record.identifiers.items()
-            ):
+            if cls._ids_compatible(new_ids, cls._work_ids(conn, candidate)):
                 return candidate, 0
+
+        # No common external ID: only an *unambiguous* exact title (localized
+        # or original) AND a matching year can join a Kodi and a CLZ entry.
+        # Never use this fallback after conflicting/ambiguous identifier matches.
+        if (
+            not candidates
+            and source_type in ("kodi", "clz")
+            and record.kind == "movie"
+            and record.year is not None
+        ):
+            keys = cls._title_keys(record.title, record.original_title)
+            matches = []
+            if keys:
+                for row in conn.execute(
+                    "SELECT id,title,original_title FROM works WHERE kind=? AND year=?",
+                    (record.kind, record.year),
+                ):
+                    if row["id"] == exclude or not keys.intersection(
+                        cls._title_keys(row["title"], row["original_title"])
+                    ):
+                        continue
+                    kinds = {
+                        entry[0]
+                        for entry in conn.execute(
+                            "SELECT DISTINCT s.type FROM records r "
+                            "JOIN sources s ON s.id=r.source_id WHERE r.work_id=?",
+                            (row["id"],),
+                        )
+                    }
+                    if source_type in kinds or not kinds.intersection({"kodi", "clz"}):
+                        continue
+                    if cls._ids_compatible(new_ids, cls._work_ids(conn, row["id"])):
+                        matches.append(row["id"])
+            if len(matches) == 1:
+                return matches[0], 0
+
         work_id = str(uuid4())
         conn.execute("INSERT INTO works(id,kind) VALUES(?,?)", (work_id, record.kind))
-        # Similar titles are deliberately not enough to merge remakes/editions.
         return work_id, int(bool(candidates))
+
+    @classmethod
+    def _reconcile_titles(cls, conn: sqlite3.Connection) -> int:
+        """Safely reunite legacy Kodi and CLZ works with exact title/year matches.
+
+        Skip ambiguous titles, conflicting identifiers and same-provider pairs.
+        Preserve notes, watch overrides, playlist membership and the surviving ID.
+        """
+        rows = conn.execute(
+            "SELECT id,title,original_title,year FROM works "
+            "WHERE kind='movie' AND year IS NOT NULL"
+        ).fetchall()
+        if not rows:
+            return 0
+        types: dict[str, set[str]] = defaultdict(set)
+        for row in conn.execute(
+            "SELECT DISTINCT r.work_id,s.type FROM records r "
+            "JOIN sources s ON s.id=r.source_id"
+        ):
+            types[row["work_id"]].add(row["type"])
+        lookup: dict[tuple[int, str], set[str]] = defaultdict(set)
+        for row in rows:
+            if types[row["id"]] not in ({"kodi"}, {"clz"}):
+                continue
+            for key in cls._title_keys(row["title"], row["original_title"]):
+                lookup[(row["year"], key)].add(row["id"])
+        pairs = set()
+        for ids in lookup.values():
+            if len(ids) != 2:
+                continue
+            left, right = sorted(ids)
+            if types[left] != types[right]:
+                pairs.add((left, right))
+        used = set()
+        merged = 0
+        for left, right in sorted(pairs):
+            if left in used or right in used:
+                continue
+            if not cls._ids_compatible(
+                cls._work_ids(conn, left), cls._work_ids(conn, right)
+            ) or not cls._ids_compatible(
+                cls._work_ids(conn, right), cls._work_ids(conn, left)
+            ):
+                continue
+            # Keep the identity already referenced by playlists, then CLZ.
+            priority = {}
+            for work_id in (left, right):
+                priority[work_id] = (
+                    conn.execute(
+                        "SELECT COUNT(*) FROM list_items WHERE work_id=?", (work_id,)
+                    ).fetchone()[0],
+                    int(
+                        conn.execute(
+                            "SELECT 1 FROM personal WHERE work_id=?", (work_id,)
+                        ).fetchone() is not None
+                    ),
+                    int("clz" in types[work_id]),
+                )
+            keep = max((left, right), key=lambda work_id: priority[work_id])
+            drop = right if keep == left else left
+            affected_lists = [
+                row[0] for row in conn.execute(
+                    "SELECT list_id FROM list_items WHERE work_id=?", (drop,)
+                )
+            ]
+            conn.execute(
+                "INSERT OR IGNORE INTO list_items(list_id,work_id,position) "
+                "SELECT list_id,?,position FROM list_items WHERE work_id=?",
+                (keep, drop),
+            )
+            if affected_lists:
+                conn.executemany(
+                    "UPDATE lists SET revision=revision+1 WHERE id=?",
+                    [(list_id,) for list_id in affected_lists],
+                )
+            former = conn.execute(
+                "SELECT user_rating,watched FROM personal WHERE work_id=?", (drop,)
+            ).fetchone()
+            if former:
+                conn.execute(
+                    "INSERT OR IGNORE INTO personal(work_id,user_rating,watched) "
+                    "VALUES(?,?,?)", (keep, former["user_rating"], former["watched"])
+                )
+                conn.execute(
+                    "UPDATE personal SET user_rating=COALESCE(user_rating,?),"
+                    "watched=COALESCE(watched,?) WHERE work_id=?",
+                    (former["user_rating"], former["watched"], keep),
+                )
+            conn.execute("UPDATE records SET work_id=? WHERE work_id=?", (keep, drop))
+            conn.execute("DELETE FROM identifiers WHERE work_id=?", (drop,))
+            conn.execute("DELETE FROM works_fts WHERE work_id=?", (drop,))
+            conn.execute("DELETE FROM works_title_fts WHERE work_id=?", (drop,))
+            conn.execute("DELETE FROM works WHERE id=?", (drop,))
+            cls._rebuild(conn, keep)
+            used.update((left, right))
+            merged += 1
+        return merged
 
     @staticmethod
     def _rebuild(conn: sqlite3.Connection, work_id: str) -> None:
@@ -517,9 +688,7 @@ class Store:
             (work_id, values["search_text"]),
         )
         title_text = " ".join(
-            str(p.get(name) or "")
-            for p, _ in entries
-            for name in ("title", "original_title")
+            str(p.get(name) or "") for p, _ in entries for name in ("title", "original_title")
         )
         conn.execute(
             "INSERT INTO works_title_fts(work_id,titles) VALUES(?,?)",

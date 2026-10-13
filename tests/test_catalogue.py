@@ -36,6 +36,72 @@ def test_multiple_editions_and_remake_are_preserved(store, clz_xml):
     assert detail["watch_status"] == "unknown"
 
 
+
+def test_match_clz_without_imdb_by_original_title_and_year(store):
+    clz = source(store)
+    kodi = source(store, "kodi")
+    store.apply_snapshot(
+        clz,
+        [Record("clz", "movie", "Film localisé", original_title="Example Film",
+                year=2026, formats=["Blu-ray"])],
+    )
+    store.apply_snapshot(
+        kodi,
+        [Record("movie:2:3", "movie", "Example Film", year=2026,
+                identifiers={"tmdb": "3321"})],
+    )
+    page = store.media(q="Example")
+    assert page["total"] == 1
+    assert page["items"][0]["source_types"] == ["clz", "kodi"]
+    assert store.media(q="localisé")["total"] == 1
+
+
+def test_title_fallback_rejects_remakes_and_conflicting_ids(store):
+    clz = source(store)
+    kodi = source(store, "kodi")
+    store.apply_snapshot(
+        clz,
+        [Record("disc", "movie", "Même film", year=2026,
+                identifiers={"imdb": "tt1111111"})],
+    )
+    store.apply_snapshot(
+        kodi,
+        [
+            Record("movie:1", "movie", "Même film", year=2025),
+            Record("movie:2", "movie", "Même film", year=2026,
+                   identifiers={"imdb": "tt2222222"}),
+        ],
+    )
+    assert store.media()["total"] == 3
+
+
+def test_legacy_title_reconciliation_retains_lists_and_rating(store):
+    clz = source(store)
+    kodi = source(store, "kodi")
+    store.apply_snapshot(
+        clz,
+        [Record("disc", "movie", "Film traduit", year=None)],
+    )
+    clz_id = store.media()["items"][0]["id"]
+    playlist = store.save_list({"name": "À voir", "description": ""})
+    store.change_list_item(playlist["id"], clz_id)
+    store.update_personal(clz_id, {"user_rating": 8.5})
+    store.apply_snapshot(
+        kodi,
+        [Record("movie:1", "movie", "Film traduit", year=2026,
+                identifiers={"tmdb": "1234"})],
+    )
+    assert store.media()["total"] == 2
+    store.apply_snapshot(
+        clz,
+        [Record("disc", "movie", "Film traduit", year=2026)],
+    )
+    assert store.media()["total"] == 1
+    detail = store.detail(clz_id)
+    assert detail["source_types"] == ["clz", "kodi"]
+    assert detail["personal"]["user_rating"] == 8.5
+    assert store.list_page(playlist["id"])["items"][0]["id"] == clz_id
+
 def test_kodi_and_clz_merge_by_imdb_and_watch_state(store, clz_xml):
     clz = source(store)
     kodi = source(store, "kodi")
