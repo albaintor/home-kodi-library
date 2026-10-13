@@ -295,11 +295,16 @@ def main():
                 page.locator('[data-toggle-format="HDR10+"]').click()
                 page.locator('[data-toggle-format="Dolby Atmos"]').click()
                 expect(page.locator('.format-option[aria-pressed="true"]')).to_have_count(3)
-                assert page.locator("#video-formats").evaluate(
-                    "e=>getComputedStyle(e).flexWrap"
-                ) == "wrap"
+                assert (
+                    page.locator("#video-formats").evaluate("e=>getComputedStyle(e).flexWrap")
+                    == "wrap"
+                )
                 assert page.locator("#video-formats .format-option").count() >= 3
-                assert page.locator("#format-selection-count").inner_text().startswith("3 sélectionnés")
+                assert (
+                    page.locator("#format-selection-count")
+                    .inner_text()
+                    .startswith("3 sélectionnés")
+                )
                 page.locator("#deep-search").check()
                 assert requests[-1].get("deep_search") == ["true"]
                 page.locator("#deep-search").uncheck()
