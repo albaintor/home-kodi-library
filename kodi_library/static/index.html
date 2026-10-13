@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#11151e">
-  <title>Bibliothèque · Home Kodi Library</title>
+  <title>Home Kodi Library</title>
   <link rel="icon" type="image/svg+xml" href="static/cinema.svg">
   <link rel="stylesheet" href="static/app.css">
   <script type="module" src="static/app.js"></script>
@@ -13,7 +13,7 @@
   <section id="login" hidden class="login-wrap">
     <form id="login-form" class="login-card">
       <img class="brand-mark" src="static/cinema.svg" alt="" width="46" height="46">
-      <p class="eyebrow">KODI LIBRARY</p>
+      <p class="eyebrow">HOME KODI LIBRARY</p>
       <h1>Votre bibliothèque,<br>à portée de main.</h1>
       <p>Films, séries et éditions physiques dans un même catalogue.</p>
       <label for="access-token">Jeton d’accès</label>
@@ -24,7 +24,7 @@
   </section>
   <main id="app" hidden>
     <header class="main-header">
-      <div class="brand"><img class="brand-mark" src="static/cinema.svg" alt="" width="36" height="36"><span>KODI <b>LIBRARY</b></span></div>
+      <div class="brand"><img class="brand-mark" src="static/cinema.svg" alt="" width="36" height="36"><span>HOME <b>KODI LIBRARY</b></span></div>
       <nav aria-label="Actions">
         <button id="lists-button" class="quiet">Mes listes</button>
         <a class="quiet" href="docs" target="_blank" rel="noopener">API</a>
@@ -34,7 +34,7 @@
       </nav>
     </header>
     <section class="catalogue">
-      <div class="heading-row"><div><p class="eyebrow">LE CATALOGUE</p><h1>Bibliothèque</h1><p id="catalogue-status" class="muted">Chargement du catalogue…</p></div><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
+      <div class="heading-row"><div><p class="eyebrow">LE CATALOGUE</p><h1>Home Kodi Library</h1><p id="catalogue-status" class="muted">Chargement du catalogue…</p></div><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
       <section class="catalogue-list-actions" aria-labelledby="custom-lists-title"><div><h2 id="custom-lists-title">Listes personnalisées</h2><p>Films à voir, séries à suivre… organisez vos sélections.</p></div><div class="list-entry-buttons"><button class="secondary" data-action="lists">Ouvrir mes listes</button><button id="create-list-button" class="primary" hidden>+ Créer une liste</button></div></section>
       <div class="toolbar">
         <label class="search-box"><span aria-hidden="true">⌕</span><input id="search" type="search" aria-label="Rechercher dans la bibliothèque" placeholder="Rechercher un titre localisé ou original…" autocomplete="off"><kbd aria-hidden="true">/</kbd></label>

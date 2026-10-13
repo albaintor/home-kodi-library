@@ -148,3 +148,10 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .resume-progress .resume-time{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
 .resume-progress progress{flex:1;width:100%;height:7px;accent-color:var(--purple)}
 @media(max-width:700px){.filters .format-picker{padding:11px;gap:11px}.format-choices{gap:5px}.format-option{min-height:38px;padding:3px 5px}.format-option .format-badge svg{width:65px;height:22px}.deep-search-option{grid-column:1/-1}}
+
+/* Shared native/web format artwork. PNG bytes mirror iOS Assets.xcassets. */
+.format-badge:has(img){background:#000;color:var(--text)}
+.format-badge img{display:block;width:78px;height:25px;object-fit:contain}
+.compact .format-badge img{width:51px;height:17px}
+.format-option .format-badge img{width:76px;height:25px}
+@media(max-width:700px){.detail-intro .format-badge img{width:63px;height:21px}.compact .format-badge img{width:42px;height:14px}.format-option .format-badge img{width:65px;height:22px}}

@@ -195,6 +195,8 @@ def main():
                 prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
+                expect(page).to_have_title("Home Kodi Library")
+                expect(page.locator(".heading-row h1")).to_have_text("Home Kodi Library")
                 expect(page.locator("#filters")).to_be_hidden()
                 expect(page.locator("#toggle-filters")).to_have_attribute("aria-expanded", "false")
                 page.locator("#toggle-filters").click()
@@ -463,6 +465,11 @@ def main():
                 page.locator('[data-close="play-dialog"]').click()
                 expect(page.locator(".cast-member").first).to_contain_text("Personnage 0")
                 expect(page.locator(".detail-intro .format-badge")).to_have_count(7)
+                expect(page.locator(".detail-intro .format-badge img")).to_have_count(6)
+                assert (
+                    page.request.get(prefix + "static/format-icons/format-dolby-atmos.png").status
+                    == 200
+                )
                 # Individual format logos are distinct; 1080p has no FHD caption.
                 assert page.request.get(prefix + "static/format-logos.svg").status == 200
                 intro = page.locator(".detail-intro").bounding_box()

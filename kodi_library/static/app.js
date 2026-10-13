@@ -92,7 +92,20 @@ function poster(item, detail=false) {
   const progress=item.total_seconds>0 ? Math.min(100,100*item.resume_seconds/item.total_seconds):0;
   return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail&&item.watch_status==='watched'?'<span class="state" title="Vu">✓</span>':''}${!detail&&item.watch_status==='in_progress'?'<span class="state progress" title="En cours">◐</span>':''}${progress>0&&item.watch_status==='in_progress'?`<span class="progress-track"><span style="width:${progress}%"></span></span>`:''}</div>`;
 }
-const formatLogos = {'4K':['4k','video'],'Blu-ray 4K':['bluray4k','disc'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshd','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio']};
+const formatLogos = {'4K':['4k','video'],'Blu-ray 4K':['bluray4k','disc'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshdma','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio'],'AAC':['aac','audio'],'FLAC':['flac','audio'],'Opus':['opus','audio']};
+
+// Reuse the exact PNG blobs in iOS Assets.xcassets for branded formats.
+// New native PDF vector badges use the equivalent SVG symbols below because
+// browser <img> does not reliably render PDFs.
+const formatImages = {
+  '4K':'format-4k','3D':'format-3d','Blu-ray 3D':'format-3d',
+  'Blu-ray':'format-blu-ray','Dolby Vision':'format-dolby-vision',
+  'HDR10':'format-hdr10','HDR10+':'format-hdr10-plus','HLG':'format-hlg',
+  'Dolby Atmos':'format-dolby-atmos','Dolby TrueHD':'format-dolby-truehd',
+  'Dolby Digital':'format-dolby-digital','Dolby Digital+':'format-dolby-digital-plus',
+  'DTS':'format-dts','DTS-HD':'format-dts-hd','DTS-HD MA':'format-dts-hd-ma',
+  'DTS:X':'format-dts-x','AAC':'format-aac','FLAC':'format-flac','Opus':'format-opus'
+};
 function formatBadges(values, compact=false, provenance=null) {
   const seen=new Set();
   const order={video:0,hdr:0,audio:1,disc:2};
@@ -103,7 +116,7 @@ function formatBadges(values, compact=false, provenance=null) {
     const logo=formatLogos[label];
     const sources=provenance?.get(label);
     const description=sources?.length?`${label} · ${sources.join(', ')}`:label;
-    return logo?`<span class="format-badge ${logo[1]}" title="${esc(description)}" aria-label="${esc(description)}"><svg aria-hidden="true" viewBox="0 0 112 36"><use href="${esc(url('static/format-logos.svg'))}#${logo[0]}"></use></svg></span>`:`<span class="format-chip" title="${esc(description)}">${esc(label)}</span>`;
+    return logo?`<span class="format-badge ${logo[1]}" title="${esc(description)}" aria-label="${esc(description)}">${formatImages[label]?`<img src="${esc(url('static/format-icons/'+formatImages[label]+'.png'))}" alt="" loading="lazy">`:`<svg aria-hidden="true" viewBox="0 0 112 36"><use href="${esc(url('static/format-logos.svg'))}#${logo[0]}"></use></svg>`}</span>`:`<span class="format-chip" title="${esc(description)}">${esc(label)}</span>`;
   }).join('')+(compact&&labels.length>4?`<span class="format-overflow" title="${esc(labels.slice(4).join(', '))}">+${labels.length-4}</span>`:'');
 }
 function detailFormatBadges(item) {
