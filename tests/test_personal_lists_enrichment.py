@@ -308,7 +308,9 @@ def test_tmdb_uses_imdb_identity_and_caches_credits(client, admin):
     assert result["cast"][0]["links"]["tmdb"] == "https://www.themoviedb.org/person/7"
     assert result["cast"][0]["thumbnail"].endswith("/people/0/artwork")
     assert result["enriched_at"] and len(result["trailers"]) == 1
-    assert client.get("/api/v1/media?q=Camille&deep_search=true", headers=admin).json()["total"] == 1
+    assert (
+        client.get("/api/v1/media?q=Camille&deep_search=true", headers=admin).json()["total"] == 1
+    )
     with patch("kodi_library.app.enrich_tmdb") as fetch:
         assert client.post(f"/api/v1/media/{mid}/enrich", headers=admin).status_code == 200
         fetch.assert_not_called()
