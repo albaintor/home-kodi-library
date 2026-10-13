@@ -14,6 +14,18 @@ Media Catalog is a self-hosted catalog with a responsive **web interface** and a
 
 The server uses its own **SQLite database**. Importing Kodi content requires an existing external Kodi MyVideos MariaDB/MySQL database, but browsing does not require a Kodi player to be running. CLZ-only catalogs do not require Kodi.
 
+### Web interface
+
+<img width="500" alt="image" src="https://github.com/user-attachments/assets/5194ecd5-8360-4c87-bc23-7610ca5eb354" />
+
+<img width="400" alt="image" src="https://github.com/user-attachments/assets/29fcdd5e-4424-4a29-bdbc-96fa26ee25f3" />
+
+
+
+
+### iOS interface
+
+
 ## Get started
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
