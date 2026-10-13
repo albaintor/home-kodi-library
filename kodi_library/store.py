@@ -659,8 +659,12 @@ class Store:
         playback = progress or (kodi_watch[0] if kodi_watch else {})
         genres = sorted({v for p, _ in entries for v in p.get("genres", [])}, key=fold)
         fmts = sorted(
-            {canonical_source_format(v, source_type) for p, source_type in entries for v in p.get("formats", [])},
-            key=fold
+            {
+                canonical_source_format(v, source_type)
+                for p, source_type in entries
+                for v in p.get("formats", [])
+            },
+            key=fold,
         )
         collections = sorted({v for p, _ in entries for v in p.get("collections", [])}, key=fold)
         types = sorted({t for _, t in entries})
