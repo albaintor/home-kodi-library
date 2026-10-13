@@ -2,8 +2,8 @@ import { startI18n, displayLocale, tr, localizedPrompt, localizedConfirm } from 
 startI18n();
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const stateLabels = {watched:'Vu',unwatched:'Non vu',in_progress:'En cours',unknown:'État non renseigné'};
-const kindLabels = {movie:'Film',tvshow:'Série',episode:'Épisode'};
+const stateLabels = {watched:tr('Vu'),unwatched:tr('Non vu'),in_progress:tr('En cours'),unknown:tr('État non renseigné')};
+const kindLabels = {movie:tr('Film'),tvshow:tr('Série'),episode:tr('Épisode')};
 const baseURL = new URL('.', window.location.href);
 const url = (path) => new URL(path.replace(/^\/+/, ''), baseURL).href;
 const preferenceKey = `kodi_library_preferences_v1:${baseURL.pathname}`;

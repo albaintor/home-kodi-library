@@ -385,7 +385,7 @@ export function localizedConfirm(message) { return window.confirm(tr(message)); 
 const untranslatedNodes = new WeakMap();
 const attrOriginals = new WeakMap();
 const FIELDS = ['title', 'aria-label', 'placeholder', 'data-tooltip', 'aria-valuetext'];
-const USER_CONTENT = '.card-title, .person-name, .original-title, .synopsis, .genre-chips, .play-media-title, .saved-media strong, .source-name, .connection-card strong, .cast-member small, [data-i18n-ignore]';
+const USER_CONTENT = '.card-title, .detail-heading h2, .person-name, .original-title, .synopsis, .genre-chips, .play-media-title, .saved-media strong, .saved-list-row strong, .search-list-result strong, .source-name, .connection-card strong, .cast-member small, [data-i18n-ignore]';
 function inUserData(node) {
   const parent = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
   return !!(parent && parent.closest(USER_CONTENT));
