@@ -1,25 +1,27 @@
 # Home Kodi Library
 
-Catalogue indépendant pour consulter une bibliothèque Kodi et une collection physique CLZ Movies. Un conteneur Docker expose une interface web responsive et une **API REST versionnée**, utilisable directement par une future application iOS. Home Assistant peut servir de point d'entrée via Ingress.
+An independent media catalog for browsing a Kodi library and a physical CLZ Movies collection. A Docker container provides a responsive web interface and a **versioned REST API**, also used by the native iOS application. Home Assistant can serve as an entry point through Ingress.
 
-## Première version
+**Support development:** [Buy Me a Coffee](https://buymeacoffee.com/albaintor).
 
-- Recherche libre dans les titres, synopsis, genres, collections et certaines métadonnées ; recherche sans distinction d'accents, avec correspondance par préfixe de mots.
-- Filtres combinables : film/série/épisode, Kodi/CLZ, genre, formats vidéo/audio/support cumulables (ET), collection, vu/non vu/en cours/inconnu, ajouts des 30 derniers jours. L'API ajoute année, source précise et série parente. Les formats 4K et 4K UHD sont unifiés sous 4K ; filtres et tris sont mémorisés dans le navigateur.
-- Tri par titre, date d'ajout, année, note ou dernier visionnage ; ordre croissant/décroissant. Chargement progressif par lots de 60 au défilement, avec bouton de secours et reprise après erreur.
-- Vue pochettes ou liste, fiche détaillée, notes, synopsis, éditions physiques et fichiers Kodi, reprise et historique de lecture.
-- Fiche responsive avec casting Kodi (interprètes et rôles), badges de définition vidéo, 3D, Dolby Vision/HDR10/HDR10+, audio Dolby/DTS et formats physiques. Les caractéristiques restent détaillées par édition dans l'API.
-- Synchronisation **en lecture seule** de MariaDB Kodi, films/séries/épisodes, identifiants IMDb/TMDB/TVDB, versions alternatives si exposées par `movie_view`.
-- Import XML CLZ Movies : éditions, formats Blu-ray/4K/3D/DVD, codes-barres, coffrets, langues, sous-titres et historique `seenhistory`.
-- Rapprochement Kodi/CLZ par identifiant fiable et type de média ; conservation des éditions. Les titres seuls ne provoquent pas de fusion.
-- Plusieurs cibles Kodi HTTP/JSON-RPC associées à une source MariaDB. Lecture ou reprise sur une instance **déjà démarrée**, sans obligation d'utiliser les entités Home Assistant.
-- Tests de connexion MariaDB et Kodi avant ajout : réseau, authentification, base MyVideos, droits de lecture et contrôle HTTP de Kodi. Disponibles également dans l'API.
-- SQLite locale persistante et cache des images : **aucune seconde MariaDB**.
-- Jeton administrateur, jeton de consultation facultatif, sessions navigateur protégées contre CSRF et secret Ingress séparé.
+## Features
 
-L'interface utilise exactement la même API que les autres clients. Elle ne contient pas de logique métier indispensable au fonctionnement du serveur.
+- Title-only search (localized and original titles) by default; optional advanced search across synopses, genres, collections, cast, and other metadata. Searches are accent-insensitive and support word-prefix matching.
+- Combinable filters: movies/TV shows/episodes, Kodi/CLZ, genre, video/audio/disc formats (multiple selections combined with AND), collection, watched/unwatched/in progress/unknown, and additions from the past 30 days. The API also supports release year, a specific source, and parent TV series. Video resolution **4K** is distinct from physical **4K UHD / Blu-ray 4K** discs. Filter and sort preferences are saved in the browser.
+- Sort by title, date added, year, rating, or last watched, in ascending or descending order. Infinite scrolling loads batches of 60 items, with a fallback button and recovery after errors.
+- Poster grid and list views; detailed media pages with ratings, synopses, physical editions, Kodi files, resume positions, and playback history.
+- Responsive details with Kodi cast members and roles, resolution and 3D badges, Dolby Vision/HDR10/HDR10+, Dolby/DTS audio, and physical media formats. Per-edition technical details remain available through the API.
+- **Read-only** synchronization from Kodi MariaDB, covering movies, TV shows, episodes, IMDb/TMDB/TVDB identifiers, and alternative versions when exposed by `movie_view`.
+- CLZ Movies XML import: editions, Blu-ray/4K/3D/DVD formats, barcodes, box sets, languages, subtitles, and `seenhistory`.
+- Kodi/CLZ matching using reliable external identifiers and media type, with a conservative fallback to unambiguous title **and** year matches. Editions remain attached to their respective sources.
+- Multiple Kodi HTTP/JSON-RPC players associated with a MariaDB source. Play or resume on an **already running** Kodi instance without relying on Home Assistant entities.
+- MariaDB and Kodi connection tests before adding a source: networking, authentication, MyVideos database, read permissions, and Kodi HTTP control. These tests are also available through the API.
+- Persistent local SQLite database and artwork cache: **no second MariaDB server**.
+- Administrator token, optional read-only token, browser sessions with CSRF protection, and a separate Ingress secret.
 
-## Démarrage Docker sur un NAS
+The web interface uses exactly the same API as other clients. No essential server-side business logic lives exclusively in the frontend.
+
+## Getting started with Docker on a NAS
 
 ```bash
 git clone https://github.com/albaintor/home-kodi-library.git
@@ -28,7 +30,7 @@ cp .env.example .env
 openssl rand -hex 32
 ```
 
-Copier le jeton généré dans `API_TOKEN` de `.env`. Générer un **deuxième** jeton pour `INGRESS_TOKEN` si Home Assistant doit donner accès au catalogue. `API_READ_TOKEN`, également distinct, est facultatif.
+Copy the generated token into `API_TOKEN` in `.env`. Generate a **second** token for `INGRESS_TOKEN` if Home Assistant will provide access to the catalog. `API_READ_TOKEN` is optional and must also be distinct.
 
 ```bash
 mkdir -p data
@@ -38,51 +40,50 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
-Adapter `PUID`/`PGID` et le propriétaire du dossier aux comptes du NAS si nécessaire. Ouvrir `http://IP_DU_NAS:8099`, puis saisir `API_TOKEN`. Dans **Paramètres**, ajouter la source Kodi et/ou importer un export XML CLZ. Les mises à jour Kodi sont ensuite automatiques, toutes les 300 secondes par défaut. Un nouvel export CLZ remplace uniquement les entrées de la collection CLZ choisie.
+Adjust `PUID`/`PGID` and the directory owner to match your NAS accounts if necessary. Open `http://NAS_IP:8099` and enter `API_TOKEN`. Under **Settings**, add a Kodi source and/or import a CLZ XML export. Kodi synchronizes automatically, every 300 seconds by default. A new CLZ export only replaces records belonging to the selected CLZ collection.
 
-Pour MariaDB, utiliser un compte avec `SELECT` sur la base `MyVideos…`. Renseigner explicitement la base en cas de plusieurs bibliothèques. Sans nom, le connecteur sélectionne la version numérique accessible la plus élevée ; toutes les vues doivent être accessibles avec ce compte. Les connexions et mots de passe sont enregistrés dans le volume local, jamais renvoyés par l'API.
+For MariaDB, use an account with `SELECT` permission on the `MyVideos…` database. Specify the database explicitly if you have several libraries. If no name is supplied, the connector chooses the highest accessible numbered version; the account must have access to all required views. Connections and passwords are saved in the local volume and are never returned by the API.
 
-Après une mise à jour ajoutant des métadonnées, utiliser **Paramètres → Synchroniser** pour Kodi et réimporter l'XML dans la **collection CLZ existante**. Les badges HDR et Atmos utilisent uniquement les indications explicites de la source ; un disque UHD ou une piste TrueHD ne suffit pas à annoncer ces technologies.
+After an update that adds metadata support, use **Settings → Synchronize** for Kodi and reimport the XML into the **existing CLZ collection**. HDR and Atmos badges require explicit information from the source; a UHD disc or a TrueHD track alone is not evidence of these technologies.
 
-### Mises à jour suivantes
+### Updating an existing installation
 
-Le script `rebuild.sh` récupère `main` par `git pull --ff-only`, construit l'image avec le réseau de l'hôte (installation Python), puis recrée `library` en conservant `compose.dns.yaml` et les paramètres DNS de `.env`. Il attend jusqu'à 120 secondes la sonde de santé du conteneur et affiche les journaux si le démarrage échoue.
+`rebuild.sh` fetches `main` using `git pull --ff-only`, builds the image using host networking for Python package installation, and recreates the `library` service while retaining `compose.dns.yaml` and DNS settings in `.env`. It waits up to 120 seconds for the container health check and prints logs if startup fails.
 
 ```bash
-# Une fois, pour récupérer le script :
+# First time, to retrieve the update script:
 git pull --ff-only
-# Puis, pour chaque mise à jour :
+# For subsequent updates:
 sh ./rebuild.sh
 ```
 
-Lancer le script avec l'utilisateur propriétaire du dépôt ; il utilise automatiquement `sudo` pour Docker si nécessaire. Ne pas lancer tout le script avec `sudo`, afin de conserver les permissions Git du dépôt. `.env` et `data/` sont conservés. Un conflit Git ou une erreur de construction arrête le script avant de recréer le conteneur ; aucune commande `down`, réinitialisation Git ou suppression de données/images n'est exécutée. Le script utilise les fichiers Compose indiqués ci-dessus ; ajouter vos éventuels fichiers supplémentaires dans `compose_run` si votre installation en nécessite.
+Run the script as the user who owns the repository; it automatically invokes `sudo` for Docker if needed. Do not run the entire script with `sudo`, which could change Git file ownership. The `.env` file and `data/` directory are preserved. Git conflicts or build failures stop the script before it recreates the container. It does not run `down`, reset Git, or delete data or images. The script uses the Compose files described above; add any additional files your installation needs to `compose_run`.
 
-Les posters HTTP(S) publics sont téléchargés et mis en cache. Les images sur SMB/NFS ou un chemin local doivent être montées en lecture seule et déclarées dans `ARTWORK_MOUNTS` ; voir [le modèle et les images](docs/model.md). Les affiches indisponibles laissent une vignette lisible.
+Public HTTP(S) posters are downloaded and cached. SMB/NFS images or local file paths must be mounted read-only and declared in `ARTWORK_MOUNTS`; see [the data model and artwork documentation](docs/model.md). Unavailable posters display a readable placeholder.
 
+## Troubleshooting DNS errors during Docker builds
 
-## Si la construction échoue sur une erreur DNS
+A `Temporary failure in name resolution` message during `pip install` means the build environment cannot resolve the package server. A subsequent `No matching distribution found` error does not necessarily mean the requested package version is unavailable.
 
-Un message `Temporary failure in name resolution` pendant `pip install` signifie que l'environnement de construction n'arrive pas à résoudre le serveur de paquets. Le message final `No matching distribution found` ne permet alors pas de conclure que la version manque.
-
-Sur un NAS Linux/Synology, essayer de construire avec le réseau du NAS :
+On a Linux or Synology NAS, try building with host networking:
 
 ```bash
 sudo docker build --network=host -t home-kodi-library:local .
 sudo docker compose up -d --no-build
 ```
 
-La première commande utilise le réseau hôte pendant la construction de l'image. La deuxième démarre l'image déjà construite avec le réseau du service défini dans `compose.yaml`.
+The first command uses host networking while building the image. The second starts the previously built image using the service networking defined in `compose.yaml`.
 
-Une variante Compose est fournie pour conserver cette option dans les futures reconstructions :
+A Compose override is provided to retain this setting for future builds:
 
 ```bash
 git pull --ff-only
 sudo docker compose -f compose.yaml -f compose.build-host.yaml up -d --build
 ```
 
-L'option `build.network` concerne les instructions `RUN` du Dockerfile. Ajouter `dns:` au service concerne les conteneurs en fonctionnement et ne corrige pas à lui seul le DNS de construction. Voir la [documentation Docker](https://docs.docker.com/reference/compose-file/build/#network).
+`build.network` applies to Dockerfile `RUN` instructions. Adding `dns:` to a service affects running containers and does not, by itself, fix DNS during the build. See the [Docker documentation](https://docs.docker.com/reference/compose-file/build/#network).
 
-Si le réseau hôte échoue également, vérifier la résolution depuis le NAS puis depuis un conteneur :
+If host networking also fails, check name resolution first on the NAS and then from a container:
 
 ```bash
 nslookup pypi.org
@@ -90,46 +91,45 @@ sudo docker run --rm python:3.12-slim python -c 'import socket; print(socket.get
 sudo docker run --rm --dns 1.1.1.1 --dns 8.8.8.8 python:3.12-slim python -c 'import socket; print(socket.getaddrinfo("pypi.org", 443))'
 ```
 
-Le dernier test utilise des DNS publics pour identifier un éventuel problème de DNS Docker. S'il réussit seul, les paramètres DNS du NAS/Docker doivent être corrigés ; le DNS configuré au niveau du service pourra aussi être nécessaire pour télécharger les affiches en fonctionnement.
+The last command uses public DNS servers to help identify a Docker DNS issue. If only this command succeeds, the NAS/Docker DNS configuration needs attention. Service-level DNS configuration may also be necessary for downloading posters at runtime.
 
+## Troubleshooting remote poster downloads
 
-## Si les pochettes distantes ne s'affichent pas
+CLZ poster URLs are imported from the XML export and downloaded by the container. Fixing **build-time** DNS (`build.network: host` or `docker build --network=host`) does not configure DNS for the running container.
 
-Les URL de pochettes CLZ sont importées depuis l'export XML et téléchargées par le conteneur. Une correction DNS de **construction** (`build.network: host` ou `docker build --network=host`) ne configure pas les DNS du conteneur en fonctionnement.
-
-Si la résolution DNS Docker échoue, une variante optionnelle permet de choisir des DNS explicites :
+If Docker DNS resolution fails at runtime, use the optional Compose override to set explicit DNS servers:
 
 ```bash
 git pull --ff-only
 sudo docker compose -f compose.yaml -f compose.dns.yaml up -d --no-build --force-recreate library
 ```
 
-Elle utilise `1.1.1.1` et `8.8.8.8` par défaut. Pour utiliser votre routeur/résolveur et conserver la résolution des noms de machines locaux, renseigner `DNS_PRIMARY` et `DNS_SECONDARY` dans `.env`. Conserver `-f compose.dns.yaml` lors des prochains `up`/recréations pour conserver cette configuration. On peut aussi combiner ce fichier avec `compose.build-host.yaml` lors des reconstructions.
+It uses `1.1.1.1` and `8.8.8.8` by default. To use your router/resolver and preserve local hostname resolution, set `DNS_PRIMARY` and `DNS_SECONDARY` in `.env`. Keep `-f compose.dns.yaml` in future `up`/recreate commands so this configuration is retained. You can also combine it with `compose.build-host.yaml` for rebuilds.
 
-Tester une URL réelle de l'export CLZ depuis le conteneur :
+Test a real URL from your CLZ export inside the container:
 
 ```bash
 sudo docker compose exec library python -c 'import urllib.request; u="https://clzmovies.r.sizr.io/core/covers/lg/f4/f4_1259989_0_DungeonsDragonsHonorAmongThiev.jpg"; r=urllib.request.urlopen(u, timeout=15); print(r.status, r.headers.get("Content-Type"), r.geturl()); r.close()'
 ```
 
-Un résultat `200 image/jpeg` (ou un autre type d'image) indique que le téléchargement direct fonctionne. Une erreur de résolution, de certificat ou un code HTTP apporte la cause du blocage. Cette commande sert au diagnostic réseau ; le proxy d'images de l'application applique en plus ses contrôles sur les URL.
+A response such as `200 image/jpeg` confirms that direct downloads work. DNS, certificate, or HTTP errors indicate what is blocking the request. This command is for network diagnostics; the application's image proxy also applies security checks to URLs.
 
-Pour les pochettes Kodi utilisant un chemin SMB/NFS/local, utiliser le mapping `ARTWORK_MOUNTS` décrit dans [le modèle](docs/model.md), car une configuration DNS seule ne donne pas accès aux fichiers.
+For Kodi artwork stored on SMB/NFS/local paths, configure `ARTWORK_MOUNTS` as described in the [data model documentation](docs/model.md). DNS settings alone cannot grant file access.
 
-## Depuis Home Assistant et depuis iOS
+## Home Assistant and iOS access
 
-- [Accès Home Assistant avec hass_ingress](docs/home-assistant.md), y compris à distance depuis la même URL Home Assistant.
-- [Contrat API, authentification et exemples curl](docs/api.md).
-- [Schéma OpenAPI v1](docs/openapi-v1.json), généré depuis le serveur ; Swagger interactif à `/docs` après connexion web.
-- [Exemple de client Swift avec URLSession](examples/KodiLibraryClient.swift).
-- [Modèle, règle vu/non vu, rapprochements et sauvegarde](docs/model.md).
-- [Résultats et limites des vérifications initiales](docs/validation.md).
+- [Home Assistant access through hass_ingress](docs/home-assistant.md), including remote access through the same Home Assistant URL.
+- [API contract, authentication, and curl examples](docs/api.md).
+- [OpenAPI v1 schema](docs/openapi-v1.json), generated from the server; interactive Swagger documentation is available at `/docs` after web login.
+- [Sample Swift client using URLSession](examples/KodiLibraryClient.swift).
+- [Data model, watched/unwatched rules, matching, and backups](docs/model.md).
+- [Initial validation results and limitations](docs/validation.md).
 
-Pour accéder directement au Docker hors du réseau local, utiliser un VPN ou une URL HTTPS via un reverse proxy. L'accès distant à Home Assistant ne publie pas automatiquement l'API pour un client iOS. Ce client utilise sa propre URL et un jeton Bearer ; le secret Ingress reste réservé au proxy Home Assistant.
+To access Docker directly from outside your LAN, use a VPN or an HTTPS URL through a reverse proxy. Remote Home Assistant access does not automatically expose the API for a standalone iOS client. The client needs its own server URL and Bearer token; the Ingress secret is reserved for the Home Assistant proxy.
 
-## Développement et vérifications
+## Development and testing
 
-Python 3.12 minimum, un processus serveur. Les sessions et tâches d'import sont locales au processus ; ne pas ajouter plusieurs workers.
+Requires Python 3.12 or later and a single server process. Sessions and import jobs are local to that process; do not configure multiple workers.
 
 ```bash
 python -m venv .venv
@@ -146,7 +146,7 @@ ruff check kodi_library tests
 ruff format --check kodi_library tests
 ```
 
-Vérification navigateur avec un catalogue synthétique, sans données personnelles :
+Browser testing uses a synthetic catalog without personal data:
 
 ```bash
 pip install -e '.[dev,browser]'
@@ -154,66 +154,66 @@ playwright install chromium
 PYTHONPATH=. python tests/browser/check_catalogue.py
 ```
 
-Les tests utilisent un XML synthétique et des connexions simulées ; aucun export privé, mot de passe ni base Kodi ne figure dans le dépôt. La première validation réelle de MariaDB, de Docker sur le NAS et de hass_ingress reste à réaliser sur l'installation cible. Ce dépôt fournit un service Docker autonome, pas encore une intégration HA installable ni un add-on Supervisor.
+Tests use synthetic XML and simulated connections. No private export, password, or Kodi database is included in the repository. Real-world MariaDB, NAS Docker, and hass_ingress configuration must be validated on the target installation. The repository provides a standalone Docker service, not an installable Home Assistant integration or Supervisor add-on.
 
-## Personnes, portraits et bandes-annonces
+## Cast, portraits, and trailers
 
-La fiche distingue casting, réalisation, scénario, production, composition, photographie et autres fonctions. Kodi fournit les rôles, réalisateurs/scénaristes et portraits présents dans sa base. Les crédits/portraits exportés par CLZ et ses liens YouTube sont importés lorsqu'ils existent. L'export initial fourni contient des sections de casting vides : les images visibles sur CLZ Cloud ne sont pas incluses dans cet XML.
+Media details distinguish cast, directing, writing, production, composing, cinematography, and other credits. Kodi provides roles, directors/writers, and portraits already available in its database. CLZ-exported credits/portraits and YouTube links are imported when present. The original sample export has empty cast sections: images visible in CLZ Cloud are not included in that XML.
 
-Pour compléter automatiquement les films et séries depuis TMDB, renseigner dans `.env` le **API Read Access Token** de [votre compte TMDB](https://www.themoviedb.org/settings/api), puis exécuter `sh ./rebuild.sh`. La **clé API v3** est également acceptée dans ce champ. Le mot de passe du compte ne convient pas.
+To enrich movies and TV shows automatically with TMDB, place the **API Read Access Token** from [your TMDB account](https://www.themoviedb.org/settings/api) in `.env`, then run `sh ./rebuild.sh`. An **API v3 key** is also accepted in the same setting. Your TMDB account password is not valid here.
 
 ```dotenv
-TMDB_API_TOKEN=votre_jeton_de_lecture_TMDB
+TMDB_API_TOKEN=your_TMDB_read_access_token
 ```
 
-Dans **Paramètres → Métadonnées et portraits · TMDB**, l'interface indique si TMDB est configuré et propose **Tester la connexion TMDB**. Les erreurs de clé refusée, de réseau ou de limite de requêtes sont explicites. L'absence de TMDB est aussi indiquée dans chaque fiche. Activer TMDB ne nécessite aucune réimportation du catalogue : rouvrir la fiche suffit lorsque son identifiant IMDb/TMDB existe déjà.
+Under **Settings → Metadata and portraits · TMDB**, the UI reports whether TMDB is configured and offers **Test TMDB connection**. Invalid credentials, network problems, and rate limits produce explicit errors. Each media page also indicates when TMDB is unavailable. Enabling TMDB does not require reimporting the catalog: reopening a media page is sufficient when it already has an IMDb/TMDB identifier.
 
-L'enrichissement est déclenché à l'ouverture d'une fiche par un administrateur, à partir de l'identifiant IMDb/TMDB du média. Il récupère acteurs, fonctions, portraits et bandes-annonces YouTube, sans rapprochement approximatif par titre. Les noms **et portraits** ouvrent une fiche TMDB/IMDb ; sinon un lien explicitement nommé « Recherche IMDb » est disponible. Le bouton YouTube est placé en haut de la fiche : il ouvre directement une bande-annonce unique, propose un choix si plusieurs sont disponibles et lance une recherche YouTube si aucune vidéo n'a été fournie.
+An administrator opening a media page triggers enrichment using the title's IMDb/TMDB identifier. The process fetches cast, crew, portraits, and YouTube trailers without fuzzy title matching. **Names and portraits** link to TMDB/IMDb profiles; otherwise an explicitly labeled **IMDb search** link is provided. The YouTube button appears at the top of the media page: it opens the only trailer directly, lets you choose when several are available, or searches YouTube if no trailer was supplied.
 
-Les métadonnées restent dans SQLite pendant les redémarrages et synchronisations. Elles sont réutilisées pendant 30 jours, puis renouvelées à la prochaine ouverture. Le bouton **Rafraîchir les métadonnées TMDB** force leur renouvellement et invalide les images concernées dans le cache ; une panne conserve les informations précédentes. Les portraits utilisent le même proxy authentifié, cache 30 jours/512 MiB et règles de sécurité que les pochettes. Les clients API peuvent déclencher l'enrichissement sans utiliser le front. TMDB reste facultatif : la consultation des données importées/mises en cache fonctionne sans réseau ni jeton TMDB.
+Metadata persists in SQLite across restarts and synchronization. It is reused for 30 days and refreshed at the next opening afterward. **Refresh TMDB metadata** forces an update and invalidates affected cached images; if a request fails, previously saved information is retained. Portraits use the same authenticated image proxy, 30-day/512 MiB cache, and security checks as posters. API clients can request enrichment independently of the web frontend. TMDB is optional: imported or cached content remains accessible without network access or a TMDB token.
 
-Le navigateur mémorise la recherche, les filtres, le tri et son sens, le mode d'affichage et le masquage des filtres. Les facettes retirées du catalogue sont ignorées au rechargement. Le défilement du catalogue est bloqué pendant l'ouverture d'une fiche ou d'une liste et retrouve sa position à la fermeture ; le défilement reste indépendant dans les dialogues imbriqués.
+The browser remembers search terms, filters, sort direction, view mode, and other preferences. Facets that no longer exist in the catalog are ignored on reload. Background catalog scrolling is locked while media details or a list are open and its position is restored on close; nested dialogs have independent scrolling.
 
-## Notes, visionnage et listes
+## Ratings, watch status, and lists
 
-En haut de la fiche, l'étoile permet de modifier **votre note sur 10** au survol, au clic ou au clavier ; une étoile ou le curseur par demi-point enregistre immédiatement la note. La pastille **Vu / Non vu** bascule et enregistre le statut au clic, sans bouton de sauvegarde. Ces valeurs personnelles sont partagées par les utilisateurs de cette installation et conservées dans SQLite ; elles prennent priorité sur les imports. Une note vide ou « Depuis les sources » rétablit la valeur importée. La note publique IMDb/Kodi, les compteurs de lecture et les fichiers sources restent des informations importées : les éditions personnelles ne sont pas réécrites dans MariaDB ou CLZ. Aucun nouveau serveur de base de données n'est requis.
+At the top of each media page, the star control lets you set **your personal rating out of 10** using hover, click, or keyboard input; a star or half-point slider saves immediately. The **Watched / Unwatched** badge toggles and saves the status on click without a separate Save button. These personal values are shared by users of the installation, persist in SQLite, and take precedence over imports. Clearing a rating or choosing **From sources** restores the imported value. Public IMDb/Kodi ratings, play counts, and source files remain imported information: personal edits do not write back to MariaDB or CLZ. No additional database server is required.
 
-Dans le catalogue, la zone **Listes personnalisées** propose **＋ Créer une liste** et **Ouvrir mes listes**. Le bouton **Mes listes** reste accessible dans l'en-tête. Créer une liste ouvre directement le formulaire de nom ; ce formulaire est aussi visible dès la première ouverture quand aucune liste n'existe. Utiliser un accès administrateur pour créer ou modifier : un accès de lecture affiche une explication dans le dialogue.
+In the catalog, the **Custom lists** section offers **＋ Create a list** and **Open my lists**. **My lists** also remains accessible in the header. Creating a list opens the name form directly; the same form appears on first opening when no list exists. Administrator access is required to create or edit lists; read-only access displays an explanation in the dialog.
 
-**Mes listes** permet de créer, renommer et supprimer des listes, rechercher des **films ou séries** à ajouter avec **＋ Ajouter des médias**, retirer des éléments et les déplacer avec ↑/↓ en mode **Ordre manuel, croissant**. Une fiche dispose également d'un bouton **＋ Ajouter à une liste**, avec création de liste directement depuis ce dialogue ; les noms des listes déjà associées sont cliquables. La dernière liste consultée et son tri sont mémorisés sur le navigateur. Les tris par titre, année, date d'ajout, note publique et note personnelle sont des vues de la liste et ne modifient pas l'ordre manuel enregistré. Les listes ont une pagination et un numéro de révision pour éviter qu'une autre modification soit écrasée lors d'un réordonnancement. Elles sont indépendantes des collections/coffrets importés de CLZ.
+**My lists** supports creating, renaming, and deleting lists; searching for **movies or TV shows** to add via **＋ Add media**; removing items; and moving them with ↑/↓ in **Manual order, ascending** mode. A media page also has a **＋ Add to list** button, including the option to create a list from that dialog; existing associated list names are clickable. The last opened list and its sorting preference are saved in the browser. Sorting by title, year, date added, public rating, or personal rating changes the view only and does not modify the saved manual order. Lists use pagination and revision numbers to prevent concurrent changes from silently overwriting a reordering operation. They are separate from imported CLZ collections and box sets.
 
-Les UUID des œuvres conservent les associations lors d'une synchronisation normale. Si un média disparaît de toutes les sources, il est retiré de ses listes ; supprimer une liste ne supprime aucun média. La mise à jour migre automatiquement SQLite du schéma 1 vers 2. Sauvegarder le volume `data` avant de revenir à une version antérieure : elle ne peut pas lire le schéma 2.
+Work UUIDs preserve list associations during normal synchronization. If a media item disappears from every source, it is removed from its lists; deleting a list does not delete any media. Upgrading automatically migrates SQLite from schema version 1 to version 2. Back up the `data` volume before downgrading: older releases cannot read schema version 2.
 
-## Chemins Kodi et lecture
+## Kodi file paths and playback
 
-Les chemins complets des fichiers sont visibles dans la fiche, avec **Copier le chemin** (sur HTTP, un dialogue de copie remplace l'accès au presse-papiers). **Lire sur Kodi** contacte l'instance choisie depuis le back-end, et permet de sélectionner le fichier/version ; la sélection explicite ouvre ce chemin exact, même pour une version par défaut. Kodi utilise ses propres accès au NAS.
+Full file paths are visible on media pages, with a **Copy path** action (on HTTP, a copy dialog is shown instead of clipboard access). **Play on Kodi** contacts the selected player from the backend and lets you select the file/version. Explicit selection opens that exact path, even for a default version. Kodi uses its own NAS credentials and file access.
 
-Sans instance associée à la source, la fiche propose **Configurer une instance Kodi**. Le bouton avec le logo Kodi ouvre les options de lecture : instance, fichier/version et reprise. Le test de l'API HTTP et des droits de lecture est disponible sur les instances enregistrées dans **Paramètres**. Les erreurs de lancement restent visibles dans la fenêtre de lecture. Un envoi réussi signifie que Kodi a accepté la commande ; l'accès au fichier dépend encore de la configuration et des identifiants NAS de Kodi.
+If no player is associated with the source, the media page offers **Configure a Kodi player**. The Kodi-logo button opens playback options: player, file/version, and resume position. HTTP API and file-read permission tests are available for saved players under **Settings**. Playback launch errors remain visible in the playback dialog. A successful command means Kodi accepted it; access to the file still depends on Kodi's NAS configuration and permissions.
 
-Un navigateur ne fournit pas de lecture SMB/NFS native : un lien vers ces protocoles dépend d'un gestionnaire installé sur le poste et de ses accès au partage. `file://` est aussi restreint depuis une page web. Aucun lien de lecture locale universel n'est proposé ; le chemin peut être ouvert dans un lecteur disposant des droits NAS. Cette version ne diffuse/transcode pas les fichiers vidéo via HTTP. [Gestionnaires de protocoles dans les navigateurs](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Player.Open Kodi](https://kodi.wiki/view/JSON-RPC_API/v13.11).
+Web browsers do not provide native SMB/NFS playback. Opening these protocol links depends on a local protocol handler and its share permissions. `file://` links are also restricted from web pages. There is no universal local-playback link; users can open the path in a compatible player with NAS access. This release does **not** stream or transcode video files over HTTP. [Browser protocol handlers](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Kodi Player.Open](https://kodi.wiki/view/JSON-RPC_API/v13.11).
 
-## Nom stable du conteneur sur Synology
+## Stable container name on Synology
 
-Les fichiers `compose.yaml` et `compose.host.yaml` définissent désormais `container_name: ${KODI_LIBRARY_CONTAINER_NAME:-home-kodi-library}` pour obtenir un nom lisible dans Synology Container Manager lors des prochains déploiements. Pour personnaliser ce nom sans modifier les fichiers versionnés, renseigner `KODI_LIBRARY_CONTAINER_NAME` dans `.env`. Cela n'affecte ni les volumes, ni le mode réseau choisi ; un changement de nom Compose peut néanmoins nécessiter une recréation du conteneur. Si un autre conteneur possède déjà ce nom, le nouveau déploiement échouera jusqu'à résolution du conflit. Préserver `COMPOSE_FILE` pour conserver notamment le mode `host` lorsqu'il est utilisé pour l'accès local sans jeton.
+`compose.yaml` and `compose.host.yaml` define `container_name: ${KODI_LIBRARY_CONTAINER_NAME:-home-kodi-library}`, giving the container a recognizable name in Synology Container Manager on subsequent deployments. To customize it without editing tracked files, set `KODI_LIBRARY_CONTAINER_NAME` in `.env`. This does not affect volumes or the selected networking mode, although a Compose container-name change can require recreation. If another container already uses the name, deployment fails until the conflict is resolved. Preserve `COMPOSE_FILE` to keep host networking where it is used for token-free local access.
 
-## Accès local sans jeton
+## Local access without a token
 
-Par défaut, l'authentification reste obligatoire. Pour autoriser explicitement votre réseau local en IPv4/IPv6, adapter ces plages dans `.env` :
+Authentication is required by default. To explicitly trust your local IPv4/IPv6 networks, configure their ranges in `.env`:
 
 ```dotenv
 LOCAL_AUTH_NETWORKS='["192.168.1.0/24"]'
 TRUSTED_PROXY_NETWORKS=[]
 ```
 
-Les clients de ces plages accèdent directement au front et à l'API avec les droits administrateur, sans saisir de jeton. Les clients hors plage continuent d'utiliser `API_TOKEN`/`API_READ_TOKEN` (le premier reste obligatoire). Un Bearer explicitement incorrect est refusé, et un Bearer de lecture conserve ses droits restreints, même depuis le LAN. L'accès local ne crée pas de cookie réutilisable hors du réseau autorisé. Pour protéger les écritures du navigateur contre les requêtes provenant d'autres sites, le front récupère automatiquement un jeton **CSRF** via `GET /api/v1/auth/session` ; les clients locaux sans Bearer doivent le transmettre dans `X-CSRF-Token` pour écrire. Il ne remplace pas le jeton d'accès externe.
+Clients in these ranges can access the frontend and API directly with administrator rights without entering a token. Clients outside them must still use `API_TOKEN`/`API_READ_TOKEN` (the former remains mandatory). An explicitly incorrect Bearer token is rejected, and a read-only Bearer token keeps its restricted permissions even on the LAN. Local access does not create a cookie that can be reused outside the allowed network. To protect browser writes against cross-site requests, the frontend automatically obtains a **CSRF** token through `GET /api/v1/auth/session`; tokenless local API clients must supply it in `X-CSRF-Token` for write operations. It does not replace the external access token.
 
-Le Docker désactive la réécriture automatique de l'adresse client par Uvicorn (`--no-proxy-headers`). En accès direct, seule l'adresse du pair TCP compte ; `X-Forwarded-For`, `X-Real-IP` et `Forwarded` envoyés par le client ne l'autorisent pas. Selon le réseau Docker/NAS, le pair observé peut être une passerelle : **ne pas autoriser cette passerelle pour tous les clients**.
+Docker disables Uvicorn's automatic client-address rewriting (`--no-proxy-headers`). With direct access, only the TCP peer address counts; client-supplied `X-Forwarded-For`, `X-Real-IP`, and `Forwarded` headers cannot grant access. Depending on Docker/NAS networking, the observed peer may be a gateway: **do not trust that gateway on behalf of all clients**.
 
-### Docker/Synology masque l'adresse du PC
+### Docker/Synology hides the computer's IP address
 
-Si `sudo docker compose exec library printenv LOCAL_AUTH_NETWORKS` affiche la bonne plage mais que `GET /api/v1/auth/session` est refusé avec une adresse comme `172.25.0.1` dans les logs, l'application reçoit l'adresse de la passerelle Docker. En accès direct au NAS Linux/Synology, utiliser le fichier autonome `compose.host.yaml` pour supprimer cette traduction d'adresse. Il ne se superpose pas à `compose.yaml` : en réseau `host`, le serveur écoute directement le port `PORT` du NAS (8099 par défaut), sans publication de port Docker.
+If `sudo docker compose exec library printenv LOCAL_AUTH_NETWORKS` shows the correct subnet but `GET /api/v1/auth/session` is rejected with an address such as `172.25.0.1` in the logs, the app is seeing the Docker gateway IP. For direct Linux/Synology NAS access, use the standalone `compose.host.yaml` to avoid that address translation. Do not layer it on top of `compose.yaml`: in `host` network mode, the server listens directly on the NAS `PORT` (8099 by default), without Docker port publishing.
 
-Ajouter à `.env` :
+Add to `.env`:
 
 ```dotenv
 COMPOSE_FILE=compose.host.yaml:compose.dns.yaml
@@ -221,12 +221,12 @@ LOCAL_AUTH_NETWORKS='["192.168.1.0/24"]'
 TRUSTED_PROXY_NETWORKS=[]
 ```
 
-Puis lancer `sh ./rebuild.sh`. Le script et les commandes ordinaires `sudo docker compose ...` utilisent cette sélection de fichiers ; les prochaines mises à jour la conservent. Ouvrir ensuite directement `http://IP_DU_NAS:8099` et recharger la page. Les clients hors de la plage restent soumis au jeton. `PORT` et `BIND_ADDRESS` sont conservés, ainsi que les données et les paramètres de sécurité du conteneur. Si des volumes de pochettes ont été ajoutés dans `compose.yaml`, les reporter dans `compose.host.yaml` avant de changer de mode. Pour revenir au mode bridge, remplacer la ligne par `COMPOSE_FILE=compose.yaml:compose.dns.yaml` et relancer le script.
+Then run `sh ./rebuild.sh`. The script and regular `sudo docker compose ...` commands use this selection of files and retain it for later updates. Open `http://NAS_IP:8099` directly and refresh the page. Clients outside the allowed subnet still need a token. `PORT`, `BIND_ADDRESS`, data, and container security settings are retained. If you added poster volumes to `compose.yaml`, copy those mounts into `compose.host.yaml` before switching modes. To return to bridged networking, change the line to `COMPOSE_FILE=compose.yaml:compose.dns.yaml` and rerun the script.
 
-Un reverse proxy masque lui aussi l'adresse du navigateur : le mode `host` ne remplace pas sa configuration. Si le site est ouvert via un domaine/proxy, tester d'abord l'URL directe ci-dessus, puis déclarer uniquement le proxy réellement utilisé comme décrit ci-dessous.
+A reverse proxy also hides the browser's IP address: host networking does not replace proper proxy configuration. If you use a domain/proxy, test the direct URL above first, then trust only the actual proxy as described below.
 
-Si un reverse proxy est réellement utilisé, déclarer uniquement son adresse exacte, par exemple `TRUSTED_PROXY_NETWORKS='["172.18.0.2/32"]'`, et le configurer pour remplacer ou compléter correctement `X-Forwarded-For` avec l'adresse de son client. Le back-end traverse la chaîne de droite à gauche jusqu'au premier pair non approuvé. Une chaîne absente, invalide ou composée uniquement de proxys approuvés impose le jeton. Les plages `/0` sont refusées. Ne pas déclarer un ensemble de clients ordinaires comme proxys approuvés. Avec un lancement Uvicorn personnalisé, conserver impérativement `--no-proxy-headers` ; en entrée HTTPS derrière proxy, configurer également `COOKIE_SECURE=true`.
+When using a reverse proxy, declare only its exact address, for example `TRUSTED_PROXY_NETWORKS='["172.18.0.2/32"]'`, and configure it to correctly replace or append the real client IP in `X-Forwarded-For`. The backend walks the chain from right to left until it finds the first untrusted peer. Missing, invalid, or entirely trusted-proxy chains require a token. `/0` network ranges are rejected. Do not declare ordinary client subnets as trusted proxies. When running Uvicorn manually, keep `--no-proxy-headers` enabled; for HTTPS through a reverse proxy also set `COOKIE_SECURE=true`.
 
-## Application native iOS / iPadOS
+## Native iOS / iPadOS app
 
-Le dossier [`ios/`](ios/) fournit une application **SwiftUI native** utilisant directement l'API REST v1 : catalogue (pochettes/liste), recherche et filtres cumulables, fiches et épisodes, données Kodi/CLZ, notes et état vu, casting, bandes-annonces, listes personnelles, contrôle Kodi et administration des sources et imports. Le serveur Docker et l'interface web sont conservés. Le jeton Bearer est stocké dans le trousseau iOS. Voir [les instructions XcodeGen et la connexion sécurisée](ios/README.md).
+The [`ios/`](ios/) directory contains a **native SwiftUI app** that talks directly to REST API v1: catalog (posters/list), search and combinable filters, movies and episodes, Kodi/CLZ data, ratings and watch status, cast, trailers, personal lists, Kodi playback control, and administration of sources and imports. Docker and the web interface continue to work independently. The Bearer token is stored in the iOS Keychain. See the [XcodeGen build and secure connection instructions](ios/README.md).
