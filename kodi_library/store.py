@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from .connectors.base import Record
+from .connectors.collection_xml import COLLECTION_TYPES, SOURCE_TYPES
 from .media_formats import canonical_format, canonical_source_format
 from .people import person_view, youtube_url
 from .utils import fold, now
@@ -459,11 +460,11 @@ class Store:
                 return candidate, 0
 
         # No common external ID: only an *unambiguous* exact title (localized
-        # or original) AND a matching year can join a Kodi and a CLZ entry.
+        # or original) AND a matching year can join entries from different providers.
         # Never use this fallback after conflicting/ambiguous identifier matches.
         if (
             not candidates
-            and source_type in ("kodi", "clz")
+            and source_type in SOURCE_TYPES
             and record.kind == "movie"
             and record.year is not None
         ):
@@ -486,7 +487,7 @@ class Store:
                             (row["id"],),
                         )
                     }
-                    if source_type in kinds or not kinds.intersection({"kodi", "clz"}):
+                    if source_type in kinds or not kinds.intersection(SOURCE_TYPES):
                         continue
                     if cls._ids_compatible(new_ids, cls._work_ids(conn, row["id"])):
                         matches.append(row["id"])
@@ -499,7 +500,7 @@ class Store:
 
     @classmethod
     def _reconcile_titles(cls, conn: sqlite3.Connection) -> int:
-        """Safely reunite legacy Kodi and CLZ works using IDs or titles/years.
+        """Safely reunite works from different providers using IDs or titles/years.
 
         Skip ambiguous titles, conflicting identifiers and same-provider pairs.
         Preserve notes, watch overrides, playlist membership and the surviving ID.
@@ -516,7 +517,7 @@ class Store:
             types[row["work_id"]].add(row["type"])
         lookup: dict[tuple[int, str], set[str]] = defaultdict(set)
         for row in rows:
-            if types[row["id"]] not in ({"kodi"}, {"clz"}):
+            if len(types[row["id"]]) != 1 or not types[row["id"]].issubset(SOURCE_TYPES):
                 continue
             for key in cls._title_keys(row["title"], row["original_title"]):
                 lookup[(row["year"], key)].add(row["id"])
@@ -536,7 +537,7 @@ class Store:
             "SELECT i.kind,i.namespace,i.value,i.work_id FROM identifiers i "
             "JOIN works w ON w.id=i.work_id"
         ):
-            if types[row["work_id"]] in ({"kodi"}, {"clz"}):
+            if len(types[row["work_id"]]) == 1 and types[row["work_id"]].issubset(SOURCE_TYPES):
                 identities[(row["kind"], row["namespace"], row["value"])].add(row["work_id"])
         id_pairs = set()
         for ids in identities.values():
@@ -562,7 +563,7 @@ class Store:
                 cls._work_ids(conn, left), cls._work_ids(conn, right)
             ) or not cls._ids_compatible(cls._work_ids(conn, right), cls._work_ids(conn, left)):
                 continue
-            # Keep the identity already referenced by playlists, then CLZ.
+            # Keep the identity already referenced by playlists, then imported collections.
             priority = {}
             for work_id in (left, right):
                 priority[work_id] = (
@@ -575,7 +576,7 @@ class Store:
                         ).fetchone()
                         is not None
                     ),
-                    int("clz" in types[work_id]),
+                    int(bool(types[work_id].intersection(COLLECTION_TYPES))),
                 )
             keep = max((left, right), key=lambda work_id: priority[work_id])
             drop = right if keep == left else left
@@ -1259,6 +1260,8 @@ class Store:
             "episodes": (80, 95),
             "verifying_library": (95, 97),
             "parsing_clz": (2, 92),
+            "parsing_mymovies": (2, 92),
+            "parsing_filmotech": (2, 92),
             "publishing": (97, 99),
         }.get(phase, (0, 0))
         current = max(0, int(job.get("progress_current") or 0))

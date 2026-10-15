@@ -3,6 +3,14 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Importer une collection": "Import a collection",
+  "Type de collection": "Collection type",
+  "Export XML de la collection": "Collection XML export",
+  "Import de collection en cours": "Collection import in progress",
+  "Analyse du fichier MyMovies": "Parsing MyMovies file",
+  "Analyse du fichier Filmotech": "Parsing Filmotech file",
+  "Un nouvel import remplace uniquement la collection choisie et conserve les autres sources. Utilisez un export XML Filmotech ou My Movies Collection Management.": "A new import replaces only the selected collection and preserves other sources. Use a Filmotech or My Movies Collection Management XML export.",
+  "Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.": "This record comes only from imported collections. No Kodi file is currently linked to it in the catalog.",
   "Préférences": "Preferences",
   "Langue": "Language",
   "Choisissez la langue de l’interface. Ce choix est mémorisé dans ce navigateur.": "Choose the interface language. Your choice is saved in this browser.",

@@ -195,3 +195,8 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .settings-language{display:flex;flex-direction:column;gap:6px;min-width:142px;font-size:12px;color:var(--muted)}
 .settings-language select{width:100%;min-height:40px;margin:0;color:var(--text);background:var(--surface)}
 @media(max-width:520px){.settings-preferences{align-items:stretch;flex-direction:column;gap:12px}.settings-language{min-width:0;width:100%}}
+
+/* Shared collection provider icons in settings, cards, and editions. */
+.source-icon{display:inline-block;width:18px;height:18px;flex-shrink:0;vertical-align:middle}
+.source-icon-clz{color:#65d6b0}.source-icon-mymovies{color:#65a8ff}.source-icon-filmotech{color:#ffb05b}
+.source-badge{display:inline-flex;align-items:center;gap:4px}.source-badge .source-icon{width:14px;height:14px}

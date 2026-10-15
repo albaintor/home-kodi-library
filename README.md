@@ -8,13 +8,13 @@ Media Catalog is a self-hosted catalog with a responsive **web interface** and a
 
 ## Highlights
 
-- **Combine** Kodi (read-only MariaDB synchronization) and CLZ Movies (XML import), with editions grouped by title.
+- **Combine** Kodi (read-only MariaDB synchronization) and CLZ Movies, MyMovies, or Filmotech (XML imports), with editions grouped by title.
 - **Explore** movies, TV shows and episodes with posters, cast, formats, advanced filters and optional TMDB metadata.
 - **Organize** your collection using custom lists, personal ratings and watched status.
 - **Play** selected titles on an existing Kodi player, including playback resume.
 - **Access** the same catalog on the web, iOS/iPadOS or through Home Assistant.
 
-The server uses its own **SQLite database**. Importing Kodi content requires an existing external Kodi MyVideos MariaDB/MySQL database, but browsing does not require a Kodi player to be running. CLZ-only catalogs do not require Kodi.
+The server uses its own **SQLite database**. Importing Kodi content requires an existing external Kodi MyVideos MariaDB/MySQL database, but browsing does not require a Kodi player to be running. Collection-only catalogs do not require Kodi.
 
 ### Web interface
 
@@ -37,7 +37,7 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 ## Get started
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
-2. Open the web interface to add a Kodi source or import a CLZ Movies XML export.
+2. Open the web interface to add a Kodi source or import a CLZ Movies, MyMovies, or Filmotech XML export.
 3. Connect the **Media Catalog** iOS/iPadOS app with a short-lived pairing code from the web interface.
 
 ## Documentation
@@ -60,3 +60,22 @@ If you have any issues check first if it has not already been reported then [rai
 
 
 
+
+### CLZ, MyMovies and Filmotech imports
+
+In Settings, select the collection type, choose an existing collection (or create
+one), and upload its XML export. The native iOS application uses the same import
+endpoints: `POST /api/v1/imports/clz`, `/imports/mymovies`, and `/imports/filmotech`.
+MyMovies refers to the XML collection export from My Movies Collection Management;
+Filmotech uses its XML film export, rather than a database backup or PDF report.
+
+Each provider has a distinct icon in Settings, catalog cards and movie editions.
+Imports replace only the selected collection. Matching IMDb/TMDb identifiers (or
+an unambiguous title and year across providers) group editions on the same record.
+Invalid, empty, unsafe XML and duplicate entry IDs leave the previous collection
+intact. Local cover paths are still subject to the server's artwork access rules;
+exporting XML does not upload separate image files.
+
+The parser fixtures in `tests/fixtures/filmotech.xml` and `mymovies.xml` are
+representative test documents. Validate an export from your application version
+before replacing a large collection; provider-specific XML variants may differ.

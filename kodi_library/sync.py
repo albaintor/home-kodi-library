@@ -8,6 +8,7 @@ from typing import Any
 
 from .connectors.base import ConnectorError
 from .connectors.clz import parse_clz
+from .connectors.collection_xml import COLLECTION_TYPES, parse_collection
 from .connectors.kodi import KodiConnector
 
 LOGGER = logging.getLogger(__name__)
@@ -31,9 +32,9 @@ class SyncManager:
         if not source:
             raise ValueError("Unknown source.")
         if xml is None and source["type"] != "kodi":
-            raise ValueError("CLZ sources are refreshed by uploading an XML export.")
-        if xml is not None and source["type"] != "clz":
-            raise ValueError("XML imports require a CLZ source.")
+            raise ValueError("Collection sources are refreshed by uploading an XML export.")
+        if xml is not None and source["type"] not in COLLECTION_TYPES:
+            raise ValueError("XML imports require a collection source.")
         if not source["enabled"]:
             raise ValueError("Enable the source before synchronizing it.")
         # No await between checking again and claiming the source.
@@ -54,8 +55,11 @@ class SyncManager:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             if xml is not None:
-                await asyncio.to_thread(self.store.update_job_progress, job["id"], "parsing_clz")
-                records = await asyncio.to_thread(parse_clz, xml)
+                await asyncio.to_thread(self.store.update_job_progress, job["id"], f"parsing_{source['type']}")
+                if source["type"] == "clz":
+                    records = await asyncio.to_thread(parse_clz, xml)
+                else:
+                    records = await asyncio.to_thread(parse_collection, xml, source["type"])
                 database = None
             else:
                 connector = KodiConnector(

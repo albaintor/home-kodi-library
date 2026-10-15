@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Titles><Title><ID>42</ID><LocalTitle>Le Voyage</LocalTitle><OriginalTitle>The Journey</OriginalTitle>
+<ProductionYear>2020</ProductionYear><RunningTime>123</RunningTime><Description>Un voyage &amp; une rencontre.</Description>
+<Type>Blu-ray</Type><Genres><Genre>Drame</Genre><Genre>Aventure</Genre></Genres>
+<IMDB>tt1234567</IMDB><Barcode>1234567890123</Barcode><Rating>7.5</Rating>
+<PersonalData><Watched>true</Watched><Rating>8</Rating><Added>2024-01-02</Added></PersonalData>
+<Persons><Person Type="1"><Name>Alice Example</Name><Role>Lead</Role></Person><Person Type="2"><Name>Charlie Example</Name></Person></Persons>
+<Covers><FrontMedium>https://example.org/cover.jpg</FrontMedium></Covers>
+</Title></Titles>

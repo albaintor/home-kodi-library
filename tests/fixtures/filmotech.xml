@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Filmotech><Films><Film ID="42">
+<TitreVF>Le Voyage</TitreVF><TitreVO>The Journey</TitreVO><Annee>2020</Annee>
+<Duree>123</Duree><Synopsis>Un voyage &amp; une rencontre.</Synopsis>
+<Support>Blu-ray</Support><Genre>Drame / Aventure</Genre><Note>8</Note>
+<IMDB>tt1234567</IMDB><CodeBarres>1234567890123</CodeBarres>
+<Acteurs>Alice Example&#13;Bob Example</Acteurs><Realisateurs>Charlie Example</Realisateurs>
+<Vu>Oui</Vu><Edition>Collector</Edition><Audio>Dolby Atmos</Audio>
+</Film></Films></Filmotech>

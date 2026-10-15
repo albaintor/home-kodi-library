@@ -61,7 +61,7 @@ class SourceConfig(StrictModel):
 
 class SourceInput(StrictModel):
     name: str = Field(min_length=1, max_length=120)
-    type: Literal["kodi", "clz"]
+    type: Literal["kodi", "clz", "mymovies", "filmotech"]
     config: SourceConfig = Field(default_factory=SourceConfig)
     enabled: bool = True
 
@@ -93,7 +93,7 @@ class ConnectionResult(BaseModel):
 class SourceView(BaseModel):
     id: str
     name: str
-    type: Literal["kodi", "clz"]
+    type: Literal["kodi", "clz", "mymovies", "filmotech"]
     enabled: bool
     config: dict[str, Any]
     last_sync: str | None = None
@@ -109,7 +109,7 @@ class ArtworkLinks(BaseModel):
 class MediaSource(BaseModel):
     id: str
     name: str
-    type: Literal["kodi", "clz"]
+    type: Literal["kodi", "clz", "mymovies", "filmotech"]
     type_count: int = 1
 
 

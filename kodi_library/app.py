@@ -297,7 +297,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         genre: str | None = Query(None, max_length=120),
         format: list[str] | None = Query(None),
         collection: str | None = Query(None, max_length=200),
-        source_type: Literal["kodi", "clz"] | None = None,
+        source_type: Literal["kodi", "clz", "mymovies", "filmotech"] | None = None,
         source_id: str | None = None,
         parent_id: str | None = None,
         year: int | None = Query(None, ge=1800, le=2200),
@@ -731,7 +731,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Imports"],
         dependencies=[Depends(writable)],
     )
-    async def import_clz(file: UploadFile = File(...), source_id: str = Form(...)):
+    @app.post(
+        API + "/imports/mymovies",
+        response_model=JobView,
+        status_code=202,
+        tags=["Imports"],
+        dependencies=[Depends(writable)],
+    )
+    @app.post(
+        API + "/imports/filmotech",
+        response_model=JobView,
+        status_code=202,
+        tags=["Imports"],
+        dependencies=[Depends(writable)],
+    )
+    async def import_collection(
+        request: Request,
+        file: UploadFile = File(...), source_id: str = Form(...),
+    ):
+        collection_type = request.url.path.rsplit("/", 1)[-1]
+        source = await asyncio.to_thread(store.source, source_id)
+        if not source:
+            raise HTTPException(404, "Unknown source.")
+        if source["type"] != collection_type:
+            raise HTTPException(422, "The export type must match the selected collection source.")
         chunks, length = [], 0
         while chunk := await file.read(65536):
             length += len(chunk)
