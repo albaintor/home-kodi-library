@@ -747,7 +747,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     async def import_collection(
         request: Request,
-        file: UploadFile = File(...), source_id: str = Form(...),
+        file: UploadFile = File(...),
+        source_id: str = Form(...),
     ):
         collection_type = request.url.path.rsplit("/", 1)[-1]
         source = await asyncio.to_thread(store.source, source_id)

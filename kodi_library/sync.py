@@ -55,7 +55,9 @@ class SyncManager:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             if xml is not None:
-                await asyncio.to_thread(self.store.update_job_progress, job["id"], f"parsing_{source['type']}")
+                await asyncio.to_thread(
+                    self.store.update_job_progress, job["id"], f"parsing_{source['type']}"
+                )
                 if source["type"] == "clz":
                     records = await asyncio.to_thread(parse_clz, xml)
                 else:
