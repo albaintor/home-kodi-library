@@ -202,6 +202,14 @@ def main():
                 expect(page.locator(".view-switch")).to_be_visible()
                 expect(page.locator("#filters")).to_be_hidden()
                 expect(page.locator("#search")).to_be_visible()
+                expect(page.locator("#clear-search")).to_be_hidden()
+                page.locator("#search").fill("démonstration")
+                expect(page.locator("#clear-search")).to_be_visible()
+                page.locator("#clear-search").click()
+                expect(page.locator("#search")).to_have_value("")
+                expect(page.locator("#clear-search")).to_be_hidden()
+                expect(page.locator(".media-card")).to_have_count(60)
+                assert "q" not in requests[-1]
                 expect(page.locator("#scan-all-kodi")).to_be_visible()
                 assert page.locator("#search").evaluate(
                     "element => !element.closest('#filters-panel')"
