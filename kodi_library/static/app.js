@@ -160,7 +160,7 @@ function poster(item, detail=false) {
     ? '<span class="state" title="Vu" aria-label="Vu">✓</span>'
     :item.watch_status==='in_progress'
     ? '<span class="state progress" title="En cours" aria-label="En cours">◐</span>':'';
-  return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail?stateIcon:''}${(series?.partial || (progress > 0 && item.watch_status === 'in_progress'))?`<span class="progress-track ${series?.partial?'series-track':''}"><span style="width:${series?.partial?100*series.watched/series.total:progress}%"></span></span>`:''}</div>`;
+  return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail?stateIcon:''}${completion||progress>0&&item.watch_status==='in_progress'?`<span class="progress-track ${series?.partial?'series-track':''}"><span style="width:${series?.partial?100*series.watched/series.total:progress}%"></span></span>`:''}</div>`;
 }
 const formatLogos = {'4K':['4k','video'],'Blu-ray 4K':['bluray4k','disc'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshdma','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio'],'AAC':['aac','audio'],'FLAC':['flac','audio'],'Opus':['opus','audio']};
 
@@ -206,8 +206,9 @@ function detailFormatBadges(item) {
 const personCategories = {cast:'Casting',director:'Réalisation',writer:'Scénario',producer:'Production',composer:'Musique · Composition',photography:'Photographie',crew:'Autres fonctions'};
 function castMarkup(people=[]) {
   const members=list=>`<ul class="cast-grid">${list.map(member=>{
-    const links=member.links||{};const link=links.tmdb||links.imdb||links.imdb_search||`https://www.themoviedb.org/search/person?query=${encodeURIComponent(member.name)}`;
-    return `<li class="cast-member"><a class="person-photo" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="Voir la fiche de ${esc(member.name)}"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="" loading="lazy">`:''}</a><span><a class="person-name" href="${esc(link)}" target="_blank" rel="noopener noreferrer"><strong>${esc(member.name)} ↗</strong></a>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(links).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`;
+    const links=member.links||{};
+    const name=esc(member.name);
+    return `<li class="cast-member"><button type="button" class="person-photo" data-search-person="${name}" aria-label="Rechercher ${name} dans la médiathèque" title="Rechercher les films et séries de ${name}"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="" loading="lazy">`:''}</button><span><button type="button" class="person-name" data-search-person="${name}" title="Rechercher ${name} dans la médiathèque"><strong>${name}</strong></button>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(links).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`;
   }).join('')}</ul>`;
   return Object.entries(personCategories).map(([category,label])=>{
     const group=people.filter(p=>(p.category||'cast')===category); if(!group.length)return '';
@@ -584,6 +585,26 @@ async function initialize() {
     setView(state.view,false); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
+// A cast credit searches the local catalogue (including indexed TMDB credits),
+// not TMDB's remote person page. Clear unrelated filters before searching.
+function searchLocalPerson(name) {
+  const person=String(name||'').trim();
+  if(!person)return;
+  if($('detail-dialog').open)$('detail-dialog').close();
+  for(const id of ['kind','source-type','genre','collection','watch-status']) $(id).value='';
+  state.formats=[];
+  state.recent=false;
+  state.deepSearch=true;
+  $('deep-search').checked=true;
+  $('search').value=person;
+  $('sort').value='title';
+  state.order='asc';
+  $('sort-order').textContent='↑ Croissant';
+  updateFormatSelections();
+  loadMedia();
+  $('search').focus({preventScroll:true});
+  $('search').scrollIntoView({block:'center',behavior:'smooth'});
+}
 function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
 function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
 let pagePosition=null;
@@ -882,6 +903,7 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
+  if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson);return;}
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
   if(button.hasAttribute('data-season')) {

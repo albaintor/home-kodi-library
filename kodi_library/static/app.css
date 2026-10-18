@@ -17,8 +17,10 @@ html.modal-open{overflow:hidden;overscroll-behavior:none}
 html.modal-open body{position:fixed;width:100%;overflow:hidden}
 dialog{overflow:auto;overscroll-behavior:contain}
 dialog::backdrop{background:#080b13e0;backdrop-filter:none}
-.person-name{color:var(--text)}
+.person-name{color:var(--text);display:block;border:0;background:transparent;padding:0;text-align:left;cursor:pointer}
 .person-name:hover{color:var(--accent);text-decoration:underline}
+.person-photo{padding:0;border:0;cursor:pointer}
+.person-photo:focus-visible,.person-name:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
 .play-status{margin-top:12px;white-space:pre-line}
 .metadata-status{padding:15px;border:1px solid var(--border);border-radius:9px;background:var(--bg)}
 

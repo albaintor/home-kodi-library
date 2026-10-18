@@ -356,10 +356,13 @@ def main():
                 ).to_have_count(1)
                 expect(page.locator(".credits-section").last).to_contain_text("MUSIQUE")
                 expect(page.locator(".person-name").first).to_have_attribute(
-                    "href", "https://www.themoviedb.org/person/100"
+                    "data-search-person", "Interprète Exemple 0"
                 )
                 expect(page.locator(".person-photo").first).to_have_attribute(
-                    "href", "https://www.themoviedb.org/person/100"
+                    "data-search-person", "Interprète Exemple 0"
+                )
+                expect(page.locator(".person-photo").first).to_have_attribute(
+                    "aria-label", "Rechercher Interprète Exemple 0 dans la médiathèque"
                 )
                 # Wheel scrolling at a modal edge never moves or loads the catalogue.
                 locked_top = page.locator("body").evaluate("e=>e.style.top")
@@ -692,7 +695,18 @@ def main():
                 expect(english.locator('[data-quick="unwatched"]')).to_have_text("To watch")
                 english.locator(".media-card").first.click()
                 expect(english.locator("#add-to-list")).to_contain_text("Add to a list")
-                english.locator('[data-close="detail-dialog"]').click()
+                # Both portrait and name search local indexed credits, not
+                # the external TMDB person page.
+                english.locator(".person-photo").first.click()
+                expect(english.locator("#detail-dialog")).not_to_be_visible()
+                expect(english.locator("#search")).to_have_value("Interprète Exemple 0")
+                expect(english.locator("#deep-search")).to_be_checked()
+                expect(english.locator(".media-card")).to_have_count(60)
+                english.locator(".media-card").first.click()
+                english.locator(".person-name").first.click()
+                expect(english.locator("#detail-dialog")).not_to_be_visible()
+                expect(english.locator("#search")).to_have_value("Interprète Exemple 0")
+                expect(english.locator(".media-card")).to_have_count(60)
                 english.locator("#connections-button").click()
                 expect(english.locator("#connections-dialog h2")).to_have_text("Settings")
                 expect(english.locator("#settings-preferences-title")).to_have_count(0)
