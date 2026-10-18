@@ -43,6 +43,7 @@ async def scan_until_finished(config: dict) -> None:
                 heartbeat=30,
                 max_msg_size=256_000,
             ) as ws:
+
                 async def rpc(method, rpc_id, params=None):
                     await ws.send_json(
                         {
