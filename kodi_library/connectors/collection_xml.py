@@ -194,7 +194,9 @@ def parse_collection(data: bytes, provider: str) -> list[Record]:
                     "collection_provider": provider,
                     "mymovies_remote_title_id": (
                         value(node, "ID", "TitleID") or node.get("ID") or node.get("id")
-                    ) if provider == "mymovies" else None,
+                    )
+                    if provider == "mymovies"
+                    else None,
                     "mymovies_title": movie_title if provider == "mymovies" else None,
                 },
             )
