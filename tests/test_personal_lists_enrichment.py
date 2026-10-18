@@ -415,3 +415,117 @@ def test_person_identifier_filter_is_exact_and_survives_restart(client, admin):
     assert matched({"person_tmdb_id": "101"}) == {"First film", "TMDB enrichment"}
     store.save_enrichment(identifiers["TMDB enrichment"], {"people": []})
     assert matched({"person_tmdb_id": "101"}) == {"First film"}
+
+
+def test_person_id_includes_unidentified_local_cast_but_not_homonyms(client, admin):
+    store = client.app.state.store
+    source = store.save_source({"name": "Kodi", "type": "kodi"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "with-id",
+                "movie",
+                "Identified film",
+                metadata={"people": [{"name": "Alex Example", "tmdb_id": "101"}]},
+            ),
+            Record(
+                "kodi-only",
+                "movie",
+                "Local Kodi credit",
+                metadata={"people": [{"name": "Alex Example"}]},
+            ),
+            Record(
+                "duplicate-source",
+                "movie",
+                "Enriched local credit",
+                metadata={"people": [{"name": "Alex Example"}]},
+            ),
+            Record(
+                "homonym",
+                "movie",
+                "Other Alex",
+                metadata={"people": [{"name": "Alex Example", "tmdb_id": "202"}]},
+            ),
+            Record(
+                "other",
+                "movie",
+                "Unrelated cast",
+                plot="A story about Alex Example with no matching cast credit.",
+            ),
+        ],
+    )
+    ids = {item["title"]: item["id"] for item in store.media()["items"]}
+    store.save_enrichment(
+        ids["Enriched local credit"],
+        {"people": [{"name": "Alex Example", "tmdb_id": "101"}]},
+    )
+
+    def matching():
+        response = client.get(
+            "/api/v1/media",
+            params={"person_tmdb_id": "101", "person_name": "Alex Example"},
+            headers=admin,
+        )
+        assert response.status_code == 200, response.text
+        return {media["title"] for media in response.json()["items"]}
+
+    assert matching() == {
+        "Identified film",
+        "Local Kodi credit",
+        "Enriched local credit",
+    }
+    assert store.media(person_tmdb_id="101")["total"] == 2
+    with store.connect() as conn:
+        conn.execute("DELETE FROM work_person_names")
+        conn.execute("DELETE FROM catalogue_meta WHERE key='person_names_index_v1'")
+    store.initialize()
+    assert matching() == {
+        "Identified film",
+        "Local Kodi credit",
+        "Enriched local credit",
+    }
+    # Reject a formerly unidentified actor once an incompatible identity is known.
+    store.save_enrichment(
+        ids["Local Kodi credit"],
+        {"people": [{"name": "Alex Example", "tmdb_id": "202"}]},
+    )
+    assert matching() == {"Identified film", "Enriched local credit"}
+
+
+def test_person_imdb_id_matches_unidentified_local_credits(client, admin):
+    store = client.app.state.store
+    source = store.save_source({"name": "Cast", "type": "kodi"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "with-imdb",
+                "movie",
+                "IMDb identified",
+                metadata={"people": [{"name": "Another Example", "imdb_id": "nm1234"}]},
+            ),
+            Record(
+                "without-imdb",
+                "movie",
+                "IMDb local credit",
+                metadata={"people": [{"name": "Another Example"}]},
+            ),
+            Record(
+                "other-imdb",
+                "movie",
+                "Another IMDb person",
+                metadata={"people": [{"name": "Another Example", "imdb_id": "nm5678"}]},
+            ),
+        ],
+    )
+    result = client.get(
+        "/api/v1/media",
+        params={"person_imdb_id": "nm1234", "person_name": "Another Example"},
+        headers=admin,
+    )
+    assert result.status_code == 200
+    assert {row["title"] for row in result.json()["items"]} == {
+        "IMDb identified",
+        "IMDb local credit",
+    }
