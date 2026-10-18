@@ -114,34 +114,28 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
 
     assert client.get(f"/api/v1/media/{series_id}/seasons").status_code == 401
 
-
     # Bulk edits affect all imported episodes (including the specials), not
     # the parent series' independent personal watch flag.
     endpoint = f"/api/v1/media/{series_id}/episodes/watch"
     parent_status = client.get(f"/api/v1/media/{series_id}", headers=admin).json()["watch_status"]
-    bulk_season = client.patch(
-        endpoint, headers=admin, json={"watched": True, "season": 1}
-    )
+    bulk_season = client.patch(endpoint, headers=admin, json={"watched": True, "season": 1})
     assert bulk_season.status_code == 200, bulk_season.text
-    assert bulk_season.json() == {
-        "total": 3, "updated": 2, "watched": True, "season": 1
-    }
+    assert bulk_season.json() == {"total": 3, "updated": 2, "watched": True, "season": 1}
     assert [
         item["watched_count"]
         for item in client.get(f"/api/v1/media/{series_id}/seasons", headers=admin).json()
     ] == [0, 3, 1]
-    assert client.patch(
-        endpoint, headers=admin, json={"watched": True, "season": 1}
-    ).json()["updated"] == 0
+    assert (
+        client.patch(endpoint, headers=admin, json={"watched": True, "season": 1}).json()["updated"]
+        == 0
+    )
 
     all_unwatched = client.patch(endpoint, headers=admin, json={"watched": False})
     assert all_unwatched.status_code == 200
-    assert all_unwatched.json() == {
-        "total": 6, "updated": 4, "watched": False, "season": None
-    }
-    assert client.get(
-        f"/api/v1/media/{series_id}", headers=admin
-    ).json()["watched_episode_count"] == 0
+    assert all_unwatched.json() == {"total": 6, "updated": 4, "watched": False, "season": None}
+    assert (
+        client.get(f"/api/v1/media/{series_id}", headers=admin).json()["watched_episode_count"] == 0
+    )
 
     all_watched = client.patch(endpoint, headers=admin, json={"watched": True})
     assert all_watched.status_code == 200
@@ -153,10 +147,16 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     assert full_series["watch_status"] == parent_status
 
     assert client.patch(endpoint, json={"watched": True}).status_code == 401
-    from tests.conftest import READ
+    from conftest import READ
     read = {"Authorization": f"Bearer {READ}"}
     assert client.patch(endpoint, headers=read, json={"watched": True}).status_code == 403
-    assert client.patch(endpoint, headers=admin, json={"watched": True, "season": -1}).status_code == 422
-    assert client.patch(
-        f"/api/v1/media/{eid}/episodes/watch", headers=admin, json={"watched": True}
-    ).status_code == 404
+    assert (
+        client.patch(endpoint, headers=admin, json={"watched": True, "season": -1}).status_code
+        == 422
+    )
+    assert (
+        client.patch(
+            f"/api/v1/media/{eid}/episodes/watch", headers=admin, json={"watched": True}
+        ).status_code
+        == 404
+    )
