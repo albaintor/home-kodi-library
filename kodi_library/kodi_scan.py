@@ -69,10 +69,14 @@ async def scan_until_finished(config: dict) -> None:
                         if response.get("id") != 1:
                             continue
                         permissions = response.get("result")
-                        if not isinstance(permissions, dict) or permissions.get(
-                            "UpdateData", permissions.get("updatedata")
-                        ) is not True:
-                            raise ConnectorError("Kodi ne permet pas VideoLibrary.Scan (UpdateData).")
+                        if (
+                            not isinstance(permissions, dict)
+                            or permissions.get("UpdateData", permissions.get("updatedata"))
+                            is not True
+                        ):
+                            raise ConnectorError(
+                                "Kodi ne permet pas VideoLibrary.Scan (UpdateData)."
+                            )
                         break
 
                 await rpc("VideoLibrary.Scan", 2, {"showdialogs": False})
@@ -91,9 +95,7 @@ async def scan_until_finished(config: dict) -> None:
                             finished = True
                         elif response.get("id") == 2:
                             if response.get("result") != "OK":
-                                raise ConnectorError(
-                                    "Kodi a refusé la commande VideoLibrary.Scan."
-                                )
+                                raise ConnectorError("Kodi a refusé la commande VideoLibrary.Scan.")
                             acknowledged = True
     except TimeoutError as exc:
         raise ConnectorError(
