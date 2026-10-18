@@ -379,9 +379,17 @@ class SessionView(BaseModel):
     access_method: Literal["session", "bearer", "ingress", "local"] = "session"
 
 
+class MobileCompatibility(BaseModel):
+    """Compatibility of mobile DTOs, independent of server release numbers."""
+
+    min_contract: int = Field(ge=1)
+    max_contract: int = Field(ge=1)
+
+
 class CatalogueStatus(BaseModel):
     version: str
     api_version: str
+    mobile_compatibility: MobileCompatibility
     works: int
     editions: int
     counts: dict[str, int]
