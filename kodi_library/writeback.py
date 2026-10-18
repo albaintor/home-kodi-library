@@ -249,23 +249,33 @@ async def propagate_personal(
                     warning = await asyncio.to_thread(
                         write_kodi_mariadb, source, detail, editions, changes
                     )
-                    results.append({
-                        **entry, "status": "updated", "method": "mariadb",
-                        "attempts": ["jsonrpc:not_configured", "mariadb:updated"],
-                        "message": warning,
-                    })
+                    results.append(
+                        {
+                            **entry,
+                            "status": "updated",
+                            "method": "mariadb",
+                            "attempts": ["jsonrpc:not_configured", "mariadb:updated"],
+                            "message": warning,
+                        }
+                    )
                 except ConnectorError as exc:
-                    results.append({
-                        **entry, "status": "failed", "attempts": [
-                            "jsonrpc:not_configured", "mariadb:failed"
-                        ], "message": str(exc),
-                    })
+                    results.append(
+                        {
+                            **entry,
+                            "status": "failed",
+                            "attempts": ["jsonrpc:not_configured", "mariadb:failed"],
+                            "message": str(exc),
+                        }
+                    )
             else:
-                results.append({
-                    **entry, "status": "unavailable",
-                    "attempts": ["jsonrpc:not_configured"],
-                    "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
-                })
+                results.append(
+                    {
+                        **entry,
+                        "status": "unavailable",
+                        "attempts": ["jsonrpc:not_configured"],
+                        "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
+                    }
+                )
             continue
         # Multiple players can share one Kodi database. Only one success needed.
         errors = []
