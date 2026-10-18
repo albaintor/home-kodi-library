@@ -5,7 +5,8 @@ from kodi_library.connectors.base import Record
 
 def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     response = client.post(
-        "/api/v1/sources", headers=admin,
+        "/api/v1/sources",
+        headers=admin,
         json={"name": "Kodi TV", "type": "kodi", "config": {"host": "nas"}},
     )
     assert response.status_code == 201
@@ -30,8 +31,9 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
         [
             Record("movie:100", "movie", "A Movie"),
             Record("tvshow:500", "tvshow", "A Series"),
-            Record("episode:999", "episode", "A Special", parent_key="tvshow:500",
-                   season=0, episode=1),
+            Record(
+                "episode:999", "episode", "A Special", parent_key="tvshow:500", season=0, episode=1
+            ),
             *episodes,
         ],
     )
@@ -54,9 +56,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
         {"season": 2, "episode_count": 2, "watched_count": 1},
     ]
 
-    first = client.get(
-        f"/api/v1/media/{series_id}/seasons/1/episodes?limit=2", headers=admin
-    )
+    first = client.get(f"/api/v1/media/{series_id}/seasons/1/episodes?limit=2", headers=admin)
     assert first.status_code == 200, first.text
     assert first.json()["total"] == 3
     assert first.json()["has_more"] is True
@@ -76,6 +76,14 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     assert detail.json()["parent_id"] == series_id
 
     assert client.get(f"/api/v1/media/{eid}/seasons", headers=admin).status_code == 404
-    assert client.get(f"/api/v1/media/{series_id}/seasons/-1/episodes", headers=admin).status_code == 422
-    assert client.get(f"/api/v1/media/{series_id}/seasons/1/episodes?limit=201", headers=admin).status_code == 422
+    assert (
+        client.get(f"/api/v1/media/{series_id}/seasons/-1/episodes", headers=admin).status_code
+        == 422
+    )
+    assert (
+        client.get(
+            f"/api/v1/media/{series_id}/seasons/1/episodes?limit=201", headers=admin
+        ).status_code
+        == 422
+    )
     assert client.get(f"/api/v1/media/{series_id}/seasons").status_code == 401
