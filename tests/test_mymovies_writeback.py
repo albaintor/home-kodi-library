@@ -52,7 +52,7 @@ def remote_reply(request, *, matching=True):
             content=(
                 '<Response status="ok"><Title><ID>42</ID><LocalTitle>'
                 + title
-                + '</LocalTitle><Barcode>1234567890123</Barcode></Title></Response>'
+                + "</LocalTitle><Barcode>1234567890123</Barcode></Title></Response>"
             ),
         )
     return httpx.Response(200, content='<Response status="ok"></Response>')
