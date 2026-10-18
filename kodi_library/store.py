@@ -253,7 +253,9 @@ class Store:
                     conn.executemany(
                         "INSERT OR IGNORE INTO work_person_names"
                         "(work_id,name_fold,tmdb_id,imdb_id) VALUES(?,?,?,?)",
-                        person_names(record["work_id"], json.loads(record["payload"]).get("people")),
+                        person_names(
+                            record["work_id"], json.loads(record["payload"]).get("people")
+                        ),
                     )
                 conn.execute(
                     "INSERT INTO catalogue_meta(key,value) VALUES('person_names_index_v1',?)",
