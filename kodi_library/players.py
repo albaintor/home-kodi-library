@@ -66,7 +66,8 @@ async def connection(config: dict):
             if code in (401, 403)
             else "The Kodi HTTP endpoint returned an error. Check port and remote-control settings."
         )
-        raise ConnectorError(f"{message} (HTTP {code})") from exc
+        exception = ConnectorError if code in (401, 403) else KodiUnavailable
+        raise exception(f"{message} (HTTP {code})") from exc
     except httpx.TimeoutException as exc:
         raise KodiUnavailable(
             "Kodi connection timed out. Check that Kodi is running, its host/port and the firewall."
@@ -84,7 +85,7 @@ async def connection(config: dict):
         )
         raise KodiUnavailable(message) from exc
     except (httpx.HTTPError, ValueError) as exc:
-        raise ConnectorError(
+        raise KodiUnavailable(
             "Invalid Kodi HTTP/JSON response. Check port, HTTP/HTTPS and remote-control settings."
         ) from exc
 
