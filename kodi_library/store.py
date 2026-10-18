@@ -780,8 +780,7 @@ class Store:
                     )
         if enrichment:
             conn.executemany(
-                "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id)"
-                " VALUES(?,?,?)",
+                "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id) VALUES(?,?,?)",
                 person_ids(work_id, json.loads(enrichment[0]).get("people")),
             )
         posters = list(dict.fromkeys(v for p, _ in entries for v in p.get("poster", [])))
