@@ -1029,6 +1029,48 @@ class Store:
                 for row in rows
             ]
 
+    def set_episode_watch_status(
+        self, parent_id: str, watched: bool, season: int | None = None
+    ) -> dict[str, Any] | None:
+        """Atomically mark imported episodes in one TV show (optionally one season).
+
+        Only changed effective states receive local overrides. Parent TV-show
+        preferences are untouched; series progress is derived from episodes.
+        """
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            show = conn.execute(
+                "SELECT kind FROM works WHERE id=?", (parent_id,)
+            ).fetchone()
+            if not show or show["kind"] != "tvshow":
+                return None
+            condition = " AND season=?" if season is not None else ""
+            params = (parent_id, season) if season is not None else (parent_id,)
+            rows = conn.execute(
+                "SELECT id,watch_status FROM works "
+                "WHERE kind='episode' AND parent_id=?" + condition
+                + " ORDER BY season,episode,id",
+                params,
+            ).fetchall()
+            changed_ids = [
+                row["id"] for row in rows
+                if (row["watch_status"] == "watched") != watched
+            ]
+            for episode_id in changed_ids:
+                conn.execute(
+                    "INSERT INTO personal(work_id,watched) VALUES(?,?) "
+                    "ON CONFLICT(work_id) DO UPDATE SET watched=excluded.watched",
+                    (episode_id, int(watched)),
+                )
+                self._rebuild(conn, episode_id)
+        return {
+            "total": len(rows),
+            "updated": len(changed_ids),
+            "ids": changed_ids,
+            "watched": watched,
+            "season": season,
+        }
+
     def season_poster(self, parent_id: str, season: int) -> list[str]:
         """Read a validated server-cached TMDB season poster candidate."""
         if season < 0 or season > 10000:
