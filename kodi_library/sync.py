@@ -78,13 +78,9 @@ class SyncManager:
     async def _run_scan(self, job: dict, source: dict, player: dict) -> None:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
-            await asyncio.to_thread(
-                self.store.update_job_progress, job["id"], "kodi_scanning"
-            )
+            await asyncio.to_thread(self.store.update_job_progress, job["id"], "kodi_scanning")
             await scan_until_finished(player["config"])
-            await asyncio.to_thread(
-                self.store.update_job_progress, job["id"], "kodi_scan_finished"
-            )
+            await asyncio.to_thread(self.store.update_job_progress, job["id"], "kodi_scan_finished")
             # Reuse this job and reservation, so no other sync can race the scan.
             await self._run(job, source, None, scan_triggered=True)
         except ConnectorError as exc:
