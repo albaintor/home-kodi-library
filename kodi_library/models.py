@@ -82,6 +82,7 @@ class MariaDBConnectionInput(StrictModel):
 class KodiConnectionInput(StrictModel):
     host: str = Field(min_length=1, max_length=253)
     port: int = Field(default=8080, ge=1, le=65535)
+    websocket_port: int = Field(default=9090, ge=1, le=65535)
     username: str = Field(default="", max_length=128)
     password: SecretStr | None = None
     tls: bool = False
