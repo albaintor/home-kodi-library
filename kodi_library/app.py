@@ -74,8 +74,9 @@ STATIC = Path(__file__).parent / "static"
 def unsecret(model) -> dict:
     value = model.model_dump()
     config = value.get("config", value)
-    if config.get("password") is not None:
-        config["password"] = config["password"].get_secret_value()
+    for secret in ("password", "remote_api_key"):
+        if config.get(secret) is not None:
+            config[secret] = config[secret].get_secret_value()
     return value
 
 
