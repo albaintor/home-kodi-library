@@ -148,7 +148,7 @@ def test_kodi_scan_disconnection_never_resynchronizes(client, admin):
 
 def test_mariadb_writer_secret_redacted(client, admin):
     sid, _ = kodi_fixture(client, admin)
-    response = client.get(f"/api/v1/sources", headers=admin)
+    response = client.get("/api/v1/sources", headers=admin)
     assert "a-nonempty-private-password" not in response.text
     source = next(value for value in response.json() if value["id"] == sid)
     assert source["config"]["has_write_password"] is True
