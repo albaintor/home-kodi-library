@@ -1039,22 +1039,18 @@ class Store:
         """
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
-            show = conn.execute(
-                "SELECT kind FROM works WHERE id=?", (parent_id,)
-            ).fetchone()
+            show = conn.execute("SELECT kind FROM works WHERE id=?", (parent_id,)).fetchone()
             if not show or show["kind"] != "tvshow":
                 return None
             condition = " AND season=?" if season is not None else ""
             params = (parent_id, season) if season is not None else (parent_id,)
             rows = conn.execute(
                 "SELECT id,watch_status FROM works "
-                "WHERE kind='episode' AND parent_id=?" + condition
-                + " ORDER BY season,episode,id",
+                "WHERE kind='episode' AND parent_id=?" + condition + " ORDER BY season,episode,id",
                 params,
             ).fetchall()
             changed_ids = [
-                row["id"] for row in rows
-                if (row["watch_status"] == "watched") != watched
+                row["id"] for row in rows if (row["watch_status"] == "watched") != watched
             ]
             for episode_id in changed_ids:
                 conn.execute(
