@@ -269,7 +269,13 @@ async function savePersonal(values) {
   try {
     const response=await api(`media/${encodeURIComponent(id)}/personal`,{method:'PATCH',body:JSON.stringify(values)});
     saved=true;
-    if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,{personal:response.personal,user_rating:response.user_rating,watch_status:response.watch_status});if($('personal-status'))$('personal-status').textContent='Modification enregistrée.';}
+    const warnings=(response.writeback||[]).filter(result=>result.status!=='updated'||result.message);
+    const message=warnings.map(result=>result.source_name+' : '+(result.message||'Synchronisation non effectuée')).join(' · ');
+    if(seq===state.detailSeq&&state.detail?.id===id){
+      Object.assign(state.detail,{personal:response.personal,user_rating:response.user_rating,watch_status:response.watch_status});
+      if($('personal-status'))$('personal-status').textContent=warnings.length?'Modification locale enregistrée. '+message:'Modification enregistrée.';
+    }
+    if(warnings.length)toast(message);
   }catch(e){
     if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,previous);if($('personal-status'))$('personal-status').textContent='Échec de l’enregistrement : '+e.message;}
     toast(e.message);

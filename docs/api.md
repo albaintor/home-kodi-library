@@ -95,6 +95,14 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 
 `edition_id` sélectionne un fichier/version Kodi précis. Le serveur vérifie que la cible est associée à la bonne source et refuse les identifiants distants contradictoires avant `Player.Open`. Une série nécessite de choisir un épisode via `GET /media?kind=episode&parent_id=ID_SERIE`. Le serveur ne réveille pas Kodi.
 
+## Écriture des notes et états de visionnage
+
+`PATCH /media/{id}/personal` accepte les modifications partielles `{"user_rating":7.5}` et `{"watched":true}`, ou `{"watched":false}`. La valeur `null` efface uniquement la préférence locale, sans modifier les données source. Les changements sont enregistrés dans SQLite et diffusés aux connecteurs disposant d'une capacité d'écriture.
+
+Pour Kodi, l'application utilise les instances HTTP/JSON-RPC déjà associées à chaque source MariaDB. Elle vérifie la permission `UpdateData`, l'identité du média et son identifiant Kodi avant d'appeler `VideoLibrary.SetMovieDetails`, `SetEpisodeDetails` ou `SetTVShowDetails`. Une série marquée vue/non vue est propagée à ses épisodes par Kodi. Les différentes versions d'un film partagent un même `movieid` et ne provoquent donc qu'une mise à jour. Les notes Kodi sont entières : 7,5 est transmis sous la forme 8, tandis que la note locale reste 7,5.
+
+La réponse `MediaDetail` contient `writeback: [{source_id,source_name,source_type,status,message}]`. `status` vaut `updated`, `unavailable` (aucune instance ou source désactivée) ou `failed` (connexion, permissions ou identité divergente). Ce retour ne concerne que les sources qui autorisent l'écriture ; les imports XML CLZ/MyMovies/Filmotech ne sont jamais modifiés. Le changement local reste enregistré si Kodi est hors ligne, mais l'échec est signalé au client. Les tentatives échouées ne sont pas rejouées automatiquement. Un nouveau PATCH est nécessaire pour retenter une synchronisation. Les droits MariaDB restent en lecture seule.
+
 ## Diagnostic des suppressions Kodi
 
 Une synchronisation interroge **movie** et **movie_view** : la table `movie`
