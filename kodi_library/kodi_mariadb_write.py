@@ -44,10 +44,18 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
     try:
         with closing(
             pymysql.connect(
-                host=host, port=config.get("port", 3306), user=username,
-                password=password, database=database, connect_timeout=5,
-                read_timeout=15, write_timeout=15, charset="utf8mb4",
-                cursorclass=pymysql.cursors.DictCursor, autocommit=False, ssl=ssl,
+                host=host,
+                port=config.get("port", 3306),
+                user=username,
+                password=password,
+                database=database,
+                connect_timeout=5,
+                read_timeout=15,
+                write_timeout=15,
+                charset="utf8mb4",
+                cursorclass=pymysql.cursors.DictCursor,
+                autocommit=False,
+                ssl=ssl,
             )
         ) as conn:
             try:
@@ -64,16 +72,20 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                     targets = []
                     for kodi_id, edition in ids.items():
                         cursor.execute(
-                            f"SELECT {id_col}, c00, userrating" + (
-                                ", idFile" if kind in ("movie", "episode") else ""
-                            ) + f" FROM {table} WHERE {id_col}=%s FOR UPDATE",
+                            f"SELECT {id_col}, c00, userrating"
+                            + (", idFile" if kind in ("movie", "episode") else "")
+                            + f" FROM {table} WHERE {id_col}=%s FOR UPDATE",
                             (kodi_id,),
                         )
                         row = cursor.fetchone()
                         if row is None:
-                            raise ConnectorError("Un identifiant Kodi n'existe plus : resynchronisez la source.")
+                            raise ConnectorError(
+                                "Un identifiant Kodi n'existe plus : resynchronisez la source."
+                            )
                         if fold(str(row["c00"] or "")) != fold(str(detail["title"] or "")):
-                            raise ConnectorError("Titre du média différent dans MariaDB : écriture refusée.")
+                            raise ConnectorError(
+                                "Titre du média différent dans MariaDB : écriture refusée."
+                            )
                         local_ids = edition.get("identifiers") or {}
                         cursor.execute(
                             "SELECT type, value FROM uniqueid WHERE media_type=%s AND media_id=%s",
