@@ -192,6 +192,12 @@ def parse_collection(data: bytes, provider: str) -> list[Record]:
                     "subtitles": values(node, "Sous-Titres", "Subtitles/Subtitle"),
                     "country": value(node, "Country", "Pays") or None,
                     "collection_provider": provider,
+                    "mymovies_remote_title_id": (
+                        value(node, "ID", "TitleID") or node.get("ID") or node.get("id")
+                    )
+                    if provider == "mymovies"
+                    else None,
+                    "mymovies_title": movie_title if provider == "mymovies" else None,
                 },
             )
         )

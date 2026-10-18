@@ -5,20 +5,26 @@ associated with the same MariaDB library. The dispatch boundary can host other
 writable connector types without changing the personal-edit API.
 """
 
+import asyncio
 import logging
 import math
 from collections import defaultdict
 from typing import Any
 
 from .connectors.base import ConnectorError
-from .players import connection
+from .kodi_mariadb_write import write_kodi_mariadb
+from .mymovies_writeback import write_mymovies
+from .players import KodiUnavailable, connection
 from .utils import identifiers
 
 _LOG = logging.getLogger(__name__)
 
 # Null clears the local override ("use source value"), not the source itself.
 # Extend this registry when another connector supports updates.
-WRITABLE_FIELDS = {"kodi": frozenset({"user_rating", "watched"})}
+WRITABLE_FIELDS = {
+    "kodi": frozenset({"user_rating", "watched"}),
+    "mymovies": frozenset({"watched"}),
+}
 
 _KODI_METHODS = {
     "movie": ("movieid", "moviedetails", "GetMovieDetails", "SetMovieDetails"),
@@ -54,6 +60,49 @@ def _verify_identity(item: dict, edition: dict, detail: dict) -> None:
                 raise ConnectorError(
                     "La saison ou le numéro d'épisode ne correspond pas dans Kodi."
                 )
+
+
+async def _update_kodi_show_episodes(rpc, kodi_id: int, watched: bool) -> None:
+    """Kodi's SetTVShowDetails(playcount) may return OK without touching episodes."""
+    episodes = []
+    start = 0
+    while True:
+        response = await rpc(
+            "VideoLibrary.GetEpisodes",
+            {
+                "tvshowid": kodi_id,
+                "properties": ["playcount", "tvshowid"],
+                "limits": {"start": start, "end": start + 100},
+            },
+        )
+        page = response.get("episodes") or []
+        if not isinstance(page, list):
+            raise ConnectorError("Kodi n'a pas retourné les épisodes de la série.")
+        for episode in page:
+            if episode.get("tvshowid", kodi_id) != kodi_id:
+                raise ConnectorError("Kodi a retourné un épisode d'une autre série.")
+            if type(episode.get("episodeid")) is not int:
+                raise ConnectorError("Un épisode Kodi ne possède pas d'identifiant valide.")
+        episodes.extend(page)
+        total = (response.get("limits") or {}).get("total", start + len(page))
+        if len(episodes) >= total:
+            break
+        if not page or len(episodes) > 10000:
+            raise ConnectorError("Pagination Kodi invalide : lecture des épisodes interrompue.")
+        start += len(page)
+    if not episodes:
+        raise ConnectorError("La série Kodi n'a aucun épisode à marquer vu/non vu.")
+    for episode in episodes:
+        playcount = int(episode.get("playcount") or 0)
+        response = await rpc(
+            "VideoLibrary.SetEpisodeDetails",
+            {
+                "episodeid": episode["episodeid"],
+                "playcount": max(1, playcount) if watched else 0,
+            },
+        )
+        if response != "OK":
+            raise ConnectorError("Kodi a refusé la modification d'un épisode de la série.")
 
 
 async def _write_kodi(
@@ -114,13 +163,18 @@ async def _write_kodi(
             params = {id_field: kodi_id}
             if "userrating" in updates:
                 params["userrating"] = updates["userrating"]
-            if "watched" in updates:
+            if "watched" in updates and kind != "tvshow":
                 # Retain existing positive play counts when marking as watched.
                 count = item.get("playcount")
                 params["playcount"] = max(1, int(count or 0)) if updates["watched"] else 0
-            response = await rpc("VideoLibrary." + write_method, params)
-            if response != "OK":
-                raise ConnectorError("Kodi n'a pas confirmé la modification du média.")
+            # Do not call SetTVShowDetails with just the ID: use the episode
+            # setters instead, since series playcount is an aggregate.
+            if len(params) > 1:
+                response = await rpc("VideoLibrary." + write_method, params)
+                if response != "OK":
+                    raise ConnectorError("Kodi n'a pas confirmé la modification du média.")
+            if kind == "tvshow" and "watched" in updates:
+                await _update_kodi_show_episodes(rpc, kodi_id, updates["watched"])
     return warning
 
 
@@ -130,60 +184,160 @@ async def propagate_personal(
     sources: list[dict],
     players: list[dict],
 ) -> list[dict]:
-    """Return an explicit result for each writable source; never hide failures.
+    """Return explicit statuses; source XML files are never modified.
 
-    Read-only collection sources are never contacted. The local personal edit
-    is saved by the caller independently, including when Kodi is offline.
+    The caller persists local preferences even if an upstream service fails.
+    Adding new source types only requires a field capability and adapter.
     """
     editions_by_source: dict[str, list[dict]] = defaultdict(list)
     for edition in detail["editions"]:
         if edition["source_type"] in WRITABLE_FIELDS:
             editions_by_source[edition["source_id"]].append(edition)
-    source_info = {s["id"]: s for s in sources}
+    source_info = {source["id"]: source for source in sources}
     results = []
     for source_id, editions in editions_by_source.items():
-        fields = WRITABLE_FIELDS["kodi"] & changes.keys()
-        if not any(changes[key] is not None for key in fields):
+        kind = editions[0]["source_type"]
+        fields = WRITABLE_FIELDS[kind] & changes.keys()
+        if not any(changes[field] is not None for field in fields):
             continue
         source = source_info.get(source_id, {})
+        if kind == "mymovies" and not source.get("config", {}).get("remote_enabled"):
+            # An XML-only source is intentionally read-only, not an error.
+            continue
         entry = {
             "source_id": source_id,
             "source_name": source.get("name") or editions[0]["source_name"],
-            "source_type": "kodi",
+            "source_type": kind,
         }
         if not source.get("enabled", True):
             results.append(
-                {**entry, "status": "unavailable", "message": "La source Kodi est désactivée."}
+                {**entry, "status": "unavailable", "message": "La source est désactivée."}
             )
             continue
-        candidates = [p for p in players if p["source_id"] == source_id]
+        if kind == "mymovies":
+            if type(changes.get("watched")) is not bool:
+                continue
+            try:
+                warning = await write_mymovies(source, editions, changes)
+                results.append(
+                    {
+                        **entry,
+                        "status": "updated",
+                        "method": "mymovies",
+                        "attempts": ["mymovies:updated"],
+                        "message": warning,
+                    }
+                )
+            except ConnectorError as exc:
+                results.append({**entry, "status": "failed", "message": str(exc)})
+            except Exception:
+                _LOG.exception("Unexpected My Movies writeback error for source %s", source_id)
+                results.append(
+                    {
+                        **entry,
+                        "status": "failed",
+                        "message": "Erreur inattendue lors de la mise à jour My Movies.",
+                    }
+                )
+            continue
+
+        candidates = [player for player in players if player["source_id"] == source_id]
         if not candidates:
-            results.append(
-                {
-                    **entry,
-                    "status": "unavailable",
-                    "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
-                }
-            )
+            # SQL can also serve a source without a registered Kodi player.
+            if source.get("config", {}).get("mariadb_write_enabled"):
+                try:
+                    warning = await asyncio.to_thread(
+                        write_kodi_mariadb, source, detail, editions, changes
+                    )
+                    results.append(
+                        {
+                            **entry,
+                            "status": "updated",
+                            "method": "mariadb",
+                            "attempts": ["jsonrpc:not_configured", "mariadb:updated"],
+                            "message": warning,
+                        }
+                    )
+                except ConnectorError as exc:
+                    results.append(
+                        {
+                            **entry,
+                            "status": "failed",
+                            "attempts": ["jsonrpc:not_configured", "mariadb:failed"],
+                            "message": str(exc),
+                        }
+                    )
+            else:
+                results.append(
+                    {
+                        **entry,
+                        "status": "unavailable",
+                        "attempts": ["jsonrpc:not_configured"],
+                        "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
+                    }
+                )
             continue
-        # Multiple playback targets may share a single MariaDB library. Try
-        # another player if one is offline; only one successful write is needed.
+        # Multiple players can share one Kodi database. Only one success needed.
         errors = []
+        attempts = []
+        offline = True
         for player in candidates:
             try:
                 warning = await _write_kodi(player, detail, editions, changes)
-                results.append({**entry, "status": "updated", "message": warning})
+                attempts.append("jsonrpc:updated")
+                results.append(
+                    {
+                        **entry,
+                        "status": "updated",
+                        "method": "jsonrpc",
+                        "attempts": attempts,
+                        "message": warning,
+                    }
+                )
                 break
+            except KodiUnavailable as exc:
+                attempts.append("jsonrpc:unavailable")
+                errors.append(str(exc))
             except ConnectorError as exc:
+                offline = False
+                attempts.append("jsonrpc:rejected")
                 errors.append(str(exc))
             except Exception:
-                _LOG.exception("Unexpected Kodi write-back failure for source %s", source_id)
+                offline = False
+                attempts.append("jsonrpc:error")
+                _LOG.exception("Unexpected Kodi writeback error for source %s", source_id)
                 errors.append("Erreur inattendue lors de la mise à jour Kodi.")
         else:
+            # SQL is attempted only when all configured Kodi endpoints are
+            # unreachable and the administrator explicitly enabled fallback.
+            if offline and source.get("config", {}).get("mariadb_write_enabled"):
+                try:
+                    warning = await asyncio.to_thread(
+                        write_kodi_mariadb, source, detail, editions, changes
+                    )
+                    attempts.append("mariadb:updated")
+                    results.append(
+                        {
+                            **entry,
+                            "status": "updated",
+                            "method": "mariadb",
+                            "attempts": attempts,
+                            "message": warning,
+                        }
+                    )
+                    continue
+                except ConnectorError as exc:
+                    attempts.append("mariadb:failed")
+                    errors.append(str(exc))
+                except Exception:
+                    attempts.append("mariadb:error")
+                    _LOG.exception("Unexpected Kodi MariaDB fallback failure for %s", source_id)
+                    errors.append("Échec inattendu du repli MariaDB.")
             results.append(
                 {
                     **entry,
                     "status": "failed",
+                    "attempts": attempts,
                     "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
                 }
             )

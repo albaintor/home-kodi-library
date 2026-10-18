@@ -50,6 +50,14 @@ class SourceConfig(StrictModel):
     database: str = Field(default="", max_length=128)
     tls: bool = False
     ca_file: str | None = None
+    # Optional, licensed My Movies Remote Server API (not XML or cloud access).
+    remote_host: str = Field(default="", max_length=253)
+    remote_port: int = Field(default=51414, ge=1, le=65535)
+    remote_api_key: SecretStr | None = None
+    remote_enabled: bool = False
+    mariadb_write_enabled: bool = False
+    write_username: str = Field(default="", max_length=128)
+    write_password: SecretStr | None = None
 
     @field_validator("database")
     @classmethod
@@ -74,6 +82,7 @@ class MariaDBConnectionInput(StrictModel):
 class KodiConnectionInput(StrictModel):
     host: str = Field(min_length=1, max_length=253)
     port: int = Field(default=8080, ge=1, le=65535)
+    websocket_port: int = Field(default=9090, ge=1, le=65535)
     username: str = Field(default="", max_length=128)
     password: SecretStr | None = None
     tls: bool = False
@@ -179,6 +188,8 @@ class PersonalView(BaseModel):
 
 
 class WritebackResult(BaseModel):
+    method: Literal["jsonrpc", "mariadb", "mymovies"] | None = None
+    attempts: list[str] = Field(default_factory=list)
     source_id: str
     source_name: str
     source_type: str
@@ -271,6 +282,7 @@ class PlayerInput(StrictModel):
     username: str = Field(default="", max_length=128)
     password: SecretStr | None = None
     tls: bool = False
+    websocket_port: int = Field(default=9090, ge=1, le=65535)
 
 
 class PlayerView(BaseModel):
@@ -282,6 +294,7 @@ class PlayerView(BaseModel):
     username: str
     tls: bool
     has_password: bool
+    websocket_port: int = 9090
 
 
 class PlayInput(StrictModel):

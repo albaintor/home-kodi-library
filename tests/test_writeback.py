@@ -136,6 +136,13 @@ def test_tvshow_and_episode_write_to_correct_jsonrpc_method(
                     "episode": 2,
                 }
             }
+        if method == "VideoLibrary.GetEpisodes" and kind == "tvshow":
+            return {
+                "episodes": [{"episodeid": 31, "tvshowid": 20, "playcount": 0}],
+                "limits": {"total": 1},
+            }
+        if method == "VideoLibrary.SetEpisodeDetails" and kind == "tvshow":
+            return "OK"
         if method == "VideoLibrary." + set_method:
             return "OK"
         raise AssertionError(method)
@@ -146,10 +153,17 @@ def test_tvshow_and_episode_write_to_correct_jsonrpc_method(
         )
     assert response.status_code == 200
     assert response.json()["writeback"][0]["status"] == "updated"
-    assert seen[-1] == (
-        "VideoLibrary." + set_method,
-        {id_param: kodi_id, "playcount": 1},
-    )
+    if kind == "tvshow":
+        assert seen[-1] == (
+            "VideoLibrary.SetEpisodeDetails",
+            {"episodeid": 31, "playcount": 1},
+        )
+        assert not any(method == "VideoLibrary.SetTVShowDetails" for method, _ in seen)
+    else:
+        assert seen[-1] == (
+            "VideoLibrary." + set_method,
+            {id_param: kodi_id, "playcount": 1},
+        )
 
 
 def test_no_player_reports_local_only_and_clearing_override_is_local(client, admin):
