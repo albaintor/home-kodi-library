@@ -210,9 +210,9 @@ async def propagate_personal(
             "source_type": kind,
         }
         if not source.get("enabled", True):
-            results.append({
-                **entry, "status": "unavailable", "message": "La source est désactivée."
-            })
+            results.append(
+                {**entry, "status": "unavailable", "message": "La source est désactivée."}
+            )
             continue
         if kind == "mymovies":
             if type(changes.get("watched")) is not bool:
@@ -264,10 +264,15 @@ async def propagate_personal(
             try:
                 warning = await _write_kodi(player, detail, editions, changes)
                 attempts.append("jsonrpc:updated")
-                results.append({
-                    **entry, "status": "updated", "method": "jsonrpc",
-                    "attempts": attempts, "message": warning,
-                })
+                results.append(
+                    {
+                        **entry,
+                        "status": "updated",
+                        "method": "jsonrpc",
+                        "attempts": attempts,
+                        "message": warning,
+                    }
+                )
                 break
             except KodiUnavailable as exc:
                 attempts.append("jsonrpc:unavailable")
@@ -290,10 +295,15 @@ async def propagate_personal(
                         write_kodi_mariadb, source, detail, editions, changes
                     )
                     attempts.append("mariadb:updated")
-                    results.append({
-                        **entry, "status": "updated", "method": "mariadb",
-                        "attempts": attempts, "message": warning,
-                    })
+                    results.append(
+                        {
+                            **entry,
+                            "status": "updated",
+                            "method": "mariadb",
+                            "attempts": attempts,
+                            "message": warning,
+                        }
+                    )
                     continue
                 except ConnectorError as exc:
                     attempts.append("mariadb:failed")
@@ -302,8 +312,12 @@ async def propagate_personal(
                     attempts.append("mariadb:error")
                     _LOG.exception("Unexpected Kodi MariaDB fallback failure for %s", source_id)
                     errors.append("Échec inattendu du repli MariaDB.")
-            results.append({
-                **entry, "status": "failed", "attempts": attempts,
-                "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
-            })
+            results.append(
+                {
+                    **entry,
+                    "status": "failed",
+                    "attempts": attempts,
+                    "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
+                }
+            )
     return results
