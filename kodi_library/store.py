@@ -1391,9 +1391,17 @@ class Store:
                 "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                 [
                     (
-                        str(uuid4()), work_id, r["source_id"], r["source_name"],
-                        r["source_type"], now(), r["status"], r.get("method"),
-                        encode(r.get("attempts", [])), fields, r.get("message"),
+                        str(uuid4()),
+                        work_id,
+                        r["source_id"],
+                        r["source_name"],
+                        r["source_type"],
+                        now(),
+                        r["status"],
+                        r.get("method"),
+                        encode(r.get("attempts", [])),
+                        fields,
+                        r.get("message"),
                     )
                     for r in results
                 ],
@@ -1412,6 +1420,10 @@ class Store:
                 (work_id or source_id, min(max(1, limit), 200)),
             ).fetchall()
             return [
-                {**dict(row), "attempts": json.loads(row["attempts"]), "fields": json.loads(row["fields"])}
+                {
+                    **dict(row),
+                    "attempts": json.loads(row["attempts"]),
+                    "fields": json.loads(row["fields"]),
+                }
                 for row in rows
             ]
