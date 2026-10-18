@@ -1065,7 +1065,7 @@ class Store:
                     " OR (p." + identity_column + "=''"
                     " AND NOT EXISTS (SELECT 1 FROM work_person_names other"
                     " WHERE other.work_id=p.work_id AND other.name_fold=p.name_fold"
-                    " AND other." + identity_column + "<>''))))"
+                    " AND other." + identity_column + "<>'')))))"
                 )
                 params.extend((namespace, identity, normalized, identity))
             else:
