@@ -42,6 +42,7 @@ def sql_fixture(*, remote_id="123", title="Film"):
             cursor.fetchall.return_value = [{"type": "tmdb", "value": remote_id}]
         elif statement == "SHOW COLUMNS FROM movie_view":
             cursor.fetchall.return_value = [{"Field": "idMovie"}]
+
     cursor.execute.side_effect = execute
     return source, detail, [edition], conn, cursor
 
@@ -51,9 +52,16 @@ def test_sql_fallback_updates_confirmed_id_and_commits():
     with patch("kodi_library.kodi_mariadb_write.pymysql.connect", return_value=conn):
         result = write_kodi_mariadb(source, detail, editions, {"user_rating": 7.5, "watched": True})
     assert "MariaDB" in result
-    updates = [entry for entry in cursor.execute.call_args_list if entry.args[0].startswith("UPDATE ")]
-    assert any("UPDATE movie SET userrating" in entry.args[0] and entry.args[1] == (8, 11) for entry in updates)
-    assert any("UPDATE files SET playCount" in entry.args[0] and entry.args[1] == [27] for entry in updates)
+    updates = [
+        entry for entry in cursor.execute.call_args_list if entry.args[0].startswith("UPDATE ")
+    ]
+    assert any(
+        "UPDATE movie SET userrating" in entry.args[0] and entry.args[1] == (8, 11)
+        for entry in updates
+    )
+    assert any(
+        "UPDATE files SET playCount" in entry.args[0] and entry.args[1] == [27] for entry in updates
+    )
     conn.commit.assert_called_once()
     conn.rollback.assert_not_called()
 
@@ -134,11 +142,13 @@ def test_websocket_scan_waits_for_start_finish_and_ack():
 
 
 def test_websocket_scan_does_not_claim_success_without_finish():
-    socket = FakeSocket([
-        {"id": 1, "result": {"UpdateData": True}},
-        {"id": 2, "result": "OK"},
-        {"method": "VideoLibrary.OnScanStarted"},
-    ])
+    socket = FakeSocket(
+        [
+            {"id": 1, "result": {"UpdateData": True}},
+            {"id": 2, "result": "OK"},
+            {"method": "VideoLibrary.OnScanStarted"},
+        ]
+    )
     with patch("kodi_library.kodi_scan.aiohttp.ClientSession", return_value=FakeSession(socket)):
         with pytest.raises(ConnectorError, match="interrompue"):
             asyncio.run(scan_until_finished({"host": "kodi"}))
