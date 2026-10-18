@@ -50,6 +50,7 @@ CREATE INDEX IF NOT EXISTS identifier_lookup ON identifiers(kind,namespace,value
 CREATE INDEX IF NOT EXISTS work_sort_title ON works(sort_title,id);
 CREATE INDEX IF NOT EXISTS work_date ON works(date_added,id);
 CREATE INDEX IF NOT EXISTS work_kind_watch ON works(kind,watch_status);
+CREATE INDEX IF NOT EXISTS work_parent_kind_season ON works(parent_id,kind,season,episode);
 CREATE VIRTUAL TABLE IF NOT EXISTS works_fts USING fts5(work_id UNINDEXED, search_text, tokenize='unicode61 remove_diacritics 2');
 CREATE VIRTUAL TABLE IF NOT EXISTS works_title_fts USING fts5(work_id UNINDEXED, titles, tokenize='unicode61 remove_diacritics 2');
 CREATE INDEX IF NOT EXISTS work_kind_year ON works(kind,year);
@@ -841,12 +842,50 @@ class Store:
             )
         return found
 
+    @staticmethod
+    def _series_episode_progress(
+        conn: sqlite3.Connection, series_ids: list[str]
+    ) -> dict[str, dict[str, int]]:
+        """Count imported episodes in one indexed query for each catalogue page.
+
+        Use the effective watched state of every episode (including personal
+        overrides), not stale Kodi series-level watch metadata.
+        """
+        if not series_ids:
+            return {}
+        placeholders = ",".join("?" for _ in series_ids)
+        rows = conn.execute(
+            "SELECT parent_id,COUNT(*) AS episode_count,"
+            " SUM(CASE WHEN watch_status='watched' THEN 1 ELSE 0 END) AS watched_episode_count"
+            " FROM works WHERE kind='episode' AND parent_id IN ("
+            + placeholders
+            + ") GROUP BY parent_id",
+            series_ids,
+        )
+        return {
+            row["parent_id"]: {
+                "episode_count": row["episode_count"],
+                "watched_episode_count": row["watched_episode_count"],
+            }
+            for row in rows
+        }
+
     @classmethod
     def _summaries_with_sources(
         cls, conn: sqlite3.Connection, rows: list[sqlite3.Row]
     ) -> list[dict[str, Any]]:
         by_work = cls._sources_for_works(conn, [row["id"] for row in rows])
-        return [{**cls._summary(row), "media_sources": by_work.get(row["id"], [])} for row in rows]
+        progress = cls._series_episode_progress(
+            conn, [row["id"] for row in rows if row["kind"] == "tvshow"]
+        )
+        return [
+            {
+                **cls._summary(row),
+                **progress.get(row["id"], {}),
+                "media_sources": by_work.get(row["id"], []),
+            }
+            for row in rows
+        ]
 
     def media(
         self,
@@ -1017,6 +1056,8 @@ class Store:
             if row is None:
                 return None
             value = self._summary(row)
+            if row["kind"] == "tvshow":
+                value.update(self._series_episode_progress(conn, [work_id]).get(work_id, {}))
             value["media_sources"] = self._sources_for_works(conn, [work_id]).get(work_id, [])
             ids: dict[str, list[str]] = defaultdict(list)
             for identity in conn.execute(

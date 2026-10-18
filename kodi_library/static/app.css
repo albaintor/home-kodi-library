@@ -262,3 +262,14 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .choose-list-buttons .list-choice-row .list-mosaic{width:72px;height:47px}
 @media(max-width:950px){.list-home-heading{flex-basis:230px;min-width:180px}.home-list-thumb{flex-basis:70px;width:70px;height:46px}}
 @media(max-width:650px){.list-home-heading{flex:1 1 100%}.home-list-thumbnails{flex-basis:100%;width:100%}.list-entry-buttons{width:100%}}
+
+
+/* A partly watched season/show is distinct from an episode paused mid-playback. */
+.poster .state.partial,.season-watched-flag.partial{color:#ffc176;background:#302719e8}
+.poster .series-track{height:4px;background:#303847e8}
+.poster .series-track span{background:#f0aa51}
+.series-progress-chip{display:inline-flex;align-items:center;gap:5px;padding:6px 9px;border-radius:8px;border:1px solid #f0aa515e;background:#f0aa5118;color:#ffc176;font-size:11px;font-weight:650}
+.series-progress-chip.complete{color:#80d7a2;border-color:#80d7a254;background:#80d7a212}
+.season-cover{position:relative}
+.season-watched-flag{position:absolute;top:7px;right:7px;display:grid;place-items:center;width:29px;height:29px;border-radius:50%;font-size:19px;font-weight:750;box-shadow:0 2px 8px #0006}
+.season-watched-flag.complete{color:#a8efc5;background:#1c4939ed}

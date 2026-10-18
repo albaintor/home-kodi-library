@@ -305,6 +305,23 @@ emplacements neutres. Les affiches sont téléchargées via la couche sécurisé
 de récupération d'images déjà utilisée par le catalogue, jamais via un
 appel HTTP interne à l'API.
 
+## Indicateurs de visionnage partiel des séries
+
+Les fiches et résumés de séries (catalogue, recherche, listes et détail)
+exposent deux champs facultatifs supplémentaires :
+`episode_count` et `watched_episode_count`. Ils sont calculés à partir des
+épisodes effectivement importés, avec prise en compte des modifications
+personnelles du statut vu/non vu. Le total inclut les épisodes spéciaux
+(saison 0) et ne prétend pas représenter les épisodes non importés.
+
+**Partiellement vu** correspond à `0 < watched_episode_count < episode_count`.
+Une série ayant tous ses épisodes importés vus est signalée comme **vue**.
+Le statut `watch_status` existant est conservé pour compatibilité :
+l'indicateur de progression des épisodes reste distinct de l'état de reprise
+de lecture d'une vidéo. Les saisons sont déjà décrites par
+`watched_count` et `episode_count` dans
+`GET /api/v1/media/{id_serie}/seasons`.
+
 ## Hiérarchie des séries TV, saisons et épisodes
 
 Le catalogue principal (`GET /api/v1/media` sans `kind` ni `parent_id`)

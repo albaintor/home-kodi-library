@@ -134,6 +134,8 @@ class MediaSummary(BaseModel):
     date_added: str | None = None
     last_played: str | None = None
     watch_status: WatchStatus
+    episode_count: int | None = None
+    watched_episode_count: int | None = None
     play_count: int | None = None
     resume_seconds: float = 0
     total_seconds: float = 0

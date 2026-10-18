@@ -132,9 +132,35 @@ function sourceBadge(type,label) { return `<span class="source-badge" title="${e
 function badges(item) {
   return (item.media_sources?.length?item.media_sources.map(s=>sourceBadge(s.type,s.type_count>1?s.name:sourceName(s.type))):item.source_types.map(s=>sourceBadge(s))).join('');
 }
+function seriesProgress(item) {
+  if(item.kind!=='tvshow')return null;
+  const total=Number(item.episode_count),watched=Number(item.watched_episode_count);
+  if(!Number.isFinite(total)||total<=0||!Number.isFinite(watched))return null;
+  const count=Math.max(0,Math.min(total,watched));
+  return {total,watched:count,partial:count>0&&count<total,complete:count===total};
+}
+function watchDisplayLabel(item) {
+  const progress=seriesProgress(item);
+  if(progress?.partial)return `Partiellement vu (${progress.watched}/${progress.total} épisodes)`;
+  if(progress?.complete)return `Vu (${progress.watched}/${progress.total} épisodes)`;
+  return stateLabels[item.watch_status];
+}
+function seriesProgressMarkup(item) {
+  const progress=seriesProgress(item);
+  if(!progress||!progress.watched)return '';
+  const label=watchDisplayLabel(item);
+  return `<span class="series-progress-chip ${progress.partial?'partial':'complete'}" role="status" title="${esc(label)}" aria-label="${esc(label)}"><span aria-hidden="true">${progress.partial?'◐':'✓'}</span> ${progress.watched}/${progress.total} épisodes vus</span>`;
+}
 function poster(item, detail=false) {
   const progress=item.total_seconds>0 ? Math.min(100,100*item.resume_seconds/item.total_seconds):0;
-  return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail&&item.watch_status==='watched'?'<span class="state" title="Vu">✓</span>':''}${!detail&&item.watch_status==='in_progress'?'<span class="state progress" title="En cours">◐</span>':''}${progress>0&&item.watch_status==='in_progress'?`<span class="progress-track"><span style="width:${progress}%"></span></span>`:''}</div>`;
+  const series=seriesProgress(item);
+  const stateIcon=series?.partial
+    ? `<span class="state partial" title="${esc(watchDisplayLabel(item))}" aria-label="${esc(watchDisplayLabel(item))}">◐</span>`
+    :series?.complete||item.watch_status==='watched'
+    ? '<span class="state" title="Vu" aria-label="Vu">✓</span>'
+    :item.watch_status==='in_progress'
+    ? '<span class="state progress" title="En cours" aria-label="En cours">◐</span>':'';
+  return `<div class="poster"><span class="poster-placeholder" aria-hidden="true">${esc(item.title.slice(0,2).toUpperCase())}</span>${item.artwork.poster?`<img src="${esc(url(item.artwork.poster))}" alt="" ${detail?'':'loading="lazy"'}>`:''}${!detail&&item.rating?`<span class="rating">★ ${Number(item.rating).toFixed(1)}</span>`:''}${!detail?stateIcon:''}${completion||progress>0&&item.watch_status==='in_progress'?`<span class="progress-track ${series?.partial?'series-track':''}"><span style="width:${series?.partial?100*series.watched/series.total:progress}%"></span></span>`:''}</div>`;
 }
 const formatLogos = {'4K':['4k','video'],'Blu-ray 4K':['bluray4k','disc'],'8K':['8k','video'],'1080p':['1080p','video'],'720p':['720p','video'],'3D':['3d','video'],'Blu-ray 3D':['3d','disc'],'Blu-ray':['bluray','disc'],'DVD':['dvd','disc'],'Dolby Vision':['vision','hdr'],'HDR10':['hdr10','hdr'],'HDR10+':['hdr10plus','hdr'],'HLG':['hlg','hdr'],'Dolby Atmos':['atmos','audio'],'Dolby TrueHD':['truehd','audio'],'DTS-HD MA':['dtshdma','audio'],'DTS-HD':['dtshd','audio'],'DTS:X':['dtsx','audio'],'DTS':['dts','audio'],'Dolby Digital':['dd','audio'],'Dolby Digital+':['ddplus','audio'],'AAC':['aac','audio'],'FLAC':['flac','audio'],'Opus':['opus','audio']};
 
@@ -349,7 +375,7 @@ function openPlayback() {
 }
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
-  return `<button class="media-card" data-media="${esc(item.id)}" aria-label="${esc(item.title)}, ${esc(stateLabels[item.watch_status])}">${poster(item)}<span><span class="card-title">${esc(item.title)}</span><span class="card-meta">${meta.map(v=>`<span>${esc(v)}</span>`).join('<span aria-hidden="true">·</span>')}</span><span class="format-badges compact">${formatBadges(item.formats,true)}</span><span class="card-meta">${badges(item)}</span></span>${state.view==='list'?`<span class="list-status">${esc(stateLabels[item.watch_status])}<br>${item.rating?`★ ${Number(item.rating).toFixed(1)} · `:''}${date(item.date_added)}</span>`:''}</button>`;
+  return `<button class="media-card" data-media="${esc(item.id)}" aria-label="${esc(item.title)}, ${esc(watchDisplayLabel(item))}">${poster(item)}<span><span class="card-title">${esc(item.title)}</span><span class="card-meta">${meta.map(v=>`<span>${esc(v)}</span>`).join('<span aria-hidden="true">·</span>')}</span><span class="format-badges compact">${formatBadges(item.formats,true)}</span><span class="card-meta">${badges(item)}</span></span>${state.view==='list'?`<span class="list-status">${esc(watchDisplayLabel(item))}<br>${item.rating?`★ ${Number(item.rating).toFixed(1)} · `:''}${date(item.date_added)}</span>`:''}</button>`;
 }
 function attachImageFallbacks(root) { root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>img.classList.add('failed'),{once:true});}); }
 function currentParams(offset=0) {
@@ -610,7 +636,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}${castMarkup(item.people||item.cast)}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}${seriesProgressMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}${castMarkup(item.people||item.cast)}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -630,8 +656,8 @@ async function loadSeasons(id,selectedSeason=null) {
   $('season-list').innerHTML=seasons.length?seasons.map(season=>{
     const label=season.season===0?'Spéciaux':`Saison ${season.season}`;
     const artwork=season.poster||seriesPoster;
-    return `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="${selectedSeason===season.season}" aria-label="${esc(label)}, ${season.episode_count} épisodes">
-      <span class="season-cover">${artwork?`<img loading="lazy" src="${esc(url(artwork))}" alt="">`:'<span aria-hidden="true">▦</span>'}</span>
+    return `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="${selectedSeason===season.season}" aria-label="${esc(label)}, ${season.episode_count} épisodes, ${season.watched_count} vus${season.watched_count>0&&season.watched_count<season.episode_count?', partiellement vu':''}">
+      <span class="season-cover">${artwork?`<img loading="lazy" src="${esc(url(artwork))}" alt="">`:'<span aria-hidden="true">▦</span>'}${season.watched_count>0?`<span class="season-watched-flag ${season.watched_count<season.episode_count?'partial':'complete'}" title="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes" aria-label="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes">${season.watched_count<season.episode_count?'◐':'✓'}</span>`:''}</span>
       <span class="season-label">${esc(label)}</span>
       <span class="season-count">${season.episode_count} épisodes · ${season.watched_count} vus</span>
     </button>`;
