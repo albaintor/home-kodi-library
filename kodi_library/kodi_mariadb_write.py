@@ -13,7 +13,11 @@ import pymysql
 from .connectors.base import ConnectorError
 from .utils import fold
 
-TABLES = {"movie": ("movie", "idMovie"), "tvshow": ("tvshow", "idShow"), "episode": ("episode", "idEpisode")}
+TABLES = {
+    "movie": ("movie", "idMovie"),
+    "tvshow": ("tvshow", "idShow"),
+    "episode": ("episode", "idEpisode"),
+}
 
 
 def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes: dict) -> str:
@@ -52,7 +56,9 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                     for edition in editions:
                         kodi_id = edition.get("metadata", {}).get("kodi_id")
                         if type(kodi_id) is not int or kodi_id <= 0:
-                            raise ConnectorError("Identifiant Kodi absent : resynchronisez d'abord la source.")
+                            raise ConnectorError(
+                                "Identifiant Kodi absent : resynchronisez d'abord la source."
+                            )
                         ids.setdefault(kodi_id, edition)
                     # Preflight every identity and file ID before updating anything.
                     targets = []
@@ -76,7 +82,9 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                         remote_ids = {str(r["type"]): str(r["value"]) for r in cursor.fetchall()}
                         common = local_ids.keys() & remote_ids.keys()
                         if any(str(local_ids[k]) != remote_ids[k] for k in common):
-                            raise ConnectorError("Identifiants externes contradictoires : écriture refusée.")
+                            raise ConnectorError(
+                                "Identifiants externes contradictoires : écriture refusée."
+                            )
                         # A matching Kodi numeric ID and title alone are not sufficient to
                         # prove this is the same library. Require a matching external ID.
                         if not common:
@@ -98,7 +106,9 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                                         "WHERE idMovie=%s AND videoVersionIdFile IS NOT NULL",
                                         (kodi_id,),
                                     )
-                                    file_ids.extend(int(r["videoVersionIdFile"]) for r in cursor.fetchall())
+                                    file_ids.extend(
+                                        int(r["videoVersionIdFile"]) for r in cursor.fetchall()
+                                    )
                         elif type(changes.get("watched")) is bool:
                             cursor.execute(
                                 "SELECT DISTINCT e.idFile FROM tvshowlinkepisode t "
@@ -108,7 +118,9 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                             )
                             file_ids = [int(r["idFile"]) for r in cursor.fetchall()]
                             if not file_ids:
-                                raise ConnectorError("La série ne possède aucun épisode Kodi modifiable.")
+                                raise ConnectorError(
+                                    "La série ne possède aucun épisode Kodi modifiable."
+                                )
                         targets.append((kodi_id, sorted(set(file_ids))))
 
                     rating = changes.get("user_rating")
@@ -127,7 +139,8 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                             placeholders = ",".join("%s" for _ in file_ids)
                             sql = (
                                 "UPDATE files SET playCount=GREATEST(COALESCE(playCount,0),1) "
-                                if watched else "UPDATE files SET playCount=0 "
+                                if watched
+                                else "UPDATE files SET playCount=0 "
                             ) + f"WHERE idFile IN ({placeholders})"
                             cursor.execute(sql, file_ids)
                     conn.commit()
