@@ -351,6 +351,7 @@ async function saveEpisodeWatches(watched,season=null) {
   if(season===null&&!localizedConfirm(`Attention : ${watched?'marquer comme vus':'marquer comme non vus'} les ${total} épisodes importés de « ${item.title} » (toutes les saisons et les spéciaux) ? Cette action modifie également les états envoyés aux sources configurées.`))return;
   const id=item.id,seq=state.detailSeq,selected=$('season-list')?.querySelector('.season-button[aria-expanded="true"]')?.dataset.season;
   state.personalPending.add(id);++state.personalSeq;syncPersonalControls();
+  document.querySelectorAll('[data-mark-season]').forEach(button=>button.disabled=true);
   try {
     const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season})})});
     if(seq===state.detailSeq&&state.detail?.id===id){
@@ -365,7 +366,13 @@ async function saveEpisodeWatches(watched,season=null) {
     await loadMedia();
     if($('lists-dialog').open)await loadList();
   }catch(e){toast('Modification impossible : '+e.message);}
-  finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
+  finally{
+    state.personalPending.delete(id);
+    if(seq===state.detailSeq&&state.detail?.id===id){
+      syncPersonalControls();
+      document.querySelectorAll('[data-mark-season]').forEach(button=>button.disabled=false);
+    }
+  }
 }
 function metadataMarkup(item) {
   if(item.kind==='episode')return '';
