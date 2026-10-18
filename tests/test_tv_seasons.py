@@ -44,9 +44,12 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     series_summary = next(item for item in main.json()["items"] if item["kind"] == "tvshow")
     assert series_summary["episode_count"] == 6
     assert series_summary["watched_episode_count"] == 3
-    assert client.get(f"/api/v1/media/{series_summary['id']}", headers=admin).json()[
-        "watched_episode_count"
-    ] == 3
+    assert (
+        client.get(f"/api/v1/media/{series_summary['id']}", headers=admin).json()[
+            "watched_episode_count"
+        ]
+        == 3
+    )
 
     searched = client.get("/api/v1/media?q=Chapter", headers=admin).json()
     assert searched["total"] == 0
@@ -101,11 +104,12 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
         json={"watched": False},
     )
     assert changed.status_code == 200
-    assert client.get(f"/api/v1/media/{series_id}", headers=admin).json()[
-        "watched_episode_count"
-    ] == 2
-    assert client.get(f"/api/v1/media/{series_id}/seasons", headers=admin).json()[1][
-        "watched_count"
-    ] == 1
+    assert (
+        client.get(f"/api/v1/media/{series_id}", headers=admin).json()["watched_episode_count"] == 2
+    )
+    assert (
+        client.get(f"/api/v1/media/{series_id}/seasons", headers=admin).json()[1]["watched_count"]
+        == 1
+    )
 
     assert client.get(f"/api/v1/media/{series_id}/seasons").status_code == 401
