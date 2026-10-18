@@ -95,18 +95,27 @@ def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
     assert result["status"] == "failed"
     assert result["attempts"] == ["jsonrpc:rejected"]
     sql.assert_not_called()
-    assert client.get(f"/api/v1/media/{mid}/writeback", headers=admin).json()[0][
-        "status"
-    ] == "failed"
+    assert (
+        client.get(f"/api/v1/media/{mid}/writeback", headers=admin).json()[0]["status"] == "failed"
+    )
 
 
 def test_kodi_scan_finished_triggers_local_sync(client, admin):
     sid, _mid = kodi_fixture(client, admin)
     with (
         patch("kodi_library.sync.scan_until_finished", new_callable=AsyncMock) as scan,
-        patch("kodi_library.sync.KodiConnector.fetch", return_value=[
-            Record("movie:11", "movie", "Film", identifiers={"tmdb": "123"}, metadata={"kodi_id": 11})
-        ]) as fetch,
+        patch(
+            "kodi_library.sync.KodiConnector.fetch",
+            return_value=[
+                Record(
+                    "movie:11",
+                    "movie",
+                    "Film",
+                    identifiers={"tmdb": "123"},
+                    metadata={"kodi_id": 11},
+                )
+            ],
+        ) as fetch,
     ):
         response = client.post(f"/api/v1/sources/{sid}/scan", headers=admin)
         assert response.status_code == 202, response.text
@@ -136,9 +145,7 @@ def test_kodi_scan_disconnection_never_resynchronizes(client, admin):
         response = client.post(f"/api/v1/sources/{sid}/scan", headers=admin)
         assert response.status_code == 202
         for _ in range(200):
-            job = client.get(
-                f"/api/v1/jobs/{response.json()['id']}", headers=admin
-            ).json()
+            job = client.get(f"/api/v1/jobs/{response.json()['id']}", headers=admin).json()
             if job["status"] in ("completed", "failed"):
                 break
             time.sleep(0.01)
