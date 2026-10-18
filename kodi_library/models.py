@@ -26,6 +26,7 @@ class SortField(StrEnum):
     RATING = "rating"
     USER_RATING = "user_rating"
     LAST_PLAYED = "last_played"
+    EPISODE = "episode"
 
 
 class StrictModel(BaseModel):
@@ -282,6 +283,12 @@ class MediaDetail(MediaSummary):
     lists: list[ListView] = Field(default_factory=list)
     tmdb_available: bool = False
     enriched_at: str | None = None
+
+
+class SeasonSummary(BaseModel):
+    season: int
+    episode_count: int
+    watched_count: int
 
 
 class MediaPage(BaseModel):
