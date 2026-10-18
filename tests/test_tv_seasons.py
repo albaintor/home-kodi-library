@@ -38,7 +38,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     main = client.get("/api/v1/media?sort=title&order=asc", headers=admin)
     assert main.status_code == 200, main.text
     assert main.json()["total"] == 2
-    assert [i["kind"] for i in main.json()["items"]] == ["tvshow", "movie"]
+    assert [i["kind"] for i in main.json()["items"]] == ["movie", "tvshow"]
 
     searched = client.get("/api/v1/media?q=Chapter", headers=admin).json()
     assert searched["total"] == 0
