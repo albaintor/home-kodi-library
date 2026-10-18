@@ -231,10 +231,18 @@ function personalActions(item) {
   const value=item.user_rating;
   return `<div class="rating-control"><button id="rating-button" class="action-button rating-button ${value!=null?'rated':''}" aria-label="Votre note : ${value!=null?esc(value)+'/10':'non renseignée'}${state.role==='admin'?', modifier':''}" aria-haspopup="dialog" aria-controls="rating-popover" aria-expanded="false" ${writable?'':'disabled'}>${actionIcon('star')}<span class="rating-value">${value!=null?esc(value):'—'}</span></button><div id="rating-popover" class="rating-popover" popover="manual" role="dialog" aria-label="Modifier votre note" hidden><div class="rating-popover-heading"><strong>Votre note</strong><output id="rating-preview">${value!=null?esc(value):'—'}<small> / 10</small></output></div><div class="rating-stars" role="group" aria-label="Choisir une note sur dix">${Array.from({length:10},(_,i)=>`<button class="rating-choice" data-rating="${i+1}" aria-label="Donner la note de ${i+1} sur 10" aria-pressed="${value===i+1}" ${writable?'':'disabled'}><span class="rating-glyph">${actionIcon('star')}<span class="rating-choice-fill">${actionIcon('star')}</span></span><small>${i+1}</small></button>`).join('')}</div><label class="rating-slider-label">Par demi-point<input id="rating-slider" type="range" min="0" max="10" step="0.5" value="${value??0}" aria-label="Votre note par demi-point" ${writable?'':'disabled'}></label><button class="text-button rating-reset" data-rating-reset ${writable?'':'disabled'}>Utiliser la note des sources</button><p class="hint">Cliquez sur une étoile pour enregistrer.</p></div></div>`;
 }
+function watchState(item) {
+  if(item.kind==='tvshow'){
+    const total=Number(item.episode_count)||0,viewed=Number(item.watched_episode_count)||0;
+    const watched=total>0&&viewed===total;
+    return {watched,available:total>0,status:watched?'watched':viewed>0?'in_progress':'unwatched',label:watched?'Vu':viewed>0?'Partiellement vu':'Non vu'};
+  }
+  return {watched:item.watch_status==='watched',available:true,status:item.watch_status,label:stateLabels[item.watch_status]};
+}
 function watchMarkup(item) {
-  const watched=item.watch_status==='watched';
-  const label=state.role==='admin'?`${stateLabels[item.watch_status]} · Marquer comme ${watched?'non vu':'vu'}`:`${stateLabels[item.watch_status]} · Accès en lecture seule`;
-  return `<button id="watch-button" class="status-chip watch-button ${esc(item.watch_status)}" aria-label="${esc(label)}" aria-pressed="${watched}" title="${esc(label)}" data-tooltip="${esc(label)}" ${state.role==='admin'&&!state.personalPending.has(item.id)?'':'disabled'}>${actionIcon(watched?'watched':'watch')}<span class="watch-state">${esc(stateLabels[item.watch_status])}</span></button>`;
+  const view=watchState(item);
+  const label=state.role==='admin'?(view.available?`${view.label} · Marquer comme ${view.watched?'non vu':'vu'}${item.kind==='tvshow'?' tous les épisodes':''}`:'Aucun épisode importé'):`${view.label} · Accès en lecture seule`;
+  return `<button id="watch-button" class="status-chip watch-button ${esc(view.status)}" aria-label="${esc(label)}" aria-pressed="${view.watched}" title="${esc(label)}" data-tooltip="${esc(label)}" ${state.role==='admin'&&view.available&&!state.personalPending.has(item.id)?'':'disabled'}>${actionIcon(view.watched?'watched':'watch')}<span class="watch-state">${esc(view.label)}</span></button>`;
 }
 function detailActions(item) {
   const trailers=[...new Set(item.trailers||[])];
@@ -299,10 +307,10 @@ function syncPersonalControls() {
   const rating=$('rating-button'),watch=$('watch-button');
   if(rating){rating.disabled=!writable;rating.classList.toggle('rated',item.user_rating!=null);rating.querySelector('.rating-value').textContent=item.user_rating??'—';rating.setAttribute('aria-label',`Votre note : ${item.user_rating!=null?item.user_rating+'/10':'non renseignée'}${state.role==='admin'?', modifier':''}`);}
   if(watch){
-    const watched=item.watch_status==='watched';
-    const label=state.role==='admin'?`${stateLabels[item.watch_status]} · Marquer comme ${watched?'non vu':'vu'}`:`${stateLabels[item.watch_status]} · Accès en lecture seule`;
-    watch.disabled=!writable;watch.className=`status-chip watch-button ${item.watch_status}`;watch.setAttribute('aria-pressed',watched);watch.setAttribute('aria-label',label);watch.title=label;watch.dataset.tooltip=label;
-    watch.innerHTML=`${actionIcon(watched?'watched':'watch')}<span class="watch-state">${esc(stateLabels[item.watch_status])}</span>`;
+    const view=watchState(item);
+    const label=state.role==='admin'?(view.available?`${view.label} · Marquer comme ${view.watched?'non vu':'vu'}${item.kind==='tvshow'?' tous les épisodes':''}`:'Aucun épisode importé'):`${view.label} · Accès en lecture seule`;
+    watch.disabled=!writable||!view.available;watch.className=`status-chip watch-button ${view.status}`;watch.setAttribute('aria-pressed',view.watched);watch.setAttribute('aria-label',label);watch.title=label;watch.dataset.tooltip=label;
+    watch.innerHTML=`${actionIcon(view.watched?'watched':'watch')}<span class="watch-state">${esc(view.label)}</span>`;
   }
   document.querySelectorAll('[data-rating],[data-rating-reset],#rating-slider').forEach(control=>control.disabled=!writable);
   document.querySelectorAll('[data-rating]').forEach(button=>button.setAttribute('aria-pressed',Number(button.dataset.rating)===item.user_rating));
@@ -335,6 +343,29 @@ async function savePersonal(values) {
     toast(e.message);
   }finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
   if(saved){await loadMedia();if($('lists-dialog').open)await loadList();}
+}
+async function saveEpisodeWatches(watched,season=null) {
+  const item=state.detail;
+  if(!item||item.kind!=='tvshow'||state.role!=='admin'||state.personalPending.has(item.id))return;
+  const total=Number(item.episode_count)||0;
+  if(season===null&&!localizedConfirm(`Attention : ${watched?'marquer comme vus':'marquer comme non vus'} les ${total} épisodes importés de « ${item.title} » (toutes les saisons et les spéciaux) ? Cette action modifie également les états envoyés aux sources configurées.`))return;
+  const id=item.id,seq=state.detailSeq,selected=$('season-list')?.querySelector('.season-button[aria-expanded="true"]')?.dataset.season;
+  state.personalPending.add(id);++state.personalSeq;syncPersonalControls();
+  try {
+    const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season})})});
+    if(seq===state.detailSeq&&state.detail?.id===id){
+      const updated=await api(`media/${encodeURIComponent(id)}`);
+      if(seq===state.detailSeq&&state.detail?.id===id){
+        renderDetail(updated);
+        await loadSeasons(id,selected===undefined?null:Number(selected));
+        if($('personal-status'))$('personal-status').textContent=`${result.updated} épisode(s) modifié(s). Synchronisation des sources en cours.`;
+      }
+    }
+    toast(`${result.updated} épisode(s) mis à jour sur ${result.total}.`);
+    await loadMedia();
+    if($('lists-dialog').open)await loadList();
+  }catch(e){toast('Modification impossible : '+e.message);}
+  finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
 }
 function metadataMarkup(item) {
   if(item.kind==='episode')return '';
@@ -677,11 +708,11 @@ async function loadSeasons(id,selectedSeason=null) {
   $('season-list').innerHTML=seasons.length?seasons.map(season=>{
     const label=season.season===0?'Spéciaux':`Saison ${season.season}`;
     const artwork=season.poster||seriesPoster;
-    return `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="${selectedSeason===season.season}" aria-label="${esc(label)}, ${season.episode_count} épisodes, ${season.watched_count} vus${season.watched_count>0&&season.watched_count<season.episode_count?', partiellement vu':''}">
+    return `<div class="season-entry"><button type="button" class="season-button" data-season="${season.season}" aria-expanded="${selectedSeason===season.season}" aria-label="${esc(label)}, ${season.episode_count} épisodes, ${season.watched_count} vus${season.watched_count>0&&season.watched_count<season.episode_count?', partiellement vu':''}">
       <span class="season-cover">${artwork?`<img loading="lazy" src="${esc(url(artwork))}" alt="">`:'<span aria-hidden="true">▦</span>'}${season.watched_count>0?`<span class="season-watched-flag ${season.watched_count<season.episode_count?'partial':'complete'}" title="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes" aria-label="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes">${season.watched_count<season.episode_count?'◐':'✓'}</span>`:''}</span>
       <span class="season-label">${esc(label)}</span>
       <span class="season-count">${season.episode_count} épisodes · ${season.watched_count} vus</span>
-    </button>`;
+    </button>${state.role==='admin'?`<div class="season-watch-actions"><button type="button" data-mark-season="${season.season}" data-watched="true" ${state.personalPending.has(id)?'disabled':''}>Tout vu</button><button type="button" data-mark-season="${season.season}" data-watched="false" ${state.personalPending.has(id)?'disabled':''}>Tout non vu</button></div>`:''}</div>`;
   }).join(''):'Aucune saison importée pour cette série.';
   attachImageFallbacks($('season-list'));
   if(selectedSeason!==null)loadSeasonEpisodes(selectedSeason);
@@ -904,6 +935,7 @@ document.addEventListener('submit',async event=>{
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
   if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson);return;}
+  if(button.hasAttribute('data-mark-season')){await saveEpisodeWatches(button.dataset.watched==='true',Number(button.dataset.markSeason));return;}
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
   if(button.hasAttribute('data-season')) {
@@ -1203,7 +1235,10 @@ document.addEventListener('click',event=>{
   if(button.id==='rating-button')showRatingPopover(true);
   if(button.dataset.rating)savePersonal({user_rating:Number(button.dataset.rating)});
   if(button.hasAttribute('data-rating-reset'))savePersonal({user_rating:null});
-  if(button.id==='watch-button')savePersonal({watched:state.detail.watch_status!=='watched'});
+  if(button.id==='watch-button'){
+    if(state.detail?.kind==='tvshow')saveEpisodeWatches(!watchState(state.detail).watched);
+    else savePersonal({watched:state.detail.watch_status!=='watched'});
+  }
   if(button.id==='open-playback')openPlayback();
   if(button.id==='open-trailers')openTrailers();
 });
