@@ -365,15 +365,21 @@ def test_person_identifier_filter_is_exact_and_survives_restart(client, admin):
         source["id"],
         [
             Record(
-                "1", "movie", "First film",
+                "1",
+                "movie",
+                "First film",
                 metadata={"people": [{"name": "Same Name", "tmdb_id": "101"}]},
             ),
             Record(
-                "2", "movie", "Other homonym",
+                "2",
+                "movie",
+                "Other homonym",
                 metadata={"people": [{"name": "Same Name", "tmdb_id": "202"}]},
             ),
             Record(
-                "3", "movie", "IMDb credit",
+                "3",
+                "movie",
+                "IMDb credit",
                 metadata={"people": [{"name": "Different Name", "imdb_id": "nm321"}]},
             ),
             Record("4", "movie", "TMDB enrichment"),
@@ -395,7 +401,9 @@ def test_person_identifier_filter_is_exact_and_survives_restart(client, admin):
     assert matched({"person_tmdb_id": "202"}) == {"Other homonym"}
     assert matched({"person_imdb_id": "nm321"}) == {"IMDb credit"}
     assert matched({"q": "Same Name", "deep_search": "true"}) >= {
-        "First film", "Other homonym", "No identifiers",
+        "First film",
+        "Other homonym",
+        "No identifiers",
     }
     assert client.get("/api/v1/media?person_tmdb_id=not-an-id", headers=admin).status_code == 422
     # The existing-index migration and subsequent snapshot rebuilding must
