@@ -178,6 +178,14 @@ class PersonalView(BaseModel):
     watched: bool | None = None
 
 
+class WritebackResult(BaseModel):
+    source_id: str
+    source_name: str
+    source_type: str
+    status: Literal["updated", "unavailable", "failed"]
+    message: str | None = None
+
+
 class ListInput(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=1000)
@@ -215,6 +223,7 @@ class MediaDetail(MediaSummary):
     people: list[CastMember] = Field(default_factory=list)
     trailers: list[str] = Field(default_factory=list)
     personal: PersonalView = Field(default_factory=PersonalView)
+    writeback: list[WritebackResult] = Field(default_factory=list)
     lists: list[ListView] = Field(default_factory=list)
     tmdb_available: bool = False
     enriched_at: str | None = None

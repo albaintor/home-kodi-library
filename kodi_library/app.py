@@ -65,6 +65,7 @@ from .players import probe as probe_player
 from .settings import Settings
 from .store import Store
 from .sync import BusyError, SyncManager
+from .writeback import propagate_personal
 
 API = "/api/v1"
 STATIC = Path(__file__).parent / "static"
@@ -84,6 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store = Store(settings.data_dir / "catalogue.db")
     sync = SyncManager(store, settings)
     auth = Auth(settings, store)
+    personal_edit_lock = asyncio.Lock()
 
     @asynccontextmanager
     async def lifespan(app):
@@ -428,10 +430,31 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Personal"],
         dependencies=[Depends(writable)],
     )
-    def edit_personal(media_id: str, data: PersonalInput):
-        if not store.update_personal(media_id, data.model_dump(exclude_unset=True)):
-            raise HTTPException(404, "Unknown media.")
-        return media_detail(media_id)
+    async def edit_personal(media_id: str, data: PersonalInput):
+        # Serialize edits so two concurrent PATCH requests cannot reach Kodi out
+        # of order. The user's local value remains saved if Kodi is offline;
+        # the response explicitly reports each upstream outcome.
+        async with personal_edit_lock:
+            detail = await asyncio.to_thread(store.detail, media_id)
+            if detail is None:
+                raise HTTPException(404, "Unknown media.")
+            changes = data.model_dump(exclude_unset=True)
+            if changes:
+                await asyncio.to_thread(store.update_personal, media_id, changes)
+            sources = await asyncio.to_thread(store.sources)
+            public_players = await asyncio.to_thread(store.players)
+            players = [
+                await asyncio.to_thread(store.player, player["id"])
+                for player in public_players
+                if any(
+                    edition["source_id"] == player["source_id"] and edition["source_type"] == "kodi"
+                    for edition in detail["editions"]
+                )
+            ]
+            writeback = await propagate_personal(detail, changes, sources, players)
+            updated = await asyncio.to_thread(store.detail, media_id)
+            updated["writeback"] = writeback
+            return updated
 
     @app.post(
         API + "/media/{media_id}/enrich",
