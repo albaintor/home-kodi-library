@@ -861,6 +861,7 @@ class Store:
         source_type: str | None = None,
         source_id: str | None = None,
         parent_id: str | None = None,
+        season: int | None = None,
         year: int | None = None,
         recent_days: int | None = None,
         sort: str = "date_added",
@@ -869,6 +870,10 @@ class Store:
         offset: int = 0,
     ) -> dict[str, Any]:
         clauses, params = [], []
+        # By default, the public catalogue displays works, not their
+        # constituent episodes. Explicit episode/parent queries remain available.
+        if kind is None and parent_id is None:
+            clauses.append("w.kind IN ('movie','tvshow')")
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
             index = "works_fts" if deep_search else "works_title_fts"
@@ -878,6 +883,7 @@ class Store:
             ("kind", kind),
             ("watch_status", watch_status),
             ("parent_id", parent_id),
+            ("season", season),
             ("year", year),
         ):
             if value is not None:
@@ -928,6 +934,7 @@ class Store:
             "rating": "rating",
             "user_rating": "user_rating",
             "last_played": "last_played",
+            "episode": "episode",
         }
         if (
             sort not in fields
@@ -953,6 +960,23 @@ class Store:
                 "offset": offset,
                 "has_more": offset + len(rows) < total,
             }
+
+    def seasons(self, parent_id: str) -> list[dict[str, int]] | None:
+        """Compact TV season index. Includes specials (season 0) if present."""
+        with self.connect() as conn:
+            show = conn.execute(
+                "SELECT kind FROM works WHERE id=?", (parent_id,)
+            ).fetchone()
+            if not show or show["kind"] != "tvshow":
+                return None
+            rows = conn.execute(
+                "SELECT season,COUNT(*) AS episode_count,"
+                " SUM(CASE WHEN watch_status='watched' THEN 1 ELSE 0 END) AS watched_count"
+                " FROM works WHERE kind='episode' AND parent_id=? AND season IS NOT NULL"
+                " GROUP BY season ORDER BY season",
+                (parent_id,),
+            )
+            return [dict(row) for row in rows]
 
     def detail(self, work_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
