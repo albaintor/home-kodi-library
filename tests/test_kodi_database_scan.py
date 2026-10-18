@@ -49,9 +49,7 @@ def sql_fixture(*, remote_id="123", title="Film"):
 def test_sql_fallback_updates_confirmed_id_and_commits():
     source, detail, editions, conn, cursor = sql_fixture()
     with patch("kodi_library.kodi_mariadb_write.pymysql.connect", return_value=conn):
-        result = write_kodi_mariadb(
-            source, detail, editions, {"user_rating": 7.5, "watched": True}
-        )
+        result = write_kodi_mariadb(source, detail, editions, {"user_rating": 7.5, "watched": True})
     assert "MariaDB" in result
     updates = [entry for entry in cursor.execute.call_args_list if entry.args[0].startswith("UPDATE ")]
     assert any("UPDATE movie SET userrating" in entry.args[0] and entry.args[1] == (8, 11) for entry in updates)
@@ -130,7 +128,8 @@ def test_websocket_scan_waits_for_start_finish_and_ack():
         asyncio.run(scan_until_finished({"host": "kodi", "websocket_port": 9091}))
     assert session.url == "ws://kodi:9091/jsonrpc"
     assert [message["method"] for message in socket.sent] == [
-        "JSONRPC.Permission", "VideoLibrary.Scan"
+        "JSONRPC.Permission",
+        "VideoLibrary.Scan",
     ]
 
 
