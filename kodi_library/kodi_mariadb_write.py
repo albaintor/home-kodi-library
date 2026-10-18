@@ -99,7 +99,7 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                                         (kodi_id,),
                                     )
                                     file_ids.extend(int(r["videoVersionIdFile"]) for r in cursor.fetchall())
-                        elif "watched" in changes:
+                        elif type(changes.get("watched")) is bool:
                             cursor.execute(
                                 "SELECT DISTINCT e.idFile FROM tvshowlinkepisode t "
                                 "JOIN episode e ON e.idEpisode=t.idEpisode "
