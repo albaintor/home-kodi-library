@@ -58,6 +58,7 @@ from .models import (
     SessionInput,
     SessionView,
     SortField,
+    SeasonSummary,
     SourceInput,
     SourceView,
     WatchStatus,
@@ -308,6 +309,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         source_type: Literal["kodi", "clz", "mymovies", "filmotech"] | None = None,
         source_id: str | None = None,
         parent_id: str | None = None,
+        season: int | None = Query(None, ge=0, le=10000),
         year: int | None = Query(None, ge=1800, le=2200),
         recent_days: int | None = Query(None, ge=1, le=3650),
         sort: SortField = SortField.DATE_ADDED,
@@ -326,12 +328,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source_type=source_type,
             source_id=source_id,
             parent_id=parent_id,
+            season=season,
             year=year,
             recent_days=recent_days,
             sort=sort,
             order=order,
             limit=limit,
             offset=offset,
+        )
+
+    @app.get(
+        API + "/media/{media_id}/seasons",
+        response_model=list[SeasonSummary],
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+    )
+    def media_seasons(media_id: str):
+        """Navigable season list; empty for shows without imported episodes."""
+        result = store.seasons(media_id)
+        if result is None:
+            raise HTTPException(404, "Unknown TV show.")
+        return result
+
+    @app.get(
+        API + "/media/{media_id}/seasons/{season}/episodes",
+        response_model=MediaPage,
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+    )
+    def season_episodes(
+        media_id: str,
+        season: int = Query(ge=0, le=10000),
+        limit: int = Query(100, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+    ):
+        if store.seasons(media_id) is None:
+            raise HTTPException(404, "Unknown TV show.")
+        return store.media(
+            kind="episode", parent_id=media_id, season=season,
+            sort="episode", order="asc", limit=limit, offset=offset,
         )
 
     @app.get(
