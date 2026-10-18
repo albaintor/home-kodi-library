@@ -47,7 +47,7 @@ function savePreferences() {
 function restoreFilters() {
   if(filtersRestored)return;
   for(const id of filterIds){
-    const value=preferences.filters?.[id];
+    const value=id==='kind'&&preferences.filters?.kind==='episode'?'':preferences.filters?.[id];
     if(typeof value==='string'&&(id==='search'||[...$(id).options].some(option=>option.value===value)))$(id).value=value;
   }
   const previousFormat=preferences.filters?.format;
@@ -564,7 +564,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body"><div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">ÉPISODES KODI</p><div id="episode-list" class="episode-links">Chargement…</div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -574,14 +574,32 @@ async function openDetail(id) {
     renderDetail(item); showDialog('detail-dialog');
     if(item.tmdb_available&&state.role==='admin'&&item.kind!=='episode'&&(!item.enriched_at||Date.now()-Date.parse(item.enriched_at)>30*86400000)) enrichDetail(false);
     if (item.kind==='tvshow') {
-      const episodes=await api(`media?kind=episode&parent_id=${encodeURIComponent(item.id)}&sort=title&order=asc&limit=200`);
-      if (state.detail?.id===item.id) {
-        const ordered=episodes.items.sort((a,b)=>(a.season-b.season)||(a.episode-b.episode));
-        $('episode-list').innerHTML=ordered.length?ordered.map(e=>`<button data-media="${esc(e.id)}">S${String(e.season||0).padStart(2,'0')} E${String(e.episode||0).padStart(2,'0')} · ${esc(e.title)} <span class="muted">· ${esc(stateLabels[e.watch_status])}</span></button>`).join(''):'Aucun épisode Kodi importé pour cette série.';
-        if (episodes.has_more) $('episode-list').insertAdjacentHTML('beforeend','<p class="hint">Les 200 premiers épisodes sont affichés. Retrouvez les autres dans le catalogue avec le filtre Épisodes.</p>');
+      const seasons=await api(`media/${encodeURIComponent(item.id)}/seasons`);
+      if(state.detail?.id===item.id&&$('season-list')){
+        $('season-list').innerHTML=seasons.length?seasons.map(season=>
+          `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="false">Saison ${season.season===0?'0 · Spéciaux':season.season} <span class="muted">${season.episode_count} épisodes · ${season.watched_count} vus</span></button>`
+        ).join(''):'Aucune saison importée pour cette série.';
       }
     }
   } catch(e) {toast(e.message);}
+}
+async function loadSeasonEpisodes(season,offset=0) {
+  const detail=state.detail;
+  if(!detail||detail.kind!=='tvshow'||!$('episode-list'))return;
+  const parent=detail.id;
+  const node=$('episode-list');
+  node.dataset.season=String(season);
+  if(!offset)node.innerHTML='<p class="hint">Chargement des épisodes…</p>';
+  try{
+    const page=await api(`media/${encodeURIComponent(parent)}/seasons/${season}/episodes?limit=100&offset=${offset}`);
+    if(state.detail?.id!==parent||node.dataset.season!==String(season))return;
+    const markup=page.items.map(e=>
+      `<button type="button" data-media="${esc(e.id)}"><strong>E${String(e.episode??0).padStart(2,'0')}</strong> · ${esc(e.title)} <span class="muted">· ${esc(stateLabels[e.watch_status])}${e.runtime_minutes?' · '+e.runtime_minutes+' min':''}</span>${e.plot?`<small class="episode-synopsis">${esc(e.plot)}</small>`:''}</button>`
+    ).join('');
+    if(!offset)node.innerHTML=`<p class="section-label">SAISON ${season} · ${page.total} ÉPISODES</p>${markup||'<p class="hint">Aucun épisode.</p>'}`;
+    else {node.querySelector('[data-load-season]')?.remove();node.insertAdjacentHTML('beforeend',markup);}
+    if(page.has_more)node.insertAdjacentHTML('beforeend',`<button class="secondary" data-load-season="${season}" data-offset="${offset+page.items.length}">Afficher plus d’épisodes</button>`);
+  }catch(e){if(state.detail?.id===parent&&node.dataset.season===String(season))node.textContent='Chargement des épisodes impossible : '+e.message;}
 }
 async function diagnoseKodi() {
   const item=state.detail;
@@ -772,6 +790,21 @@ document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
+  if(button.hasAttribute('data-season')) {
+    document.querySelectorAll('.season-button').forEach(b=>b.setAttribute('aria-expanded',String(b===button)));
+    loadSeasonEpisodes(Number(button.dataset.season));
+    return;
+  }
+  if(button.hasAttribute('data-load-season')) {
+    loadSeasonEpisodes(Number(button.dataset.loadSeason),Number(button.dataset.offset)||0);
+    return;
+  }
+  if(button.dataset.returnToSeries){
+    const seriesId=button.dataset.returnToSeries,season=Number(button.dataset.returnSeason)||0;
+    await openDetail(seriesId);
+    if(state.detail?.id===seriesId)loadSeasonEpisodes(season);
+    return;
+  }
   if(button.dataset.genre) {$('genre').value=button.dataset.genre; $('detail-dialog').close();  loadMedia();}
   if(button.hasAttribute('data-toggle-format')) {
     const value=canonicalFormat(button.dataset.toggleFormat);

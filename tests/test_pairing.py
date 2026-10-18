@@ -16,6 +16,8 @@ def test_public_discovery_is_minimal_and_pairing_is_admin_only(client, admin):
         "service": "home-kodi-library",
         "api_version": "v1",
         "pairing": True,
+        "server_version": "0.1.0",
+        "mobile_compatibility": {"min_contract": 1, "max_contract": 1},
     }
     assert client.post("/api/v1/pairing/start", json={}).status_code == 401
     assert (

@@ -26,6 +26,7 @@ class SortField(StrEnum):
     RATING = "rating"
     USER_RATING = "user_rating"
     LAST_PLAYED = "last_played"
+    EPISODE = "episode"
 
 
 class StrictModel(BaseModel):
@@ -284,6 +285,12 @@ class MediaDetail(MediaSummary):
     enriched_at: str | None = None
 
 
+class SeasonSummary(BaseModel):
+    season: int
+    episode_count: int
+    watched_count: int
+
+
 class MediaPage(BaseModel):
     items: list[MediaSummary]
     total: int
@@ -379,9 +386,17 @@ class SessionView(BaseModel):
     access_method: Literal["session", "bearer", "ingress", "local"] = "session"
 
 
+class MobileCompatibility(BaseModel):
+    """Compatibility of mobile DTOs, independent of server release numbers."""
+
+    min_contract: int = Field(ge=1)
+    max_contract: int = Field(ge=1)
+
+
 class CatalogueStatus(BaseModel):
     version: str
     api_version: str
+    mobile_compatibility: MobileCompatibility
     works: int
     editions: int
     counts: dict[str, int]

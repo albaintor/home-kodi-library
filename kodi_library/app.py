@@ -26,6 +26,7 @@ from starlette.middleware.cors import CORSMiddleware
 from . import __version__
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
+from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
 from .enrichment import enrich_tmdb, probe_tmdb
@@ -54,6 +55,7 @@ from .models import (
     PlayInput,
     PlayResult,
     ReplayResponse,
+    SeasonSummary,
     SessionInput,
     SessionView,
     SortField,
@@ -204,7 +206,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get(API + "/discovery", include_in_schema=False)
     def discovery_info():
         # Deliberately public, with no credentials, file paths or catalogue data.
-        return {"service": "home-kodi-library", "api_version": "v1", "pairing": True}
+        return {
+            "service": "home-kodi-library",
+            "api_version": "v1",
+            "server_version": __version__,
+            "pairing": True,
+            "mobile_compatibility": mobile_compatibility(),
+        }
 
     @app.post(
         API + "/pairing/start",
@@ -284,6 +292,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {
             "version": __version__,
             "api_version": "v1",
+            "mobile_compatibility": mobile_compatibility(),
             **store.status(),
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
@@ -305,6 +314,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         source_type: Literal["kodi", "clz", "mymovies", "filmotech"] | None = None,
         source_id: str | None = None,
         parent_id: str | None = None,
+        season: int | None = Query(None, ge=0, le=10000),
         year: int | None = Query(None, ge=1800, le=2200),
         recent_days: int | None = Query(None, ge=1, le=3650),
         sort: SortField = SortField.DATE_ADDED,
@@ -323,10 +333,50 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             source_type=source_type,
             source_id=source_id,
             parent_id=parent_id,
+            season=season,
             year=year,
             recent_days=recent_days,
             sort=sort,
             order=order,
+            limit=limit,
+            offset=offset,
+        )
+
+    @app.get(
+        API + "/media/{media_id}/seasons",
+        response_model=list[SeasonSummary],
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+    )
+    def media_seasons(media_id: str):
+        """Navigable season list; empty for shows without imported episodes."""
+        result = store.seasons(media_id)
+        if result is None:
+            raise HTTPException(404, "Unknown TV show.")
+        return result
+
+    @app.get(
+        API + "/media/{media_id}/seasons/{season}/episodes",
+        response_model=MediaPage,
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+    )
+    def season_episodes(
+        media_id: str,
+        season: int,
+        limit: int = Query(100, ge=1, le=200),
+        offset: int = Query(0, ge=0),
+    ):
+        if season < 0 or season > 10000:
+            raise HTTPException(422, "Invalid season.")
+        if store.seasons(media_id) is None:
+            raise HTTPException(404, "Unknown TV show.")
+        return store.media(
+            kind="episode",
+            parent_id=media_id,
+            season=season,
+            sort="episode",
+            order="asc",
             limit=limit,
             offset=offset,
         )

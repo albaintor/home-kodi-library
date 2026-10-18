@@ -48,7 +48,9 @@ def prepare_media(client, admin, kind="movie", with_player=True):
         assert result.status_code == 201
     mid = next(
         item["id"]
-        for item in client.get("/api/v1/media", headers=admin).json()["items"]
+        for item in client.get(
+            f"/api/v1/media?kind={kind}", headers=admin
+        ).json()["items"]
         if item["kind"] == kind
     )
     return sid, mid
