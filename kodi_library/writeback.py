@@ -11,6 +11,7 @@ from collections import defaultdict
 from typing import Any
 
 from .connectors.base import ConnectorError
+from .mymovies_writeback import write_mymovies
 from .players import connection
 from .utils import identifiers
 
@@ -18,7 +19,10 @@ _LOG = logging.getLogger(__name__)
 
 # Null clears the local override ("use source value"), not the source itself.
 # Extend this registry when another connector supports updates.
-WRITABLE_FIELDS = {"kodi": frozenset({"user_rating", "watched"})}
+WRITABLE_FIELDS = {
+    "kodi": frozenset({"user_rating", "watched"}),
+    "mymovies": frozenset({"watched"}),
+}
 
 _KODI_METHODS = {
     "movie": ("movieid", "moviedetails", "GetMovieDetails", "SetMovieDetails"),
@@ -130,44 +134,60 @@ async def propagate_personal(
     sources: list[dict],
     players: list[dict],
 ) -> list[dict]:
-    """Return an explicit result for each writable source; never hide failures.
+    """Return explicit statuses; source XML files are never modified.
 
-    Read-only collection sources are never contacted. The local personal edit
-    is saved by the caller independently, including when Kodi is offline.
+    The caller persists local preferences even if an upstream service fails.
+    Adding new source types only requires a field capability and adapter.
     """
     editions_by_source: dict[str, list[dict]] = defaultdict(list)
     for edition in detail["editions"]:
         if edition["source_type"] in WRITABLE_FIELDS:
             editions_by_source[edition["source_id"]].append(edition)
-    source_info = {s["id"]: s for s in sources}
+    source_info = {source["id"]: source for source in sources}
     results = []
     for source_id, editions in editions_by_source.items():
-        fields = WRITABLE_FIELDS["kodi"] & changes.keys()
-        if not any(changes[key] is not None for key in fields):
+        kind = editions[0]["source_type"]
+        fields = WRITABLE_FIELDS[kind] & changes.keys()
+        if not any(changes[field] is not None for field in fields):
             continue
         source = source_info.get(source_id, {})
+        if kind == "mymovies" and not source.get("config", {}).get("remote_enabled"):
+            # An XML-only source is intentionally read-only, not an error.
+            continue
         entry = {
             "source_id": source_id,
             "source_name": source.get("name") or editions[0]["source_name"],
-            "source_type": "kodi",
+            "source_type": kind,
         }
         if not source.get("enabled", True):
-            results.append(
-                {**entry, "status": "unavailable", "message": "La source Kodi est désactivée."}
-            )
+            results.append({
+                **entry, "status": "unavailable", "message": "La source est désactivée."
+            })
             continue
-        candidates = [p for p in players if p["source_id"] == source_id]
+        if kind == "mymovies":
+            if type(changes.get("watched")) is not bool:
+                continue
+            try:
+                warning = await write_mymovies(source, editions, changes)
+                results.append({**entry, "status": "updated", "message": warning})
+            except ConnectorError as exc:
+                results.append({**entry, "status": "failed", "message": str(exc)})
+            except Exception:
+                _LOG.exception("Unexpected My Movies writeback error for source %s", source_id)
+                results.append({
+                    **entry, "status": "failed",
+                    "message": "Erreur inattendue lors de la mise à jour My Movies.",
+                })
+            continue
+
+        candidates = [player for player in players if player["source_id"] == source_id]
         if not candidates:
-            results.append(
-                {
-                    **entry,
-                    "status": "unavailable",
-                    "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
-                }
-            )
+            results.append({
+                **entry, "status": "unavailable",
+                "message": "Aucune instance Kodi JSON-RPC n'est configurée pour cette source.",
+            })
             continue
-        # Multiple playback targets may share a single MariaDB library. Try
-        # another player if one is offline; only one successful write is needed.
+        # Multiple players can share one Kodi database. Only one success needed.
         errors = []
         for player in candidates:
             try:
@@ -177,14 +197,11 @@ async def propagate_personal(
             except ConnectorError as exc:
                 errors.append(str(exc))
             except Exception:
-                _LOG.exception("Unexpected Kodi write-back failure for source %s", source_id)
+                _LOG.exception("Unexpected Kodi writeback error for source %s", source_id)
                 errors.append("Erreur inattendue lors de la mise à jour Kodi.")
         else:
-            results.append(
-                {
-                    **entry,
-                    "status": "failed",
-                    "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
-                }
-            )
+            results.append({
+                **entry, "status": "failed",
+                "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
+            })
     return results
