@@ -16,9 +16,13 @@ from kodi_library.kodi_scan import scan_until_finished, websocket_url
 def sql_fixture(*, remote_id="123", title="Film"):
     source = {
         "config": {
-            "host": "nas", "port": 3306, "database": "MyVideos131",
-            "username": "reader", "write_username": "writer",
-            "write_password": "private-writer-secret", "mariadb_write_enabled": True,
+            "host": "nas",
+            "port": 3306,
+            "database": "MyVideos131",
+            "username": "reader",
+            "write_username": "writer",
+            "write_password": "private-writer-secret",
+            "mariadb_write_enabled": True,
         },
     }
     detail = {"title": "Film", "kind": "movie"}
@@ -28,7 +32,12 @@ def sql_fixture(*, remote_id="123", title="Film"):
 
     def execute(statement, _params=None):
         if statement.startswith("SELECT idMovie"):
-            cursor.fetchone.return_value = {"idMovie": 11, "c00": title, "userrating": 4, "idFile": 27}
+            cursor.fetchone.return_value = {
+                "idMovie": 11,
+                "c00": title,
+                "userrating": 4,
+                "idFile": 27,
+            }
         elif statement.startswith("SELECT type, value FROM uniqueid"):
             cursor.fetchall.return_value = [{"type": "tmdb", "value": remote_id}]
         elif statement == "SHOW COLUMNS FROM movie_view":
@@ -58,9 +67,7 @@ def test_sql_fallback_wrong_identity_aborts_without_mutation():
             write_kodi_mariadb(source, detail, editions, {"watched": False})
     conn.commit.assert_not_called()
     conn.rollback.assert_called_once()
-    assert not any(
-        item.args[0].startswith("UPDATE ") for item in cursor.execute.call_args_list
-    )
+    assert not any(item.args[0].startswith("UPDATE ") for item in cursor.execute.call_args_list)
 
 
 def test_sql_fallback_requires_explicit_writer():
@@ -110,12 +117,14 @@ class FakeSession:
 
 
 def test_websocket_scan_waits_for_start_finish_and_ack():
-    socket = FakeSocket([
-        {"id": 1, "result": {"UpdateData": True}},
-        {"method": "VideoLibrary.OnScanStarted"},
-        {"method": "VideoLibrary.OnScanFinished"},
-        {"id": 2, "result": "OK"},
-    ])
+    socket = FakeSocket(
+        [
+            {"id": 1, "result": {"UpdateData": True}},
+            {"method": "VideoLibrary.OnScanStarted"},
+            {"method": "VideoLibrary.OnScanFinished"},
+            {"id": 2, "result": "OK"},
+        ]
+    )
     session = FakeSession(socket)
     with patch("kodi_library.kodi_scan.aiohttp.ClientSession", return_value=session):
         asyncio.run(scan_until_finished({"host": "kodi", "websocket_port": 9091}))
