@@ -36,6 +36,8 @@ from .list_thumbnails import ListThumbnails
 from .models import (
     CatalogueStatus,
     ConnectionResult,
+    EpisodeWatchInput,
+    EpisodeWatchResult,
     ErrorResponse,
     Facets,
     JobView,
@@ -48,8 +50,6 @@ from .models import (
     ListView,
     MariaDBConnectionInput,
     MediaDetail,
-    EpisodeWatchInput,
-    EpisodeWatchResult,
     MediaPage,
     PairingRedeem,
     PairingRequest,
