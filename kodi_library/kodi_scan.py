@@ -38,14 +38,20 @@ async def scan_until_finished(config: dict) -> None:
             timeout=aiohttp.ClientTimeout(total=None), trust_env=False
         ) as client:
             async with client.ws_connect(
-                websocket_url(config), timeout=aiohttp.ClientWSTimeout(ws_close=10),
-                heartbeat=30, max_msg_size=256_000,
+                websocket_url(config),
+                timeout=aiohttp.ClientWSTimeout(ws_close=10),
+                heartbeat=30,
+                max_msg_size=256_000,
             ) as ws:
                 async def rpc(method, rpc_id, params=None):
-                    await ws.send_json({
-                        "jsonrpc": "2.0", "id": rpc_id, "method": method,
-                        "params": params or {},
-                    })
+                    await ws.send_json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": rpc_id,
+                            "method": method,
+                            "params": params or {},
+                        }
+                    )
 
                 async def read():
                     message = await ws.receive()
