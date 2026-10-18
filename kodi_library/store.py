@@ -1160,7 +1160,7 @@ class Store:
             if work_id
             else ""
         )
-        return [
+        lists = [
             dict(r)
             for r in conn.execute(
                 "SELECT l.*,(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count FROM lists l"
@@ -1169,6 +1169,33 @@ class Store:
                 (work_id,) if work_id else (),
             )
         ]
+        for item in lists:
+            item["thumbnail"] = f"/api/v1/lists/{item['id']}/thumbnail?v={item['revision']}"
+        return lists
+
+    def list_thumbnail_data(self, list_id: str) -> dict:
+        """Snapshot the first four manually ordered posters and list revision."""
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            list_row = conn.execute(
+                "SELECT id,revision FROM lists WHERE id=?", (list_id,)
+            ).fetchone()
+            if list_row is None:
+                raise KeyError("Unknown list.")
+            rows = conn.execute(
+                "SELECT w.title,w.poster FROM list_items i "
+                "JOIN works w ON w.id=i.work_id WHERE i.list_id=? "
+                "ORDER BY i.position,w.id LIMIT 4",
+                (list_id,),
+            ).fetchall()
+            return {
+                "id": list_row["id"],
+                "revision": list_row["revision"],
+                "items": [
+                    {"title": row["title"], "posters": json.loads(row["poster"] or "[]")}
+                    for row in rows
+                ],
+            }
 
     def lists(self):
         with self.connect() as conn:

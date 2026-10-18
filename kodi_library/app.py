@@ -30,6 +30,7 @@ from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
 from .enrichment import enrich_tmdb, probe_tmdb
+from .list_thumbnails import ListThumbnails
 from .models import (
     CatalogueStatus,
     ConnectionResult,
@@ -124,6 +125,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.store, app.state.auth, app.state.sync = store, auth, sync
     app.state.artwork = Artwork(settings)
+    app.state.list_thumbnails = ListThumbnails(settings.data_dir, app.state.artwork)
+    list_mutation_lock = asyncio.Lock()
     enrichment_lock = asyncio.Lock()
     if settings.cors_origins:
         app.add_middleware(
@@ -732,6 +735,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
+    async def refresh_list_thumbnail(list_id: str) -> None:
+        # Media edits must be committed even when a source poster is unreachable.
+        try:
+            await app.state.list_thumbnails.refresh(store, list_id)
+        except OSError:
+            # A later thumbnail request retries from the persistent list revision.
+            import logging
+
+            logging.getLogger(__name__).exception("Cannot store list thumbnail for %s", list_id)
+
     @app.get(
         API + "/lists",
         response_model=list[ListView],
@@ -748,8 +761,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def create_list(data: ListInput):
-        return store.save_list(data.model_dump())
+    async def create_list(data: ListInput):
+        async with list_mutation_lock:
+            value = await asyncio.to_thread(store.save_list, data.model_dump())
+            await refresh_list_thumbnail(value["id"])
+            return value
 
     @app.put(
         API + "/lists/{list_id}",
@@ -757,14 +773,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def update_list(list_id: str, data: ListInput):
-        return list_error(lambda: store.save_list(data.model_dump(), list_id))
+    async def update_list(list_id: str, data: ListInput):
+        async with list_mutation_lock:
+            value = await asyncio.to_thread(
+                list_error, lambda: store.save_list(data.model_dump(), list_id)
+            )
+            await refresh_list_thumbnail(list_id)
+            return value
 
     @app.delete(
         API + "/lists/{list_id}", status_code=204, tags=["Lists"], dependencies=[Depends(writable)]
     )
-    def delete_list(list_id: str):
-        list_error(lambda: store.delete_list(list_id))
+    async def delete_list(list_id: str):
+        async with list_mutation_lock:
+            await asyncio.to_thread(list_error, lambda: store.delete_list(list_id))
+            await app.state.list_thumbnails.delete(list_id)
+
+    @app.get(
+        API + "/lists/{list_id}/thumbnail",
+        tags=["Lists"],
+        dependencies=[Depends(authenticated)],
+        responses={200: {"content": {"image/jpeg": {}}}},
+    )
+    async def list_thumbnail(list_id: str):
+        try:
+            data = await app.state.list_thumbnails.get(store, list_id)
+        except KeyError as exc:
+            raise HTTPException(404, str(exc.args[0])) from exc
+        return Response(data, media_type="image/jpeg")
 
     @app.get(
         API + "/lists/{list_id}/items",
@@ -791,8 +827,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def add_list_item(list_id: str, data: ListItemInput):
-        list_error(lambda: store.change_list_item(list_id, data.media_id))
+    async def add_list_item(list_id: str, data: ListItemInput):
+        async with list_mutation_lock:
+            await asyncio.to_thread(
+                list_error, lambda: store.change_list_item(list_id, data.media_id)
+            )
+            await refresh_list_thumbnail(list_id)
 
     @app.delete(
         API + "/lists/{list_id}/items/{media_id}",
@@ -800,8 +840,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def remove_list_item(list_id: str, media_id: str):
-        list_error(lambda: store.change_list_item(list_id, media_id, remove=True))
+    async def remove_list_item(list_id: str, media_id: str):
+        async with list_mutation_lock:
+            await asyncio.to_thread(
+                list_error, lambda: store.change_list_item(list_id, media_id, remove=True)
+            )
+            await refresh_list_thumbnail(list_id)
 
     @app.put(
         API + "/lists/{list_id}/order",
@@ -809,8 +853,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def order_list(list_id: str, data: ListOrderInput):
-        list_error(lambda: store.reorder_list(list_id, data.media_ids, data.revision))
+    async def order_list(list_id: str, data: ListOrderInput):
+        async with list_mutation_lock:
+            await asyncio.to_thread(
+                list_error, lambda: store.reorder_list(list_id, data.media_ids, data.revision)
+            )
+            await refresh_list_thumbnail(list_id)
 
     @app.get(
         API + "/media/{media_id}/artwork/{aspect}",

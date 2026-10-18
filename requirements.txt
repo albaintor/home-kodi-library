@@ -65,6 +65,8 @@ pydantic-core==2.50.0
     # via pydantic
 pymysql==1.2.3
     # via kodi-library (pyproject.toml)
+pillow==11.3.0
+    # via kodi-library (pyproject.toml)
 python-multipart==0.0.32
     # via kodi-library (pyproject.toml)
 starlette==1.7.0

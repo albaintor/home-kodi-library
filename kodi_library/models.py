@@ -260,6 +260,7 @@ class ListView(BaseModel):
     revision: int
     item_count: int
     created_at: str
+    thumbnail: str | None = None
 
 
 class ListItemInput(StrictModel):
