@@ -25,11 +25,8 @@ def test_mosaic_layouts_one_to_four_and_empty():
             assert image.size == (WIDTH, HEIGHT)
             assert image.format == "JPEG"
             if n:
-                for index, color in enumerate(colors[:n]):
-                    assert any(
-                        abs(a - b) < 28
-                        for a, b in zip(image.getpixel((12, 12)), colors[0], strict=False)
-                    )
+                actual = image.getpixel((12, 12))
+                assert all(abs(actual[i] - colors[0][i]) < 28 for i in range(3))
             else:
                 assert image.getpixel((0, 0)) != (0, 0, 0)
 
