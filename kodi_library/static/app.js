@@ -425,6 +425,7 @@ function currentParams(offset=0) {
     params.delete('q');
     if(state.personSearch.tmdbId)params.set('person_tmdb_id',state.personSearch.tmdbId);
     else if(state.personSearch.imdbId)params.set('person_imdb_id',state.personSearch.imdbId);
+    if(state.personSearch.tmdbId||state.personSearch.imdbId)params.set('person_name',state.personSearch.name);
   }
   if(state.deepSearch) params.set('deep_search','true');
   if (state.recent) params.set('recent_days','30');
@@ -476,7 +477,7 @@ async function loadMedia({append=false}={}) {
     for(const item of added) state.ids.add(item.id);
     state.items.push(...added); state.total=page.total; state.nextOffset=offset+page.items.length;
     state.hasMore=page.has_more&&page.items.length>0;
-    $('result-count').textContent=`${page.total.toLocaleString(displayLocale())} résultat${page.total>1?'s':''}${state.recent?' · ajoutés depuis 30 jours':''}`;
+    $('result-count').textContent=`${page.total.toLocaleString(displayLocale())} résultat${page.total>1?'s':''}${state.personSearch?.tmdbId?' · TMDB #'+state.personSearch.tmdbId+' (crédits non identifiés inclus)':state.personSearch?.imdbId?' · IMDb '+state.personSearch.imdbId+' (crédits non identifiés inclus)':''}${state.recent?' · ajoutés depuis 30 jours':''}`;
     if (!append&&!page.items.length) {
       const empty=!state.facets?.sources.length || state.facets.sources.every(s=>!s.item_count);
       $('results').innerHTML=`<div class="empty-state"><span class="empty-icon" aria-hidden="true">▦</span><h2>${empty?'Votre bibliothèque commence ici.':'Aucun titre ne correspond.'}</h2><p>${empty?'Connectez la base Kodi ou importez un export CLZ Movies.':'Modifiez les filtres ou essayez un autre mot.'}</p>${state.role==='admin'&&empty?'<button class="primary" data-action="connections">Ajouter une source →</button>':'<button class="secondary" data-action="reset">Effacer les filtres</button>'}</div>`;
@@ -634,6 +635,7 @@ function searchLocalPerson(name,tmdbId='',imdbId='') {
   const person=String(name||'').trim();
   if(!person)return;
   state.personSearch={
+    name:person,
     tmdbId:/^[0-9]+$/.test(tmdbId)?tmdbId:null,
     imdbId:/^nm[0-9]+$/.test(imdbId)?imdbId:null
   };
