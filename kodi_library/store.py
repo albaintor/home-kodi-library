@@ -213,6 +213,7 @@ class Store:
         value = dict(row)
         config = json.loads(value["config"])
         config["has_password"] = bool(config.pop("password", ""))
+        config["has_remote_api_key"] = bool(config.pop("remote_api_key", ""))
         value["config"] = config
         value["enabled"] = bool(value["enabled"])
         return value
@@ -241,10 +242,10 @@ class Store:
             ).fetchone()
             if existing and existing["type"] != data["type"]:
                 raise ValueError("The source type cannot be changed.")
-            if config.get("password") is None:
-                config["password"] = (
-                    json.loads(existing["config"]).get("password", "") if existing else ""
-                )
+            old_config = json.loads(existing["config"]) if existing else {}
+            for secret in ("password", "remote_api_key"):
+                if config.get(secret) is None:
+                    config[secret] = old_config.get(secret, "")
             conn.execute(
                 "INSERT INTO sources(id,name,type,enabled,config) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,config=excluded.config",
                 (
