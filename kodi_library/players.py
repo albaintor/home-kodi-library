@@ -10,6 +10,10 @@ from .connectors.base import ConnectorError
 from .utils import identifiers
 
 
+class KodiUnavailable(ConnectorError):
+    """The HTTP JSON-RPC transport is unreachable; opt-in SQL fallback is possible."""
+
+
 def endpoint(config: dict) -> str:
     host = config["host"]
     if any(c in host for c in ("/", "@", "?", "#")):
@@ -64,7 +68,7 @@ async def connection(config: dict):
         )
         raise ConnectorError(f"{message} (HTTP {code})") from exc
     except httpx.TimeoutException as exc:
-        raise ConnectorError(
+        raise KodiUnavailable(
             "Kodi connection timed out. Check that Kodi is running, its host/port and the firewall."
         ) from exc
     except httpx.ConnectError as exc:
@@ -78,7 +82,7 @@ async def connection(config: dict):
             if dns
             else "Cannot connect to Kodi. Start Kodi and check host, port, HTTPS settings and HTTP remote control."
         )
-        raise ConnectorError(message) from exc
+        raise KodiUnavailable(message) from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise ConnectorError(
             "Invalid Kodi HTTP/JSON response. Check port, HTTP/HTTPS and remote-control settings."
