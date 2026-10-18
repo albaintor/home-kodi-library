@@ -282,3 +282,9 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .season-cover{position:relative}
 .season-watched-flag{position:absolute;top:7px;right:7px;display:grid;place-items:center;width:29px;height:29px;border-radius:50%;font-size:19px;font-weight:750;box-shadow:0 2px 8px #0006}
 .season-watched-flag.complete{color:#a8efc5;background:#1c4939ed}
+
+
+/* A visible, keyboard-accessible clear action (also for TMDB/IMDb cast searches). */
+.search-box input[type="search"]::-webkit-search-cancel-button{-webkit-appearance:none;appearance:none}
+.search-box .search-clear{flex:0 0 36px;min-width:36px;min-height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--muted);font-size:24px;line-height:1}
+.search-box .search-clear:hover{background:var(--raised);color:var(--text)}
