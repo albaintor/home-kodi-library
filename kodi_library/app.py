@@ -457,8 +457,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if source_cache[source_id]:
                         sources.append(source_cache[source_id])
                 await asyncio.to_thread(
-                    store.stage_writebacks, episode_id, detail,
-                    {"watched": data.watched}, sources
+                    store.stage_writebacks, episode_id, detail, {"watched": data.watched}, sources
                 )
             if result["ids"]:
                 background_tasks.add_task(
