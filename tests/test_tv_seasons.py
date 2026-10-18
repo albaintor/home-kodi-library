@@ -148,6 +148,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
 
     assert client.patch(endpoint, json={"watched": True}).status_code == 401
     from conftest import READ
+
     read = {"Authorization": f"Bearer {READ}"}
     assert client.patch(endpoint, headers=read, json={"watched": True}).status_code == 403
     assert (
