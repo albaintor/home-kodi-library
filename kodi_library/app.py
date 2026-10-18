@@ -205,7 +205,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get(API + "/discovery", include_in_schema=False)
     def discovery_info():
         # Deliberately public, with no credentials, file paths or catalogue data.
-        return {"service": "home-kodi-library", "api_version": "v1", "pairing": True,
+        return {"service": "home-kodi-library", "api_version": "v1", "server_version": __version__, "pairing": True,
                 "mobile_compatibility": mobile_compatibility()}
 
     @app.post(
