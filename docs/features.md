@@ -51,6 +51,13 @@ In the catalog, the **Custom lists** section offers **＋ Create a list** and **
 
 Work UUIDs preserve list associations during normal synchronization. If a media item disappears from every source, it is removed from its lists; deleting a list does not delete any media. Upgrading automatically migrates SQLite from schema version 1 to version 2. Back up the `data` volume before downgrading: older releases cannot read schema version 2.
 
+
+## Kodi write-back fallback and scan-triggered refresh
+
+The source settings allow an explicitly enabled MariaDB write fallback with a dedicated write account. HTTP JSON-RPC remains the preferred update path; fallback is attempted only when all Kodi endpoints are unreachable, never when a write is rejected. A durable audit records the method, attempts and outcome, accessible from the source's History control and API. Direct SQL updates do not notify Kodi, so Kodi's UI can require a refresh. Kodi versions and database schemas differ; use limited table/column grants and an explicit `MyVideos` database.
+
+Use **Refresh Kodi** on a source with an associated Kodi player to request `VideoLibrary.Scan` over the Kodi WebSocket interface (normally TCP 9090, configurable independently of the HTTP JSON-RPC port). The background job waits for `VideoLibrary.OnScanFinished`, then imports Kodi MariaDB again into the local catalogue. If notification monitoring fails or times out, the job fails instead of falsely reporting successful publication. Kodi's remote JSON-RPC TCP/WebSocket interface must be enabled for this feature.
+
 ## Kodi file paths and playback
 
 Full file paths are visible on media pages, with a **Copy path** action (on HTTP, a copy dialog is shown instead of clipboard access). **Play on Kodi** contacts the selected player from the backend and lets you select the file/version. Explicit selection opens that exact path, even for a default version. Kodi uses its own access permissions to the media files.
