@@ -206,8 +206,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get(API + "/discovery", include_in_schema=False)
     def discovery_info():
         # Deliberately public, with no credentials, file paths or catalogue data.
-        return {"service": "home-kodi-library", "api_version": "v1", "server_version": __version__, "pairing": True,
-                "mobile_compatibility": mobile_compatibility()}
+        return {
+            "service": "home-kodi-library",
+            "api_version": "v1",
+            "server_version": __version__,
+            "pairing": True,
+            "mobile_compatibility": mobile_compatibility(),
+        }
 
     @app.post(
         API + "/pairing/start",
@@ -367,8 +372,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if store.seasons(media_id) is None:
             raise HTTPException(404, "Unknown TV show.")
         return store.media(
-            kind="episode", parent_id=media_id, season=season,
-            sort="episode", order="asc", limit=limit, offset=offset,
+            kind="episode",
+            parent_id=media_id,
+            season=season,
+            sort="episode",
+            order="asc",
+            limit=limit,
+            offset=offset,
         )
 
     @app.get(
