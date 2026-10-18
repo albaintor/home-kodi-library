@@ -1,6 +1,7 @@
 """Versioned REST API consumed identically by the web UI and native clients."""
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -47,6 +48,8 @@ from .models import (
     ListView,
     MariaDBConnectionInput,
     MediaDetail,
+    EpisodeWatchInput,
+    EpisodeWatchResult,
     MediaPage,
     PairingRedeem,
     PairingRequest,
@@ -72,6 +75,8 @@ from .settings import Settings
 from .store import Store
 from .sync import BusyError, SyncManager
 from .writeback import propagate_personal
+
+_LOG = logging.getLogger(__name__)
 
 API = "/api/v1"
 STATIC = Path(__file__).parent / "static"
@@ -390,6 +395,76 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             limit=limit,
             offset=offset,
         )
+
+    async def finish_episode_watch_writebacks(episode_ids: list[str], watched: bool):
+        # Changes and their pending writebacks are saved before responding.
+        # Subsequent contradictory edits supersede older queued values.
+        async with personal_edit_lock:
+            players = [
+                await asyncio.to_thread(store.player, player["id"])
+                for player in await asyncio.to_thread(store.players)
+            ]
+            source_cache = {}
+            for episode_id in episode_ids:
+                try:
+                    detail = await asyncio.to_thread(store.detail, episode_id)
+                    if not detail or detail.get("personal", {}).get("watched") != watched:
+                        continue
+                    sources = []
+                    for source_id in {e["source_id"] for e in detail["editions"]}:
+                        if source_id not in source_cache:
+                            source_cache[source_id] = await asyncio.to_thread(
+                                store.source, source_id, private=True
+                            )
+                        if source_cache[source_id]:
+                            sources.append(source_cache[source_id])
+                    changes = {"watched": watched}
+                    results = await propagate_personal(detail, changes, sources, players)
+                    if results:
+                        await asyncio.to_thread(
+                            store.record_writebacks, episode_id, changes, results
+                        )
+                except Exception:
+                    # The per-episode retry record remains durable.
+                    _LOG.exception("Bulk watch writeback failed for %s", episode_id)
+
+    @app.patch(
+        API + "/media/{media_id}/episodes/watch",
+        response_model=EpisodeWatchResult,
+        tags=["Personal"],
+        dependencies=[Depends(writable)],
+    )
+    async def edit_episode_watches(
+        media_id: str, data: EpisodeWatchInput, background_tasks: BackgroundTasks
+    ):
+        """Mark one season or all imported episodes, including specials."""
+        async with personal_edit_lock:
+            result = await asyncio.to_thread(
+                store.set_episode_watch_status, media_id, data.watched, data.season
+            )
+            if result is None:
+                raise HTTPException(404, "Unknown TV show.")
+            # Persist retryable per-episode upstream writes before acknowledging.
+            source_cache = {}
+            for episode_id in result["ids"]:
+                detail = await asyncio.to_thread(store.detail, episode_id)
+                sources = []
+                for source_id in {e["source_id"] for e in detail["editions"]}:
+                    if source_id not in source_cache:
+                        source_cache[source_id] = await asyncio.to_thread(
+                            store.source, source_id, private=True
+                        )
+                    if source_cache[source_id]:
+                        sources.append(source_cache[source_id])
+                await asyncio.to_thread(
+                    store.stage_writebacks, episode_id, detail,
+                    {"watched": data.watched}, sources
+                )
+            if result["ids"]:
+                background_tasks.add_task(
+                    finish_episode_watch_writebacks, result["ids"], data.watched
+                )
+            return {key: value for key, value in result.items() if key != "ids"}
 
     @app.get(
         API + "/facets",
