@@ -321,6 +321,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def list_media(
         q: str = Query("", max_length=300),
         deep_search: bool = False,
+        person_tmdb_id: str | None = Query(None, pattern=r"^[0-9]+$", max_length=24),
+        person_imdb_id: str | None = Query(None, pattern=r"^nm[0-9]+$", max_length=24),
         kind: Kind | None = None,
         watch_status: WatchStatus | None = None,
         genre: str | None = Query(None, max_length=120),
@@ -340,6 +342,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return store.media(
             q=q,
             deep_search=deep_search,
+            person_tmdb_id=person_tmdb_id,
+            person_imdb_id=person_imdb_id,
             kind=kind,
             watch_status=watch_status,
             genre=genre,
