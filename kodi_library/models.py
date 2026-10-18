@@ -183,6 +183,18 @@ class PersonalInput(StrictModel):
     watched: bool | None = None
 
 
+class EpisodeWatchInput(StrictModel):
+    watched: bool
+    season: int | None = Field(default=None, ge=0, le=10000)
+
+
+class EpisodeWatchResult(BaseModel):
+    total: int
+    updated: int
+    watched: bool
+    season: int | None = None
+
+
 class PersonalView(BaseModel):
     user_rating: float | None = None
     watched: bool | None = None
