@@ -3,6 +3,7 @@
 A scan is never declared complete when the socket disconnects or times out:
 the local catalogue is only imported after VideoLibrary.OnScanFinished.
 """
+
 import asyncio
 import json
 from urllib.parse import urlsplit
