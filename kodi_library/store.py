@@ -964,9 +964,7 @@ class Store:
     def seasons(self, parent_id: str) -> list[dict[str, int]] | None:
         """Compact TV season index. Includes specials (season 0) if present."""
         with self.connect() as conn:
-            show = conn.execute(
-                "SELECT kind FROM works WHERE id=?", (parent_id,)
-            ).fetchone()
+            show = conn.execute("SELECT kind FROM works WHERE id=?", (parent_id,)).fetchone()
             if not show or show["kind"] != "tvshow":
                 return None
             rows = conn.execute(
