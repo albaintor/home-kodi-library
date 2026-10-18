@@ -70,6 +70,12 @@ CREATE TABLE IF NOT EXISTS personal (
  work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
  user_rating REAL, watched INTEGER
 );
+CREATE TABLE IF NOT EXISTS work_person_ids (
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ namespace TEXT NOT NULL, person_id TEXT NOT NULL,
+ PRIMARY KEY(namespace,person_id,work_id)
+);
+CREATE INDEX IF NOT EXISTS work_person_ids_by_work ON work_person_ids(work_id);
 CREATE TABLE IF NOT EXISTS device_tokens (
  token_hash TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
  created_at TEXT NOT NULL
@@ -117,6 +123,24 @@ def encode(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def person_ids(work_id: str, members: Any) -> list[tuple[str, str, str]]:
+    """Extract person identities; never confuse media IDs with cast IDs."""
+    if not isinstance(members, list):
+        return []
+    identities = []
+    for member in members:
+        if not isinstance(member, dict):
+            continue
+        for namespace, key, pattern in (
+            ("tmdb", "tmdb_id", r"[0-9]+"),
+            ("imdb", "imdb_id", r"nm[0-9]+"),
+        ):
+            candidate = str(member.get(key) or "")
+            if re.fullmatch(pattern, candidate):
+                identities.append((namespace, candidate, work_id))
+    return identities
+
+
 class Store:
     def __init__(self, path: Path):
         self.path = path
@@ -153,6 +177,31 @@ class Store:
                         )
                         for row in conn.execute("SELECT id,title,original_title FROM works")
                     ),
+                )
+            # Populate the indexed person identities once for existing NAS catalogues.
+            # This avoids rescanning Kodi/TMDB and preserves manually imported credits.
+            if not conn.execute(
+                "SELECT 1 FROM catalogue_meta WHERE key='person_ids_index_v1'"
+            ).fetchone():
+                for record in conn.execute("SELECT work_id,payload FROM records"):
+                    metadata = json.loads(record["payload"]).get("metadata", {})
+                    if not isinstance(metadata, dict):
+                        continue
+                    for key in ("people", "cast"):
+                        conn.executemany(
+                            "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id)"
+                            " VALUES(?,?,?)",
+                            person_ids(record["work_id"], metadata.get(key)),
+                        )
+                for record in conn.execute("SELECT work_id,payload FROM enrichment"):
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id)"
+                        " VALUES(?,?,?)",
+                        person_ids(record["work_id"], json.loads(record["payload"]).get("people")),
+                    )
+                conn.execute(
+                    "INSERT INTO catalogue_meta(key,value) VALUES('person_ids_index_v1',?)",
+                    (now(),),
                 )
             # Compatible migration for existing NAS installations (schema v2).
             job_columns = {row["name"] for row in conn.execute("PRAGMA table_info(jobs)")}
@@ -658,6 +707,7 @@ class Store:
             (work_id,),
         ).fetchall()
         conn.execute("DELETE FROM identifiers WHERE work_id=?", (work_id,))
+        conn.execute("DELETE FROM work_person_ids WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM works_fts WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM works_title_fts WHERE work_id=?", (work_id,))
         if not rows:
@@ -718,6 +768,21 @@ class Store:
         if enrichment:
             search_text += " " + " ".join(
                 p["name"] for p in json.loads(enrichment[0]).get("people", [])
+            )
+        for payload, _ in entries:
+            metadata = payload.get("metadata") or {}
+            if isinstance(metadata, dict):
+                for key in ("people", "cast"):
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id)"
+                        " VALUES(?,?,?)",
+                        person_ids(work_id, metadata.get(key)),
+                    )
+        if enrichment:
+            conn.executemany(
+                "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id)"
+                " VALUES(?,?,?)",
+                person_ids(work_id, json.loads(enrichment[0]).get("people")),
             )
         posters = list(dict.fromkeys(v for p, _ in entries for v in p.get("poster", [])))
         fanarts = list(dict.fromkeys(v for p, _ in entries for v in p.get("fanart", [])))
@@ -892,6 +957,8 @@ class Store:
         *,
         q: str = "",
         deep_search: bool = False,
+        person_tmdb_id: str | None = None,
+        person_imdb_id: str | None = None,
         kind: str | None = None,
         watch_status: str | None = None,
         genre: str | None = None,
@@ -913,6 +980,18 @@ class Store:
         # constituent episodes. Explicit episode/parent queries remain available.
         if kind is None and parent_id is None:
             clauses.append("w.kind IN ('movie','tvshow')")
+        if person_tmdb_id is not None:
+            clauses.append(
+                "w.id IN (SELECT work_id FROM work_person_ids "
+                "WHERE namespace='tmdb' AND person_id=?)"
+            )
+            params.append(person_tmdb_id)
+        elif person_imdb_id is not None:
+            clauses.append(
+                "w.id IN (SELECT work_id FROM work_person_ids "
+                "WHERE namespace='imdb' AND person_id=?)"
+            )
+            params.append(person_imdb_id)
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
             index = "works_fts" if deep_search else "works_title_fts"
