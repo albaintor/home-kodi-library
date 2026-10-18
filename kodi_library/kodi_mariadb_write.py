@@ -151,9 +151,10 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                                 raise ConnectorError("Aucun fichier Kodi associé à ce média.")
                             placeholders = ",".join("%s" for _ in file_ids)
                             sql = (
-                                "UPDATE files SET playCount=GREATEST(COALESCE(playCount,0),1) "
+                                "UPDATE files SET playCount=GREATEST(COALESCE(playCount,0),1), "
+                                "lastPlayed=COALESCE(lastPlayed,UTC_TIMESTAMP()) "
                                 if watched
-                                else "UPDATE files SET playCount=0 "
+                                else "UPDATE files SET playCount=0,lastPlayed=NULL "
                             ) + f"WHERE idFile IN ({placeholders})"
                             cursor.execute(sql, file_ids)
                     conn.commit()
