@@ -219,15 +219,26 @@ async def propagate_personal(
                 continue
             try:
                 warning = await write_mymovies(source, editions, changes)
-                results.append({**entry, "status": "updated", "method": "mymovies", "attempts": ["mymovies:updated"], "message": warning})
+                results.append(
+                    {
+                        **entry,
+                        "status": "updated",
+                        "method": "mymovies",
+                        "attempts": ["mymovies:updated"],
+                        "message": warning,
+                    }
+                )
             except ConnectorError as exc:
                 results.append({**entry, "status": "failed", "message": str(exc)})
             except Exception:
                 _LOG.exception("Unexpected My Movies writeback error for source %s", source_id)
-                results.append({
-                    **entry, "status": "failed",
-                    "message": "Erreur inattendue lors de la mise à jour My Movies.",
-                })
+                results.append(
+                    {
+                        **entry,
+                        "status": "failed",
+                        "message": "Erreur inattendue lors de la mise à jour My Movies.",
+                    }
+                )
             continue
 
         candidates = [player for player in players if player["source_id"] == source_id]
