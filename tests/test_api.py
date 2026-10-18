@@ -300,3 +300,19 @@ def test_media_diagnostics_identifies_sql_movie_absent_from_navigation(client, a
     assert info["editions"][0]["exists_in_movie"] is True
     assert info["editions"][0]["in_library"] is False
     assert info["library_verified"] is True
+
+
+def test_mobile_contract_announced_without_changing_versioned_endpoint(client, admin):
+    # Existing mobile builds keep using /api/v1/status; new builds can
+    # negotiate a future breaking data-model change before catalogue requests.
+    status = client.get("/api/v1/status", headers=admin)
+    assert status.status_code == 200
+    assert status.json()["api_version"] == "v1"
+    assert status.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+
+    discovery = client.get("/api/v1/discovery")
+    assert discovery.status_code == 200
+    assert discovery.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+
+    assert client.get("/api/v1/status").status_code == 401
+    assert client.get("/api/v1/media", headers=admin).status_code == 200
