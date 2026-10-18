@@ -214,6 +214,7 @@ class Store:
         config = json.loads(value["config"])
         config["has_password"] = bool(config.pop("password", ""))
         config["has_remote_api_key"] = bool(config.pop("remote_api_key", ""))
+        config["has_write_password"] = bool(config.pop("write_password", ""))
         value["config"] = config
         value["enabled"] = bool(value["enabled"])
         return value
@@ -243,7 +244,7 @@ class Store:
             if existing and existing["type"] != data["type"]:
                 raise ValueError("The source type cannot be changed.")
             old_config = json.loads(existing["config"]) if existing else {}
-            for secret in ("password", "remote_api_key"):
+            for secret in ("password", "remote_api_key", "write_password"):
                 if config.get(secret) is None:
                     config[secret] = old_config.get(secret, "")
             conn.execute(
