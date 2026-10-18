@@ -56,8 +56,6 @@ class SourceConfig(StrictModel):
     remote_api_key: SecretStr | None = None
     remote_enabled: bool = False
     mariadb_write_enabled: bool = False
-    write_username: str = Field(default="", max_length=128)
-    write_password: SecretStr | None = None
 
     @field_validator("database")
     @classmethod
@@ -197,6 +195,51 @@ class WritebackResult(BaseModel):
     message: str | None = None
 
 
+class SourceWritebackState(BaseModel):
+    media_id: str | None = None
+    source_id: str
+    source_name: str
+    source_type: str
+    icon: str
+    status: Literal["updated", "pending", "failed", "unavailable"]
+    method: str | None = None
+    updated_at: str
+    pending_fields: list[str] = Field(default_factory=list)
+    message: str | None = None
+
+
+class PendingWriteback(BaseModel):
+    id: str
+    media_id: str
+    media_title: str
+    source_id: str
+    source_name: str
+    source_type: str
+    icon: str
+    changes: dict[str, float | bool]
+    created_at: str
+    updated_at: str
+    retry_count: int
+    last_error: str | None = None
+
+
+class WritebackStatus(BaseModel):
+    pending_count: int
+    pending: list[PendingWriteback]
+    recent: list[SourceWritebackState]
+
+
+class ReplayResult(BaseModel):
+    pending_id: str
+    media_id: str
+    result: WritebackResult
+
+
+class ReplayResponse(BaseModel):
+    results: list[ReplayResult]
+    pending_count: int
+
+
 class ListInput(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=1000)
@@ -235,6 +278,7 @@ class MediaDetail(MediaSummary):
     trailers: list[str] = Field(default_factory=list)
     personal: PersonalView = Field(default_factory=PersonalView)
     writeback: list[WritebackResult] = Field(default_factory=list)
+    writeback_state: list[SourceWritebackState] = Field(default_factory=list)
     lists: list[ListView] = Field(default_factory=list)
     tmdb_available: bool = False
     enriched_at: str | None = None

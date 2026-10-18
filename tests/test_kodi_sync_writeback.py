@@ -18,8 +18,7 @@ def kodi_fixture(client, admin):
                 "host": "nas",
                 "database": "MyVideos131",
                 "username": "reader",
-                "write_username": "writer",
-                "write_password": "a-nonempty-private-password",
+                "password": "a-nonempty-private-password",
                 "mariadb_write_enabled": True,
             },
         },
@@ -158,5 +157,6 @@ def test_mariadb_writer_secret_redacted(client, admin):
     response = client.get("/api/v1/sources", headers=admin)
     assert "a-nonempty-private-password" not in response.text
     source = next(value for value in response.json() if value["id"] == sid)
-    assert source["config"]["has_write_password"] is True
+    assert source["config"]["has_password"] is True
+    assert "has_write_password" not in source["config"]
     assert source["config"]["mariadb_write_enabled"] is True

@@ -200,3 +200,12 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .source-icon{display:inline-block;width:18px;height:18px;flex-shrink:0;vertical-align:middle}
 .source-icon-clz{color:#65d6b0}.source-icon-mymovies{color:#65a8ff}.source-icon-filmotech{color:#ffb05b}
 .source-badge{display:inline-flex;align-items:center;gap:4px}.source-badge .source-icon{width:14px;height:14px}
+
+/* Per-source outbound sync state, shared by all editable media details. */
+.writeback-indicators-container { display: inline-flex; align-items: center; }
+.writeback-indicators { display: inline-flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
+.writeback-chip { display: inline-flex; align-items: center; gap: .22rem; padding: .18rem .35rem; border: 1px solid var(--border, #7776); border-radius: .45rem; vertical-align: middle; }
+.writeback-chip .source-icon { width: 1.05rem; height: 1.05rem; object-fit: contain; }
+.writeback-chip.updated .writeback-mark { color: #229d70; font-weight: 700; }
+.writeback-chip.pending .writeback-mark { color: #d58e22; font-weight: 700; }
+.writeback-chip.failed .writeback-mark, .writeback-chip.unavailable .writeback-mark { color: #c85050; font-weight: 700; }

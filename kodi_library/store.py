@@ -96,6 +96,18 @@ CREATE TABLE IF NOT EXISTS writeback_audit (
 );
 CREATE INDEX IF NOT EXISTS writeback_audit_by_work ON writeback_audit(work_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS writeback_audit_by_source ON writeback_audit(source_id,created_at DESC);
+CREATE TABLE IF NOT EXISTS writeback_pending (
+ id TEXT PRIMARY KEY,
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
+ changes TEXT NOT NULL,
+ created_at TEXT NOT NULL,
+ updated_at TEXT NOT NULL,
+ retry_count INTEGER NOT NULL DEFAULT 0,
+ last_error TEXT,
+ UNIQUE(work_id,source_id)
+);
+CREATE INDEX IF NOT EXISTS writeback_pending_by_date ON writeback_pending(updated_at DESC);
 PRAGMA user_version = 2;
 """
 
@@ -119,6 +131,15 @@ class Store:
                 )
             conn.execute("PRAGMA journal_mode=WAL")
             conn.executescript(SCHEMA)
+            # Remove obsolete separate-writer secrets on existing installations.
+            for row in conn.execute("SELECT id,config FROM sources WHERE type='kodi'"):
+                saved = json.loads(row["config"])
+                if "write_username" in saved or "write_password" in saved:
+                    saved.pop("write_username", None)
+                    saved.pop("write_password", None)
+                    conn.execute(
+                        "UPDATE sources SET config=? WHERE id=?", (encode(saved), row["id"])
+                    )
             # Backfill the new title-only index for existing installations without
             # requiring users to reimport their Kodi or CLZ data.
             if not conn.execute("SELECT 1 FROM works_title_fts LIMIT 1").fetchone():
@@ -223,7 +244,6 @@ class Store:
         config = json.loads(value["config"])
         config["has_password"] = bool(config.pop("password", ""))
         config["has_remote_api_key"] = bool(config.pop("remote_api_key", ""))
-        config["has_write_password"] = bool(config.pop("write_password", ""))
         value["config"] = config
         value["enabled"] = bool(value["enabled"])
         return value
@@ -252,8 +272,10 @@ class Store:
             ).fetchone()
             if existing and existing["type"] != data["type"]:
                 raise ValueError("The source type cannot be changed.")
+            config.pop("write_username", None)
+            config.pop("write_password", None)
             old_config = json.loads(existing["config"]) if existing else {}
-            for secret in ("password", "remote_api_key", "write_password"):
+            for secret in ("password", "remote_api_key"):
                 if config.get(secret) is None:
                     config[secret] = old_config.get(secret, "")
             conn.execute(
@@ -1379,33 +1401,204 @@ class Store:
         with self.connect() as conn:
             conn.execute("DELETE FROM players WHERE id=?", (player_id,))
 
-    def record_writebacks(self, work_id: str, changes: dict, results: list[dict]) -> None:
-        """Durable, non-secret trace for Kodi/My Movies writes and fallbacks."""
+    @staticmethod
+    def _source_symbol(source_type: str) -> str:
+        # SF Symbols IDs are reusable directly by the iOS application.
+        return {"kodi": "play.rectangle.on.rectangle", "mymovies": "film.stack"}.get(
+            source_type, "arrow.triangle.2.circlepath"
+        )
+
+    def stage_writebacks(
+        self, work_id: str, detail: dict, changes: dict, sources: list[dict]
+    ) -> None:
+        """Persist the latest explicit edit BEFORE calling remote services.
+
+        A new value supersedes an older queued value for the same source/field.
+        Clearing a local override discards the matching queued field but does
+        not write null to the remote service.
+        """
+        from .writeback import WRITABLE_FIELDS
+
+        by_source = {}
+        for edition in detail["editions"]:
+            if edition["source_type"] in WRITABLE_FIELDS:
+                by_source[edition["source_id"]] = edition["source_type"]
+        source_info = {source["id"]: source for source in sources if source}
+        with self.connect() as conn:
+            for source_id, source_type in by_source.items():
+                source = source_info.get(source_id) or {}
+                if source_type == "mymovies" and not source.get("config", {}).get("remote_enabled"):
+                    continue
+                applicable = {k: v for k, v in changes.items() if k in WRITABLE_FIELDS[source_type]}
+                if not applicable:
+                    continue
+                row = conn.execute(
+                    "SELECT id,changes FROM writeback_pending WHERE work_id=? AND source_id=?",
+                    (work_id, source_id),
+                ).fetchone()
+                pending = json.loads(row["changes"]) if row else {}
+                # Clear local-only resets while preserving unrelated failed fields.
+                for key, value in applicable.items():
+                    if value is None:
+                        pending.pop(key, None)
+                    else:
+                        pending[key] = value
+                if row:
+                    if pending:
+                        conn.execute(
+                            "UPDATE writeback_pending SET changes=?,updated_at=?,last_error=NULL "
+                            "WHERE id=?",
+                            (encode(pending), now(), row["id"]),
+                        )
+                    else:
+                        conn.execute("DELETE FROM writeback_pending WHERE id=?", (row["id"],))
+                elif pending:
+                    timestamp = now()
+                    conn.execute(
+                        "INSERT INTO writeback_pending "
+                        "(id,work_id,source_id,changes,created_at,updated_at) "
+                        "VALUES(?,?,?,?,?,?)",
+                        (str(uuid4()), work_id, source_id, encode(pending), timestamp, timestamp),
+                    )
+
+    def pending_writebacks(self, *, pending_id: str | None = None, limit: int = 200) -> list[dict]:
+        with self.connect() as conn:
+            where = "WHERE p.id=?" if pending_id else ""
+            args = (pending_id,) if pending_id else (min(max(limit, 1), 500),)
+            rows = conn.execute(
+                "SELECT p.*,w.title AS media_title,s.name AS source_name,"
+                "s.type AS source_type FROM writeback_pending p "
+                "JOIN works w ON w.id=p.work_id "
+                "JOIN sources s ON s.id=p.source_id "
+                + where
+                + " ORDER BY p.updated_at DESC,p.id DESC"
+                + ("" if pending_id else " LIMIT ?"),
+                args,
+            ).fetchall()
+            return [
+                {
+                    "id": row["id"],
+                    "media_id": row["work_id"],
+                    "media_title": row["media_title"],
+                    "source_id": row["source_id"],
+                    "source_name": row["source_name"],
+                    "source_type": row["source_type"],
+                    "icon": self._source_symbol(row["source_type"]),
+                    "changes": json.loads(row["changes"]),
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "retry_count": row["retry_count"],
+                    "last_error": row["last_error"],
+                }
+                for row in rows
+            ]
+
+    def writeback_pending_count(self) -> int:
+        with self.connect() as conn:
+            return conn.execute("SELECT COUNT(*) FROM writeback_pending").fetchone()[0]
+
+    def writeback_state(self, work_id: str | None = None, limit: int = 30) -> list[dict]:
+        """Last upstream result per source, overlaid with unresolved pending changes."""
+        with self.connect() as conn:
+            query = (
+                "SELECT a.* FROM writeback_audit a "
+                + ("WHERE a.work_id=? " if work_id else "")
+                + "ORDER BY a.created_at DESC,a.rowid DESC LIMIT ?"
+            )
+            args = (work_id, 3000) if work_id else (3000,)
+            rows = conn.execute(query, args).fetchall()
+            latest = {}
+            for row in rows:
+                key = (row["work_id"], row["source_id"])
+                if key not in latest:
+                    latest[key] = {
+                        "media_id": row["work_id"],
+                        "source_id": row["source_id"],
+                        "source_name": row["source_name"],
+                        "source_type": row["source_type"],
+                        "icon": self._source_symbol(row["source_type"]),
+                        "status": row["status"],
+                        "method": row["method"],
+                        "updated_at": row["created_at"],
+                        "pending_fields": [],
+                        "message": row["message"],
+                    }
+            pending_rows = conn.execute(
+                "SELECT p.*,s.type AS source_type,s.name AS source_name "
+                "FROM writeback_pending p JOIN sources s ON s.id=p.source_id "
+                + ("WHERE p.work_id=?" if work_id else ""),
+                (work_id,) if work_id else (),
+            ).fetchall()
+            for row in pending_rows:
+                key = (row["work_id"], row["source_id"])
+                last = latest.get(key, {})
+                latest[key] = {
+                    "source_id": row["source_id"],
+                    "source_name": row["source_name"],
+                    "source_type": row["source_type"],
+                    "icon": self._source_symbol(row["source_type"]),
+                    "status": "pending",
+                    "method": last.get("method"),
+                    "updated_at": row["updated_at"],
+                    "pending_fields": sorted(json.loads(row["changes"])),
+                    "message": row["last_error"] or last.get("message"),
+                }
+            return sorted(latest.values(), key=lambda event: event["updated_at"], reverse=True)[
+                :limit
+            ]
+
+    def record_writebacks(
+        self, work_id: str, changes: dict, results: list[dict], *, replay: bool = False
+    ) -> None:
+        """Atomically record remote outcomes and clear ONLY delivered queue fields."""
         if not results:
             return
         fields = encode(sorted(changes))
         with self.connect() as conn:
-            conn.executemany(
-                "INSERT INTO writeback_audit "
-                "(id,work_id,source_id,source_name,source_type,created_at,status,method,attempts,fields,message) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-                [
+            for result in results:
+                source_id = result["source_id"]
+                row = conn.execute(
+                    "SELECT id,changes FROM writeback_pending WHERE work_id=? AND source_id=?",
+                    (work_id, source_id),
+                ).fetchone()
+                if row:
+                    queued = json.loads(row["changes"])
+                    if result["status"] == "updated":
+                        for field, value in changes.items():
+                            if field in queued and queued[field] == value:
+                                queued.pop(field)
+                        if queued:
+                            conn.execute(
+                                "UPDATE writeback_pending SET changes=?,updated_at=?,last_error=NULL "
+                                "WHERE id=?",
+                                (encode(queued), now(), row["id"]),
+                            )
+                        else:
+                            conn.execute("DELETE FROM writeback_pending WHERE id=?", (row["id"],))
+                    else:
+                        conn.execute(
+                            "UPDATE writeback_pending SET last_error=?,updated_at=?,"
+                            "retry_count=retry_count+? WHERE id=?",
+                            (result.get("message"), now(), int(replay), row["id"]),
+                        )
+                conn.execute(
+                    "INSERT INTO writeback_audit "
+                    "(id,work_id,source_id,source_name,source_type,created_at,status,"
+                    "method,attempts,fields,message) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         str(uuid4()),
                         work_id,
-                        r["source_id"],
-                        r["source_name"],
-                        r["source_type"],
+                        source_id,
+                        result["source_name"],
+                        result["source_type"],
                         now(),
-                        r["status"],
-                        r.get("method"),
-                        encode(r.get("attempts", [])),
+                        result["status"],
+                        result.get("method"),
+                        encode(result.get("attempts", [])),
                         fields,
-                        r.get("message"),
-                    )
-                    for r in results
-                ],
-            )
+                        result.get("message"),
+                    ),
+                )
 
     def writeback_history(
         self, *, work_id: str | None = None, source_id: str | None = None, limit: int = 50
@@ -1416,7 +1609,7 @@ class Store:
         with self.connect() as conn:
             rows = conn.execute(
                 f"SELECT * FROM writeback_audit WHERE {column}=? "
-                "ORDER BY created_at DESC,id DESC LIMIT ?",
+                "ORDER BY created_at DESC,rowid DESC LIMIT ?",
                 (work_id or source_id, min(max(1, limit), 200)),
             ).fetchall()
             return [

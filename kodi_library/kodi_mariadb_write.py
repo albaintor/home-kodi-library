@@ -1,7 +1,7 @@
 """Conservative, explicitly configured Kodi MariaDB write fallback.
 
 This is used only when the Kodi JSON-RPC transport is unavailable. We never
-write through views, and never use the library's SELECT-only credentials.
+write through views; the source credentials need UPDATE privileges.
 """
 
 import math
@@ -28,10 +28,10 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
     database = config.get("database") or ""
     if not re.fullmatch(r"MyVideos[0-9]+", database):
         raise ConnectorError("Le repli MariaDB exige un nom de base MyVideos explicite.")
-    username = config.get("write_username") or ""
-    password = config.get("write_password") or ""
-    if not username or not password:
-        raise ConnectorError("Configurez un compte MariaDB dédié avec droits d'écriture limités.")
+    username = config.get("username") or ""
+    password = config.get("password") or ""
+    if not username:
+        raise ConnectorError("Configurez les identifiants MariaDB de la source Kodi.")
     host = config.get("host", "")
     if not host or any(c in host for c in ("/", "@", "?", "#")):
         raise ConnectorError("Hôte MariaDB invalide.")

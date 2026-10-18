@@ -53,12 +53,14 @@ from .models import (
     PlayerView,
     PlayInput,
     PlayResult,
+    ReplayResponse,
     SessionInput,
     SessionView,
     SortField,
     SourceInput,
     SourceView,
     WatchStatus,
+    WritebackStatus,
 )
 from .players import play
 from .players import probe as probe_player
@@ -74,7 +76,7 @@ STATIC = Path(__file__).parent / "static"
 def unsecret(model) -> dict:
     value = model.model_dump()
     config = value.get("config", value)
-    for secret in ("password", "remote_api_key", "write_password"):
+    for secret in ("password", "remote_api_key"):
         if config.get(secret) is not None:
             config[secret] = config[secret].get_secret_value()
     return value
@@ -346,7 +348,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def media_detail(media_id: str):
         if value := store.detail(media_id):
-            return {**value, "tmdb_available": bool(settings.tmdb_api_token.strip())}
+            return {
+                **value,
+                "tmdb_available": bool(settings.tmdb_api_token.strip()),
+                "writeback_state": store.writeback_state(media_id),
+            }
         raise HTTPException(404, "Unknown media.")
 
     @app.get(
@@ -439,7 +445,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             detail = await asyncio.to_thread(store.detail, media_id)
             if detail is None:
                 raise HTTPException(404, "Unknown media.")
-            changes = data.model_dump(exclude_unset=True)
+            # PATCH is the sole outbound-write trigger. Unchanged values must
+            # not retry a failed propagation or overwrite a third-party edit.
+            changes = {
+                key: value
+                for key, value in data.model_dump(exclude_unset=True).items()
+                if detail.get("personal", {}).get(key) != value
+            }
             if changes:
                 await asyncio.to_thread(store.update_personal, media_id, changes)
             relevant_source_ids = {edition["source_id"] for edition in detail["editions"]}
@@ -447,6 +459,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await asyncio.to_thread(store.source, source_id, private=True)
                 for source_id in relevant_source_ids
             ]
+            await asyncio.to_thread(store.stage_writebacks, media_id, detail, changes, sources)
             public_players = await asyncio.to_thread(store.players)
             players = [
                 await asyncio.to_thread(store.player, player["id"])
@@ -461,6 +474,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await asyncio.to_thread(store.record_writebacks, media_id, changes, writeback)
             updated = await asyncio.to_thread(store.detail, media_id)
             updated["writeback"] = writeback
+            updated["writeback_state"] = await asyncio.to_thread(store.writeback_state, media_id)
             return updated
 
     @app.get(
@@ -472,6 +486,124 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not store.detail(media_id):
             raise HTTPException(404, "Unknown media.")
         return store.writeback_history(work_id=media_id, limit=limit)
+
+    @app.get(
+        API + "/writebacks/status",
+        response_model=WritebackStatus,
+        tags=["Personal"],
+        dependencies=[Depends(authenticated)],
+    )
+    def writeback_status():
+        """Current outgoing synchronization indicators for web and iOS."""
+        return {
+            "pending_count": store.writeback_pending_count(),
+            "pending": store.pending_writebacks(),
+            "recent": store.writeback_state(limit=30),
+        }
+
+    @app.get(
+        API + "/writebacks/pending",
+        tags=["Personal"],
+        dependencies=[Depends(authenticated)],
+    )
+    def pending_writebacks():
+        return store.pending_writebacks()
+
+    async def replay_writeback_item(pending_id: str) -> dict:
+        row = await asyncio.to_thread(store.pending_writebacks, pending_id=pending_id)
+        if not row:
+            raise HTTPException(404, "Pending synchronization not found.")
+        pending = row[0]
+        media_id = pending["media_id"]
+        detail = await asyncio.to_thread(store.detail, media_id)
+        if detail is None:
+            raise HTTPException(409, "The media no longer exists.")
+        if not any(e["source_id"] == pending["source_id"] for e in detail["editions"]):
+            raise HTTPException(409, "The original source edition is no longer associated.")
+        changes = pending["changes"]
+        # Reject stale data: never overwrite a third-party service with values
+        # which are no longer the user's explicit local preferences.
+        if any(detail.get("personal", {}).get(k) != v for k, v in changes.items()):
+            raise HTTPException(
+                409, "Pending values do not match the current personal preferences."
+            )
+        source = await asyncio.to_thread(store.source, pending["source_id"], private=True)
+        if not source:
+            raise HTTPException(409, "The original source no longer exists.")
+        if source["type"] == "mymovies" and not source["config"].get("remote_enabled"):
+            raise HTTPException(409, "My Movies writeback is not enabled.")
+        players = (
+            [
+                await asyncio.to_thread(store.player, player["id"])
+                for player in await asyncio.to_thread(store.players)
+                if player["source_id"] == pending["source_id"]
+            ]
+            if source["type"] == "kodi"
+            else []
+        )
+        scoped = {
+            **detail,
+            "editions": [
+                edition
+                for edition in detail["editions"]
+                if edition["source_id"] == pending["source_id"]
+            ],
+        }
+        result = await propagate_personal(scoped, changes, [source], players)
+        if not result:
+            raise HTTPException(409, "The source no longer supports these fields.")
+        await asyncio.to_thread(store.record_writebacks, media_id, changes, result, replay=True)
+        return {"pending_id": pending_id, "media_id": media_id, "result": result[0]}
+
+    @app.post(
+        API + "/writebacks/pending/{pending_id}/retry",
+        response_model=ReplayResponse,
+        tags=["Personal"],
+        dependencies=[Depends(writable)],
+    )
+    async def retry_writeback(pending_id: str):
+        async with personal_edit_lock:
+            result = await replay_writeback_item(pending_id)
+            return {
+                "results": [result],
+                "pending_count": await asyncio.to_thread(store.writeback_pending_count),
+            }
+
+    @app.post(
+        API + "/writebacks/retry",
+        response_model=ReplayResponse,
+        tags=["Personal"],
+        dependencies=[Depends(writable)],
+    )
+    async def retry_all_writebacks():
+        """User-initiated only; partial failures stay queued for another replay."""
+        async with personal_edit_lock:
+            pending = await asyncio.to_thread(store.pending_writebacks)
+            results = []
+            for item in pending:
+                try:
+                    result = await replay_writeback_item(item["id"])
+                    results.append(result)
+                except HTTPException as exc:
+                    # A missing/obsolete entry stays cached; do not replay or
+                    # delete it silently, and continue with independent items.
+                    results.append(
+                        {
+                            "pending_id": item["id"],
+                            "media_id": item["media_id"],
+                            "result": {
+                                "source_id": item["source_id"],
+                                "source_name": item["source_name"],
+                                "source_type": item["source_type"],
+                                "status": "failed",
+                                "message": str(exc.detail),
+                            },
+                        }
+                    )
+            return {
+                "results": results,
+                "pending_count": await asyncio.to_thread(store.writeback_pending_count),
+            }
 
     @app.post(
         API + "/media/{media_id}/enrich",
