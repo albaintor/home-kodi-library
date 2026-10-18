@@ -102,7 +102,11 @@ def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
 def test_kodi_scan_finished_triggers_local_sync(client, admin):
     sid, _mid = kodi_fixture(client, admin)
     with (
-        patch("kodi_library.sync.scan_until_finished", new_callable=AsyncMock) as scan,
+        patch(
+            "kodi_library.sync.scan_until_finished",
+            new_callable=AsyncMock,
+            return_value="websocket",
+        ) as scan,
         patch(
             "kodi_library.sync.KodiConnector.fetch",
             return_value=[

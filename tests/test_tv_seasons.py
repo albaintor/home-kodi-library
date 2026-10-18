@@ -51,9 +51,9 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     seasons = client.get(f"/api/v1/media/{series_id}/seasons", headers=admin)
     assert seasons.status_code == 200
     assert seasons.json() == [
-        {"season": 0, "episode_count": 1, "watched_count": 0},
-        {"season": 1, "episode_count": 3, "watched_count": 2},
-        {"season": 2, "episode_count": 2, "watched_count": 1},
+        {"season": 0, "episode_count": 1, "watched_count": 0, "poster": None},
+        {"season": 1, "episode_count": 3, "watched_count": 2, "poster": None},
+        {"season": 2, "episode_count": 2, "watched_count": 1, "poster": None},
     ]
 
     first = client.get(f"/api/v1/media/{series_id}/seasons/1/episodes?limit=2", headers=admin)
