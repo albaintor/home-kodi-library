@@ -5,14 +5,16 @@ associated with the same MariaDB library. The dispatch boundary can host other
 writable connector types without changing the personal-edit API.
 """
 
+import asyncio
 import logging
 import math
 from collections import defaultdict
 from typing import Any
 
 from .connectors.base import ConnectorError
+from .kodi_mariadb_write import write_kodi_mariadb
 from .mymovies_writeback import write_mymovies
-from .players import connection
+from .players import KodiUnavailable, connection
 from .utils import identifiers
 
 _LOG = logging.getLogger(__name__)
@@ -169,7 +171,7 @@ async def propagate_personal(
                 continue
             try:
                 warning = await write_mymovies(source, editions, changes)
-                results.append({**entry, "status": "updated", "message": warning})
+                results.append({**entry, "status": "updated", "method": "mymovies", "attempts": ["mymovies:updated"], "message": warning})
             except ConnectorError as exc:
                 results.append({**entry, "status": "failed", "message": str(exc)})
             except Exception:
@@ -189,19 +191,52 @@ async def propagate_personal(
             continue
         # Multiple players can share one Kodi database. Only one success needed.
         errors = []
+        attempts = []
+        offline = True
         for player in candidates:
             try:
                 warning = await _write_kodi(player, detail, editions, changes)
-                results.append({**entry, "status": "updated", "message": warning})
+                attempts.append("jsonrpc:updated")
+                results.append({
+                    **entry, "status": "updated", "method": "jsonrpc",
+                    "attempts": attempts, "message": warning,
+                })
                 break
+            except KodiUnavailable as exc:
+                attempts.append("jsonrpc:unavailable")
+                errors.append(str(exc))
             except ConnectorError as exc:
+                offline = False
+                attempts.append("jsonrpc:rejected")
                 errors.append(str(exc))
             except Exception:
+                offline = False
+                attempts.append("jsonrpc:error")
                 _LOG.exception("Unexpected Kodi writeback error for source %s", source_id)
                 errors.append("Erreur inattendue lors de la mise à jour Kodi.")
         else:
+            # SQL is attempted only when all configured Kodi endpoints are
+            # unreachable and the administrator explicitly enabled fallback.
+            if offline and source.get("config", {}).get("mariadb_write_enabled"):
+                try:
+                    warning = await asyncio.to_thread(
+                        write_kodi_mariadb, source, detail, editions, changes
+                    )
+                    attempts.append("mariadb:updated")
+                    results.append({
+                        **entry, "status": "updated", "method": "mariadb",
+                        "attempts": attempts, "message": warning,
+                    })
+                    continue
+                except ConnectorError as exc:
+                    attempts.append("mariadb:failed")
+                    errors.append(str(exc))
+                except Exception:
+                    attempts.append("mariadb:error")
+                    _LOG.exception("Unexpected Kodi MariaDB fallback failure for %s", source_id)
+                    errors.append("Échec inattendu du repli MariaDB.")
             results.append({
-                **entry, "status": "failed",
+                **entry, "status": "failed", "attempts": attempts,
                 "message": errors[-1] if errors else "Échec de la synchronisation Kodi.",
             })
     return results
