@@ -44,8 +44,7 @@ def _match_title(response, edition: dict, title_id: str) -> bool:
     # Check the title before mutating it; a numerical export ID may not match
     # the remote installation's database ID.
     candidates = [
-        child for child in response.iter()
-        if child.tag.rsplit("}", 1)[-1].casefold() == "title"
+        child for child in response.iter() if child.tag.rsplit("}", 1)[-1].casefold() == "title"
     ]
     if len(candidates) != 1:
         return False
@@ -64,9 +63,10 @@ def _match_title(response, edition: dict, title_id: str) -> bool:
         return False
     # In addition to the title, require an explicit matching identifier or
     # barcode. Never write on a title-only match from a different database.
-    return bool(remote_id == title_id or (
-        local_barcode and remote_barcode and local_barcode == remote_barcode
-    ))
+    return bool(
+        remote_id == title_id
+        or (local_barcode and remote_barcode and local_barcode == remote_barcode)
+    )
 
 
 async def write_mymovies(source: dict, editions: list[dict], changes: dict) -> str | None:
