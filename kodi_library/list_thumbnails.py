@@ -73,7 +73,9 @@ def compose(images: list[bytes | None]) -> bytes:
             draw.rectangle((x, y, x + w - 1, y + h - 1), fill=(37, 49, 65))
             draw.rounded_rectangle(
                 (x + w // 4, y + h // 4, x + 3 * w // 4, y + 3 * h // 4),
-                radius=8, outline=(111, 135, 160), width=3,
+                radius=8,
+                outline=(111, 135, 160),
+                width=3,
             )
 
     output = io.BytesIO()
@@ -105,6 +107,7 @@ class ListThumbnails:
             path = self._path(list_id, revision)
             if path.is_file():
                 return await asyncio.to_thread(path.read_bytes)
+
             async def poster(candidates: list[str]) -> bytes | None:
                 if not candidates:
                     return None

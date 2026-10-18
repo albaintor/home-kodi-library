@@ -64,21 +64,27 @@ def test_mosaic_is_saved_and_replaced_at_list_revision(client, admin):
         with patch("kodi_library.list_thumbnails.compose", side_effect=AssertionError("cached")):
             assert client.get(original, headers=admin).content == first.content
 
-        assert client.post(
-            f"/api/v1/lists/{lid}/items",
-            json={"media_id": works["Red"]},
-            headers=admin,
-        ).status_code == 204
+        assert (
+            client.post(
+                f"/api/v1/lists/{lid}/items",
+                json={"media_id": works["Red"]},
+                headers=admin,
+            ).status_code
+            == 204
+        )
         added = client.get("/api/v1/lists", headers=admin).json()[0]
         assert added["thumbnail"] != original
         assert client.get(original, headers=admin).status_code == 404
         assert len(list(thumbnails.directory.glob(f"{lid}-*.jpg"))) == 1
 
-        assert client.post(
-            f"/api/v1/lists/{lid}/items",
-            json={"media_id": works["Blue"]},
-            headers=admin,
-        ).status_code == 204
+        assert (
+            client.post(
+                f"/api/v1/lists/{lid}/items",
+                json={"media_id": works["Blue"]},
+                headers=admin,
+            ).status_code
+            == 204
+        )
         changed = client.get("/api/v1/lists", headers=admin).json()[0]
         assert changed["thumbnail"] != added["thumbnail"]
         assert len(list(thumbnails.directory.glob(f"{lid}-*.jpg"))) == 1

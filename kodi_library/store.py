@@ -1241,9 +1241,7 @@ class Store:
     def list_thumbnail_input(self, list_id: str) -> dict[str, Any] | None:
         """Snapshot the revision and first four poster candidates in manual order."""
         with self.connect() as conn:
-            row = conn.execute(
-                "SELECT revision FROM lists WHERE id=?", (list_id,)
-            ).fetchone()
+            row = conn.execute("SELECT revision FROM lists WHERE id=?", (list_id,)).fetchone()
             if row is None:
                 return None
             candidates = conn.execute(

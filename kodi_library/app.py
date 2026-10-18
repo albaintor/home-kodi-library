@@ -147,7 +147,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
         response.headers["Cache-Control"] = (
             "private, max-age=31536000, immutable"
-            if "/lists/" in request.url.path and "/thumbnails/" in request.url.path
+            if "/lists/" in request.url.path
+            and "/thumbnails/" in request.url.path
             and response.status_code == 200
             else "private, no-store"
         )
@@ -805,9 +806,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def add_list_item(
-        list_id: str, data: ListItemInput, background_tasks: BackgroundTasks
-    ):
+    def add_list_item(list_id: str, data: ListItemInput, background_tasks: BackgroundTasks):
         list_error(lambda: store.change_list_item(list_id, data.media_id))
         background_tasks.add_task(thumbnails.warm, list_id)
 
@@ -817,9 +816,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def remove_list_item(
-        list_id: str, media_id: str, background_tasks: BackgroundTasks
-    ):
+    def remove_list_item(list_id: str, media_id: str, background_tasks: BackgroundTasks):
         list_error(lambda: store.change_list_item(list_id, media_id, remove=True))
         background_tasks.add_task(thumbnails.warm, list_id)
 
@@ -829,9 +826,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Lists"],
         dependencies=[Depends(writable)],
     )
-    def order_list(
-        list_id: str, data: ListOrderInput, background_tasks: BackgroundTasks
-    ):
+    def order_list(list_id: str, data: ListOrderInput, background_tasks: BackgroundTasks):
         list_error(lambda: store.reorder_list(list_id, data.media_ids, data.revision))
         background_tasks.add_task(thumbnails.warm, list_id)
 
