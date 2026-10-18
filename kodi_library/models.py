@@ -50,6 +50,11 @@ class SourceConfig(StrictModel):
     database: str = Field(default="", max_length=128)
     tls: bool = False
     ca_file: str | None = None
+    # Optional, licensed My Movies Remote Server API (not XML or cloud access).
+    remote_host: str = Field(default="", max_length=253)
+    remote_port: int = Field(default=51414, ge=1, le=65535)
+    remote_api_key: SecretStr | None = None
+    remote_enabled: bool = False
 
     @field_validator("database")
     @classmethod
