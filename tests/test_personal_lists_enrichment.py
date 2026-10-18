@@ -356,3 +356,54 @@ def test_failed_enrichment_retains_cache(client, admin):
             == 502
         )
     assert store.detail(mid)["people"][0]["name"] == "Cached Person"
+
+
+def test_person_identifier_filter_is_exact_and_survives_restart(client, admin):
+    store = client.app.state.store
+    source = store.save_source({"name": "Kodi cast", "type": "kodi"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "1", "movie", "First film",
+                metadata={"people": [{"name": "Same Name", "tmdb_id": "101"}]},
+            ),
+            Record(
+                "2", "movie", "Other homonym",
+                metadata={"people": [{"name": "Same Name", "tmdb_id": "202"}]},
+            ),
+            Record(
+                "3", "movie", "IMDb credit",
+                metadata={"people": [{"name": "Different Name", "imdb_id": "nm321"}]},
+            ),
+            Record("4", "movie", "TMDB enrichment"),
+            Record("5", "movie", "No identifiers", metadata={"people": [{"name": "Same Name"}]}),
+        ],
+    )
+    identifiers = {i["title"]: i["id"] for i in store.media()["items"]}
+    store.save_enrichment(
+        identifiers["TMDB enrichment"],
+        {"people": [{"name": "Same Name", "tmdb_id": "101"}]},
+    )
+
+    def matched(params):
+        response = client.get("/api/v1/media", params=params, headers=admin)
+        assert response.status_code == 200, response.text
+        return {item["title"] for item in response.json()["items"]}
+
+    assert matched({"person_tmdb_id": "101"}) == {"First film", "TMDB enrichment"}
+    assert matched({"person_tmdb_id": "202"}) == {"Other homonym"}
+    assert matched({"person_imdb_id": "nm321"}) == {"IMDb credit"}
+    assert matched({"q": "Same Name", "deep_search": "true"}) >= {
+        "First film", "Other homonym", "No identifiers",
+    }
+    assert client.get("/api/v1/media?person_tmdb_id=not-an-id", headers=admin).status_code == 422
+    # The existing-index migration and subsequent snapshot rebuilding must
+    # both preserve the exact identity matches.
+    with store.connect() as conn:
+        conn.execute("DELETE FROM work_person_ids")
+        conn.execute("DELETE FROM catalogue_meta WHERE key='person_ids_index_v1'")
+    store.initialize()
+    assert matched({"person_tmdb_id": "101"}) == {"First film", "TMDB enrichment"}
+    store.save_enrichment(identifiers["TMDB enrichment"], {"people": []})
+    assert matched({"person_tmdb_id": "101"}) == {"First film"}
