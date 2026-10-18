@@ -24,9 +24,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from . import __version__
-from .compatibility import mobile_compatibility
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
+from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
 from .enrichment import enrich_tmdb, probe_tmdb
@@ -55,10 +55,10 @@ from .models import (
     PlayInput,
     PlayResult,
     ReplayResponse,
+    SeasonSummary,
     SessionInput,
     SessionView,
     SortField,
-    SeasonSummary,
     SourceInput,
     SourceView,
     WatchStatus,
