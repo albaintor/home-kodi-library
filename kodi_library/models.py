@@ -255,12 +255,12 @@ class ListInput(StrictModel):
 
 class ListView(BaseModel):
     id: str
+    thumbnail: str | None = None
     name: str
     description: str
     revision: int
     item_count: int
     created_at: str
-    thumbnail: str | None = None
 
 
 class ListItemInput(StrictModel):

@@ -1160,8 +1160,11 @@ class Store:
             if work_id
             else ""
         )
-        lists = [
-            dict(r)
+        return [
+            {
+                **dict(r),
+                "thumbnail": f"/api/v1/lists/{r['id']}/thumbnails/{r['revision']}.jpg",
+            }
             for r in conn.execute(
                 "SELECT l.*,(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count FROM lists l"
                 + where
@@ -1169,33 +1172,6 @@ class Store:
                 (work_id,) if work_id else (),
             )
         ]
-        for item in lists:
-            item["thumbnail"] = f"/api/v1/lists/{item['id']}/thumbnail?v={item['revision']}"
-        return lists
-
-    def list_thumbnail_data(self, list_id: str) -> dict:
-        """Snapshot the first four manually ordered posters and list revision."""
-        with self.connect() as conn:
-            conn.execute("BEGIN")
-            list_row = conn.execute(
-                "SELECT id,revision FROM lists WHERE id=?", (list_id,)
-            ).fetchone()
-            if list_row is None:
-                raise KeyError("Unknown list.")
-            rows = conn.execute(
-                "SELECT w.title,w.poster FROM list_items i "
-                "JOIN works w ON w.id=i.work_id WHERE i.list_id=? "
-                "ORDER BY i.position,w.id LIMIT 4",
-                (list_id,),
-            ).fetchall()
-            return {
-                "id": list_row["id"],
-                "revision": list_row["revision"],
-                "items": [
-                    {"title": row["title"], "posters": json.loads(row["poster"] or "[]")}
-                    for row in rows
-                ],
-            }
 
     def lists(self):
         with self.connect() as conn:
@@ -1261,6 +1237,24 @@ class Store:
                 ((index, list_id, mid) for index, mid in enumerate(media_ids)),
             )
             conn.execute("UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,))
+
+    def list_thumbnail_input(self, list_id: str) -> dict[str, Any] | None:
+        """Snapshot the revision and first four poster candidates in manual order."""
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT revision FROM lists WHERE id=?", (list_id,)
+            ).fetchone()
+            if row is None:
+                return None
+            candidates = conn.execute(
+                "SELECT w.poster FROM list_items i JOIN works w ON w.id=i.work_id "
+                "WHERE i.list_id=? ORDER BY i.position,w.id LIMIT 4",
+                (list_id,),
+            ).fetchall()
+            return {
+                "revision": row["revision"],
+                "posters": [json.loads(record["poster"]) for record in candidates],
+            }
 
     def list_page(self, list_id, *, sort="position", order="asc", limit=60, offset=0):
         columns = {

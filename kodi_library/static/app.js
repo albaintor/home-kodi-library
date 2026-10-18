@@ -555,7 +555,7 @@ async function initialize() {
     const session=await api('auth/session'); state.csrf=session.csrf_token; state.role=session.role;
     $('login').hidden=true; $('app').hidden=false; $('connections-button').hidden=state.role!=='admin'; $('logout-button').hidden=session.access_method!=='session';
     $('create-list-button').hidden=state.role!=='admin';
-    setView(state.view,false); await refresh(); await pollActivity();
+    setView(state.view,false); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
 function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
@@ -985,20 +985,36 @@ async function enrichDetail(force) {
   } catch(e) {if(seq===state.detailSeq){if($('enrichment-status'))$('enrichment-status').textContent=e.message;toast(e.message);}}
   finally {state.enrichingIds.delete(id);if(enriched&&seq===state.detailSeq&&$('enrichment-status'))$('enrichment-status').textContent=`Métadonnées TMDB mises en cache le ${date(state.detail.enriched_at)}.`;if(seq===state.detailSeq&&$('refresh-metadata')){$('refresh-metadata').disabled=state.role!=='admin';$('refresh-metadata').classList.remove('is-loading');}}
 }
+// Thumbnail URLs include list revisions, so a changed mosaic bypasses the
+// browser cache and always matches the latest ordering.
+function listThumbnail(list,extraClass=''){
+  const image=list.thumbnail?`<img src="${esc(url(list.thumbnail))}" alt="" loading="lazy">`:'<span aria-hidden="true">▦</span>';
+  return `<span class="list-mosaic ${extraClass}" aria-hidden="true">${image}</span>`;
+}
+function renderHomeListThumbnails(lists){
+  const container=$('home-list-thumbnails');
+  if(!container)return;
+  container.innerHTML=lists.map(list=>`<button type="button" class="home-list-thumb" data-open-home-list="${esc(list.id)}" title="${esc(list.name)}" aria-label="${esc(list.name)}">${listThumbnail(list)}</button>`).join('');
+  attachImageFallbacks(container);
+}
+async function refreshHomeListThumbnails(){
+  try{renderHomeListThumbnails(await api('lists'));}catch(e){/* Lists may be temporarily unavailable; keep catalogue visible. */}
+}
 async function chooseList() {
   try {
     const lists=await api('lists');const item=state.detail;
-    $('choose-list-content').innerHTML=`<p class="muted">${esc(item.title)}</p><div class="choose-list-buttons">${lists.map(l=>`<button data-choose-list="${esc(l.id)}" ${item.lists.some(current=>current.id===l.id)?'disabled':''}>${esc(l.name)} <span class="muted">· ${l.item_count}${item.lists.some(current=>current.id===l.id)?' · Déjà ajouté':''}</span></button>`).join('')||'<p class="hint">Créez votre première liste ci-dessous.</p>'}</div><form id="choose-new-list" class="inline-form"><label>Nouvelle liste<input name="name" required maxlength="120" placeholder="Films à voir"></label><button type="submit" class="primary">+ Créer et ajouter</button></form>`;
+    $('choose-list-content').innerHTML=`<p class="muted">${esc(item.title)}</p><div class="choose-list-buttons">${lists.map(l=>`<button class="list-choice-row" data-choose-list="${esc(l.id)}" ${item.lists.some(current=>current.id===l.id)?'disabled':''}>${listThumbnail(l)}<span><strong>${esc(l.name)}</strong><small class="muted">${l.item_count} médias${item.lists.some(current=>current.id===l.id)?' · Déjà ajouté':''}</small></span></button>`).join('')||'<p class="hint">Créez votre première liste ci-dessous.</p>'}</div><form id="choose-new-list" class="inline-form"><label>Nouvelle liste<input name="name" required maxlength="120" placeholder="Films à voir"></label><button type="submit" class="primary">+ Créer et ajouter</button></form>`;
     showDialog('choose-list-dialog');
   } catch(e){toast(e.message);}
 }
 async function openLists(selected=state.listId,{create=false}={}) {
   try {
-    const lists=await api('lists');state.listId=lists.some(l=>l.id===selected)?selected:lists[0]?.id;
+    const lists=await api('lists');renderHomeListThumbnails(lists);state.listId=lists.some(l=>l.id===selected)?selected:lists[0]?.id;
     savePreferences();
     const current=lists.find(l=>l.id===state.listId);const admin=state.role==='admin';
     const newListForm=admin?`<form id="new-list-form" class="inline-form" ${current&&!create?'hidden':''}><label>Nom de la liste<input name="name" required maxlength="120" placeholder="Films à voir"></label><button class="primary" type="submit">Créer la liste</button></form>`:'';
-    $('lists-content').innerHTML=`<div class="list-toolbar"><label>Liste<select id="selected-list">${lists.map(l=>`<option data-name="${esc(l.name)}" value="${esc(l.id)}" ${l.id===state.listId?'selected':''}>${esc(l.name)} · ${l.item_count}</option>`).join('')||'<option>Aucune liste</option>'}</select></label>${admin?'<button id="new-list-toggle" class="secondary">+ Nouvelle liste</button>':''}</div>${!admin?'<p class="metadata-status hint">Accès en lecture seule : utilisez le jeton administrateur pour créer une liste ou modifier son contenu.</p>':''}<p class="hint">Ajoutez des films et des séries, puis choisissez leur ordre dans chaque liste. Ces sélections sont conservées après les synchronisations.</p>${newListForm}${current?`<div class="list-toolbar"><p class="hint">${esc(current.description||'Votre sélection, dans l’ordre que vous choisissez.')}</p>${admin?'<button id="rename-list" class="text-button">Renommer</button><button id="delete-list" class="text-button">Supprimer</button>':''}</div><div class="list-toolbar"><label>Tri<select id="list-sort"><option value="position">Ordre manuel</option><option value="title">Titre</option><option value="year">Année</option><option value="date_added">Date d’ajout</option><option value="rating">Note</option><option value="user_rating">Votre note</option></select></label><button id="list-sort-order" class="secondary">${state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant'}</button>${admin?'<button id="list-add-button" class="primary">+ Ajouter des médias</button>':''}</div>${admin?'<section id="list-search-area" class="list-search-area" hidden><label>Rechercher dans le catalogue<input id="list-search" type="search" placeholder="Titre, personne, genre…" autocomplete="off"></label><div id="list-search-results" aria-live="polite"></div></section>':''}<p id="list-count" class="hint"></p><div id="list-items" class="saved-list-items" aria-live="polite"></div><button id="list-load-more" class="secondary" hidden>Charger la suite</button>`:'<p class="empty-state">Créez une liste pour organiser vos prochains visionnages.</p>'}`;
+    $('lists-content').innerHTML=`<div class="list-toolbar"><label>Liste<select id="selected-list">${lists.map(l=>`<option data-name="${esc(l.name)}" value="${esc(l.id)}" ${l.id===state.listId?'selected':''}>${esc(l.name)} · ${l.item_count}</option>`).join('')||'<option>Aucune liste</option>'}</select></label>${admin?'<button id="new-list-toggle" class="secondary">+ Nouvelle liste</button>':''}</div><div class="list-selector-cards" role="group" aria-label="Choix de la liste">${lists.map(l=>`<button type="button" class="list-choice-row ${l.id===state.listId?'is-selected':''}" data-select-list="${esc(l.id)}" aria-pressed="${l.id===state.listId}">${listThumbnail(l)}<span><strong>${esc(l.name)}</strong><small class="muted">${l.item_count} médias</small></span></button>`).join('')}</div>${!admin?'<p class="metadata-status hint">Accès en lecture seule : utilisez le jeton administrateur pour créer une liste ou modifier son contenu.</p>':''}<p class="hint">Ajoutez des films et des séries, puis choisissez leur ordre dans chaque liste. Ces sélections sont conservées après les synchronisations.</p>${newListForm}${current?`<div class="list-toolbar"><p class="hint">${esc(current.description||'Votre sélection, dans l’ordre que vous choisissez.')}</p>${admin?'<button id="rename-list" class="text-button">Renommer</button><button id="delete-list" class="text-button">Supprimer</button>':''}</div><div class="list-toolbar"><label>Tri<select id="list-sort"><option value="position">Ordre manuel</option><option value="title">Titre</option><option value="year">Année</option><option value="date_added">Date d’ajout</option><option value="rating">Note</option><option value="user_rating">Votre note</option></select></label><button id="list-sort-order" class="secondary">${state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant'}</button>${admin?'<button id="list-add-button" class="primary">+ Ajouter des médias</button>':''}</div>${admin?'<section id="list-search-area" class="list-search-area" hidden><label>Rechercher dans le catalogue<input id="list-search" type="search" placeholder="Titre, personne, genre…" autocomplete="off"></label><div id="list-search-results" aria-live="polite"></div></section>':''}<p id="list-count" class="hint"></p><div id="list-items" class="saved-list-items" aria-live="polite"></div><button id="list-load-more" class="secondary" hidden>Charger la suite</button>`:'<p class="empty-state">Créez une liste pour organiser vos prochains visionnages.</p>'}`;
+    attachImageFallbacks($('lists-content'));
     showDialog('lists-dialog');
     if(current){$('list-sort').value=state.listSort;await loadList();}
     if(admin&&(create||!current))$('new-list-form').elements.name.focus();
@@ -1063,21 +1079,23 @@ document.addEventListener('submit',async event=>{
       const list=await api('lists',{method:'POST',body:JSON.stringify({name})});
       if(id==='choose-new-list'){
         const mid=state.detail.id;await api(`lists/${list.id}/items`,{method:'POST',body:JSON.stringify({media_id:mid})});
-        $('choose-list-dialog').close();renderDetail(await api(`media/${mid}`));toast('Liste créée et média ajouté.');
+        $('choose-list-dialog').close();renderDetail(await api(`media/${mid}`));await refreshHomeListThumbnails();toast('Liste créée et média ajouté.');
       }else await openLists(list.id);
     }
   }catch(e){toast(e.message);}finally{button.disabled=false;}
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button');if(!button)return;
-  if(!['refresh-metadata','add-to-list','new-list-toggle','list-add-button','rename-list','delete-list','list-load-more','list-sort-order'].includes(button.id)&&!button.dataset.chooseList&&!button.dataset.addListMedia&&!button.dataset.removeListMedia&&!button.dataset.moveList&&!button.dataset.copyFile)return;
+  if(!['refresh-metadata','add-to-list','new-list-toggle','list-add-button','rename-list','delete-list','list-load-more','list-sort-order'].includes(button.id)&&!button.dataset.openHomeList&&!button.dataset.selectList&&!button.dataset.chooseList&&!button.dataset.addListMedia&&!button.dataset.removeListMedia&&!button.dataset.moveList&&!button.dataset.copyFile)return;
   try {
+    if(button.dataset.openHomeList){await openLists(button.dataset.openHomeList);return;}
+    if(button.dataset.selectList){await openLists(button.dataset.selectList);return;}
     if(button.id==='refresh-metadata'){hideRatingPopover();await enrichDetail(true);}
     if(button.id==='add-to-list')await chooseList();
     if(button.dataset.chooseList){
       button.disabled=true;const mid=state.detail.id;
       await api(`lists/${button.dataset.chooseList}/items`,{method:'POST',body:JSON.stringify({media_id:mid})});
-      $('choose-list-dialog').close();renderDetail(await api(`media/${mid}`));if($('lists-dialog').open)await openLists();toast('Média ajouté à la liste.');
+      $('choose-list-dialog').close();renderDetail(await api(`media/${mid}`));if($('lists-dialog').open)await openLists();else await refreshHomeListThumbnails();toast('Média ajouté à la liste.');
     }
     if(button.id==='new-list-toggle'){$('new-list-form').hidden=false;$('new-list-form').elements.name.focus();}
     if(button.id==='list-add-button'){$('list-search-area').hidden=!$('list-search-area').hidden;if(!$('list-search-area').hidden)$('list-search').focus();}
@@ -1088,9 +1106,9 @@ document.addEventListener('click',async event=>{
     if(button.id==='delete-list'&&localizedConfirm('Supprimer cette liste ? Les médias restent dans le catalogue.')){await api(`lists/${state.listId}`,{method:'DELETE'});await openLists();}
     if(button.id==='list-load-more'){button.disabled=true;await loadList({append:true});}
     if(button.id==='list-sort-order'){state.listOrder=state.listOrder==='asc'?'desc':'asc';button.textContent=state.listOrder==='asc'?'↑ Croissant':'↓ Décroissant';savePreferences();await loadList();}
-    if(button.dataset.addListMedia){button.disabled=true;await api(`lists/${state.listId}/items`,{method:'POST',body:JSON.stringify({media_id:button.dataset.addListMedia})});await loadList();await searchList();}
-    if(button.dataset.removeListMedia){button.disabled=true;await api(`lists/${state.listId}/items/${button.dataset.removeListMedia}`,{method:'DELETE'});await loadList();if($('list-search')?.value)await searchList();}
-    if(button.dataset.moveList){button.disabled=true;await moveList(button.dataset.moveList,Number(button.dataset.direction));}
+    if(button.dataset.addListMedia){button.disabled=true;await api(`lists/${state.listId}/items`,{method:'POST',body:JSON.stringify({media_id:button.dataset.addListMedia})});await loadList();await refreshHomeListThumbnails();await searchList();}
+    if(button.dataset.removeListMedia){button.disabled=true;await api(`lists/${state.listId}/items/${button.dataset.removeListMedia}`,{method:'DELETE'});await loadList();await refreshHomeListThumbnails();if($('list-search')?.value)await searchList();}
+    if(button.dataset.moveList){button.disabled=true;await moveList(button.dataset.moveList,Number(button.dataset.direction));await refreshHomeListThumbnails();}
     if(button.dataset.copyFile){
       const file=state.detail.editions.find(e=>e.id===button.dataset.copyFile).metadata.file;
       if(navigator.clipboard&&window.isSecureContext){await navigator.clipboard.writeText(file);toast('Chemin copié.');}

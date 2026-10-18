@@ -1,143 +1,164 @@
-"""Persist square collages for custom lists; never regenerate on ordinary reads."""
+"""Persistent, versioned list-cover mosaics.
+
+The image is generated once per list revision, kept under the configured data
+directory and served to web/iOS without repeating image composition. Existing
+lists are materialized on first request; edits schedule regeneration after the
+response. Old revisions can never overwrite a newer version.
+"""
 
 import asyncio
 import io
-import json
+import logging
 from pathlib import Path
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from PIL import Image, ImageDraw, ImageOps, UnidentifiedImageError
 
-from .artwork import Artwork, ArtworkError
+from .artwork import ArtworkError
 
-SIZE = 512
-GAP = 6
-Image.MAX_IMAGE_PIXELS = 24_000_000
+LOGGER = logging.getLogger(__name__)
+
+WIDTH, HEIGHT, GAP = 360, 216, 4
+BACKGROUND = (25, 33, 46)
 
 
-def _layout(count: int) -> list[tuple[int, int, int, int]]:
-    half = SIZE // 2
+def _regions(count: int) -> list[tuple[int, int, int, int]]:
     if count == 1:
-        return [(0, 0, SIZE, SIZE)]
+        return [(0, 0, WIDTH, HEIGHT)]
     if count == 2:
-        return [(0, 0, half, SIZE), (half, 0, SIZE, SIZE)]
+        left = (WIDTH - GAP) // 2
+        return [(0, 0, left, HEIGHT), (left + GAP, 0, WIDTH - left - GAP, HEIGHT)]
     if count == 3:
+        left = (WIDTH - GAP) // 2
+        top = (HEIGHT - GAP) // 2
         return [
-            (0, 0, half, SIZE),
-            (half, 0, SIZE, half),
-            (half, half, SIZE, SIZE),
+            (0, 0, left, HEIGHT),
+            (left + GAP, 0, WIDTH - left - GAP, top),
+            (left + GAP, top + GAP, WIDTH - left - GAP, HEIGHT - top - GAP),
         ]
+    left, top = (WIDTH - GAP) // 2, (HEIGHT - GAP) // 2
     return [
-        (0, 0, half, half),
-        (half, 0, SIZE, half),
-        (0, half, half, SIZE),
-        (half, half, SIZE, SIZE),
+        (0, 0, left, top),
+        (left + GAP, 0, WIDTH - left - GAP, top),
+        (0, top + GAP, left, HEIGHT - top - GAP),
+        (left + GAP, top + GAP, WIDTH - left - GAP, HEIGHT - top - GAP),
     ]
 
 
-def render_thumbnail(images: list[bytes | None]) -> bytes:
-    """Compose the first one to four posters, retaining missing-poster placeholders."""
-    count = min(len(images), 4)
-    canvas = Image.new("RGB", (SIZE, SIZE), "#1b2534")
-    draw = ImageDraw.Draw(canvas)
-    if count == 0:
-        draw.rounded_rectangle((110, 110, 402, 402), radius=24, outline="#51617a", width=5)
-        draw.text((230, 240), "+", fill="#a5b7cd")
-    for index, (x0, y0, x1, y1) in enumerate(_layout(count)):
-        # Leave a narrow gutter between panels and around the outer edge.
-        left = x0 + GAP // 2
-        top = y0 + GAP // 2
-        right = x1 - GAP // 2
-        bottom = y1 - GAP // 2
-        draw.rectangle((left, top, right - 1, bottom - 1), fill="#2b394d")
-        raw = images[index]
-        if raw:
-            try:
-                with Image.open(io.BytesIO(raw)) as source:
-                    source.load()
-                    poster = ImageOps.fit(
-                        ImageOps.exif_transpose(source).convert("RGB"),
-                        (right - left, bottom - top),
-                        method=Image.Resampling.LANCZOS,
-                    )
-                canvas.paste(poster, (left, top))
-                continue
-            except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
-                pass
-        draw.text((left + 17, top + 17), str(index + 1), fill="#8fa4bb")
+def compose(images: list[bytes | None]) -> bytes:
+    """Fill each tile even when its original poster is unavailable."""
+    canvas = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND)
+    if not images:
+        draw = ImageDraw.Draw(canvas)
+        draw.rounded_rectangle((144, 54, 216, 162), radius=10, outline=(125, 153, 177), width=4)
+        draw.line((153, 75, 207, 75), fill=(125, 153, 177), width=4)
+        draw.line((153, 91, 191, 91), fill=(125, 153, 177), width=4)
+    else:
+        for data, (x, y, w, h) in zip(images[:4], _regions(len(images[:4])), strict=False):
+            if data:
+                try:
+                    with Image.open(io.BytesIO(data)) as source:
+                        if source.width * source.height > 40_000_000:
+                            raise ValueError("Poster is too large.")
+                        tile = ImageOps.fit(
+                            ImageOps.exif_transpose(source).convert("RGB"),
+                            (w, h),
+                            method=Image.Resampling.LANCZOS,
+                        )
+                    canvas.paste(tile, (x, y))
+                    continue
+                except (UnidentifiedImageError, OSError, ValueError):
+                    pass
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((x, y, x + w - 1, y + h - 1), fill=(37, 49, 65))
+            draw.rounded_rectangle(
+                (x + w // 4, y + h // 4, x + 3 * w // 4, y + 3 * h // 4),
+                radius=8, outline=(111, 135, 160), width=3,
+            )
+
     output = io.BytesIO()
     canvas.save(output, format="JPEG", quality=85, optimize=True)
     return output.getvalue()
 
 
 class ListThumbnails:
-    def __init__(self, data_dir: Path, artwork: Artwork):
-        self.root = data_dir / "list_thumbnails"
+    def __init__(self, store, artwork, data_dir: Path):
+        self.store = store
         self.artwork = artwork
-        self.lock = asyncio.Lock()
+        self.directory = data_dir / "list-thumbnails"
+        self._locks: dict[str, asyncio.Lock] = {}
 
-    def _paths(self, list_id: str) -> tuple[Path, Path]:
-        # Reject path segments supplied through an untrusted API route.
-        canonical_id = str(UUID(list_id))
-        if list_id != canonical_id:
-            raise KeyError("Unknown list.")
-        return (
-            self.root / f"{canonical_id}.jpg",
-            self.root / f"{canonical_id}.json",
-        )
+    def _path(self, list_id: str, revision: int) -> Path:
+        # A list is always retrieved by ID from the database before this path
+        # is built; avoid trusting URL segments as filesystem path components.
+        return self.directory / f"{list_id}-{revision}.jpg"
 
-    @staticmethod
-    def _stored_revision(meta: Path) -> int | None:
-        try:
-            return int(json.loads(meta.read_text())["revision"])
-        except (OSError, ValueError, KeyError, TypeError):
+    async def ensure(self, list_id: str, revision: int) -> bytes | None:
+        """Read already-generated image; generate at most once for a revision."""
+        if revision < 0:
             return None
-
-    async def _generate(self, snapshot: dict, image_path: Path, meta_path: Path) -> None:
-        async def load_poster(entry: dict) -> bytes | None:
-            if not entry["posters"]:
+        lock = self._locks.setdefault(list_id, asyncio.Lock())
+        async with lock:
+            source = await asyncio.to_thread(self.store.list_thumbnail_input, list_id)
+            if source is None or source["revision"] != revision:
                 return None
+            path = self._path(list_id, revision)
+            if path.is_file():
+                return await asyncio.to_thread(path.read_bytes)
+            async def poster(candidates: list[str]) -> bytes | None:
+                if not candidates:
+                    return None
+                try:
+                    image, _mime = await self.artwork.get(candidates)
+                    return image
+                except ArtworkError:
+                    return None
+
+            # At most 7 seconds for all four posters, never 4 sequential
+            # network timeouts; missing artwork is drawn as a placeholder.
             try:
-                raw, _ = await self.artwork.get(entry["posters"])
-                return raw
-            except ArtworkError:
+                images = await asyncio.wait_for(
+                    asyncio.gather(*(poster(c) for c in source["posters"])),
+                    timeout=7,
+                )
+            except TimeoutError:
+                images = [None] * len(source["posters"])
+            result = await asyncio.to_thread(compose, images)
+            # An import or list edit may have changed the revision while posters
+            # were downloaded. Never cache a stale image under a newer URL.
+            current = await asyncio.to_thread(self.store.list_thumbnail_input, list_id)
+            if current is None or current["revision"] != revision:
                 return None
+            await asyncio.to_thread(self._save, list_id, revision, result)
+            return result
 
-        posters = await asyncio.gather(*(load_poster(row) for row in snapshot["items"]))
-        contents = await asyncio.to_thread(render_thumbnail, posters)
-
-        def save():
-            self.root.mkdir(parents=True, exist_ok=True)
-            temporary = self.root / f"{snapshot['id']}.{uuid4().hex}.tmp"
+    async def warm(self, list_id: str) -> None:
+        source = await asyncio.to_thread(self.store.list_thumbnail_input, list_id)
+        if source is not None:
             try:
-                temporary.write_bytes(contents)
-                temporary.replace(image_path)
-                meta_path.write_text(json.dumps({"revision": snapshot["revision"]}))
-            finally:
-                temporary.unlink(missing_ok=True)
+                await self.ensure(list_id, source["revision"])
+            except (OSError, ValueError):
+                LOGGER.warning("Unable to cache list thumbnail %s", list_id, exc_info=True)
 
-        await asyncio.to_thread(save)
+    def _save(self, list_id: str, revision: int, data: bytes) -> None:
+        self.directory.mkdir(parents=True, exist_ok=True)
+        path = self._path(list_id, revision)
+        temporary = self.directory / f".{uuid4().hex}.tmp"
+        try:
+            temporary.write_bytes(data)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        self.remove_old(list_id, keep=path)
 
-    async def refresh(self, store, list_id: str) -> None:
-        async with self.lock:
-            snapshot = await asyncio.to_thread(store.list_thumbnail_data, list_id)
-            path, meta = self._paths(list_id)
-            await self._generate(snapshot, path, meta)
-
-    async def get(self, store, list_id: str) -> bytes:
-        async with self.lock:
-            snapshot = await asyncio.to_thread(store.list_thumbnail_data, list_id)
-            path, meta = self._paths(list_id)
-            if (
-                not await asyncio.to_thread(path.is_file)
-                or await asyncio.to_thread(self._stored_revision, meta)
-                != snapshot["revision"]
-            ):
-                await self._generate(snapshot, path, meta)
-            return await asyncio.to_thread(path.read_bytes)
+    def remove_old(self, list_id: str, keep: Path | None = None) -> None:
+        if not self.directory.exists():
+            return
+        for path in self.directory.glob(f"{list_id}-*.jpg"):
+            if path != keep:
+                path.unlink(missing_ok=True)
 
     async def delete(self, list_id: str) -> None:
-        async with self.lock:
-            path, meta = self._paths(list_id)
-            for target in (path, meta):
-                await asyncio.to_thread(target.unlink, missing_ok=True)
+        lock = self._locks.setdefault(list_id, asyncio.Lock())
+        async with lock:
+            await asyncio.to_thread(self.remove_old, list_id)

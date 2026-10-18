@@ -241,3 +241,24 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .remote-scan-job .sync-phase{margin-bottom:4px}
 .remote-scan-job .sync-progress{display:block;width:100%}
 @media(max-width:680px){.remote-scan-job{grid-template-columns:1fr;gap:6px}.remote-scan-controls .hint{flex-basis:100%}}
+
+/* Stored list mosaics: home shows pictures only; other selectors show labels. */
+.list-home-heading{flex:0 1 350px;min-width:210px}
+.home-list-thumbnails{display:flex;align-items:center;gap:9px;overflow-x:auto;min-width:0;flex:1 1 280px;padding:2px 0;scrollbar-width:thin}
+.home-list-thumb{display:block;flex:0 0 78px;width:78px;height:51px;padding:0;overflow:hidden;border:1px solid #485366;border-radius:9px;background:var(--bg)}
+.home-list-thumb:hover{border-color:var(--accent)}
+.list-mosaic{display:inline-flex;align-items:center;justify-content:center;flex:none;width:77px;height:51px;overflow:hidden;border-radius:8px;background:#253143;color:#99acc1;font-size:24px}
+.list-mosaic img{display:block;width:100%;height:100%;object-fit:cover}
+.list-mosaic img.failed{display:none}
+.home-list-thumb .list-mosaic{width:100%;height:100%}
+.list-selector-cards{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;margin:6px 0 10px;scrollbar-width:thin}
+.list-choice-row{display:flex;align-items:center;gap:10px;min-height:62px;text-align:left;white-space:normal}
+.list-choice-row>span:last-child{display:flex;flex-direction:column;min-width:0}
+.list-choice-row strong{font-size:12px;overflow-wrap:anywhere}
+.list-choice-row small{display:block;font-size:10px;margin-top:4px}
+.list-selector-cards .list-choice-row{flex:0 0 190px;max-width:220px;padding:8px}
+.list-choice-row.is-selected{border-color:var(--accent);background:#bcdb8015}
+.choose-list-buttons .list-choice-row{justify-content:start}
+.choose-list-buttons .list-choice-row .list-mosaic{width:72px;height:47px}
+@media(max-width:950px){.list-home-heading{flex-basis:230px;min-width:180px}.home-list-thumb{flex-basis:70px;width:70px;height:46px}}
+@media(max-width:650px){.list-home-heading{flex:1 1 100%}.home-list-thumbnails{flex-basis:100%;width:100%}.list-entry-buttons{width:100%}}

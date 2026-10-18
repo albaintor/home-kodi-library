@@ -286,6 +286,25 @@ distante. L'interface Web masque le pourcentage estimé durant le scan
 distant (aucun taux de progression fiable) et affiche ensuite la
 progression de l'import MariaDB/SQLite.
 
+## Mosaïques persistantes des listes
+
+Chaque liste expose une URL `thumbnail` authentifiée :
+`/api/v1/lists/{id}/thumbnails/{revision}.jpg`. Le serveur enregistre
+le JPEG 360 × 216 px dans `DATA_DIR/list-thumbnails/`. Les lectures suivantes
+ne recomposent pas l'image, et le client peut mettre en cache cette URL
+versionnée. La mosaïque représente les **quatre premiers éléments dans
+l'ordre manuel** : disposition 2×2 (4), grande tuile + deux petites (3),
+deux colonnes (2), plein cadre (1), ou un visuel neutre (0).
+
+Toute création, modification, suppression, insertion, retrait ou permutation
+d'une liste déclenche la préparation de sa nouvelle vignette en arrière-plan
+après la réponse API. L'ancienne révision devient inaccessible et ses
+fichiers sont supprimés. Les listes préexistantes sont initialisées lors du
+premier affichage. Les illustrations manquantes sont remplacées par des
+emplacements neutres. Les affiches sont téléchargées via la couche sécurisée
+de récupération d'images déjà utilisée par le catalogue, jamais via un
+appel HTTP interne à l'API.
+
 ## Hiérarchie des séries TV, saisons et épisodes
 
 Le catalogue principal (`GET /api/v1/media` sans `kind` ni `parent_id`)
