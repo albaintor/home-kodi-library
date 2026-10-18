@@ -442,7 +442,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             changes = data.model_dump(exclude_unset=True)
             if changes:
                 await asyncio.to_thread(store.update_personal, media_id, changes)
-            sources = await asyncio.to_thread(store.sources)
+            relevant_source_ids = {edition["source_id"] for edition in detail["editions"]}
+            sources = [
+                await asyncio.to_thread(store.source, source_id, private=True)
+                for source_id in relevant_source_ids
+            ]
             public_players = await asyncio.to_thread(store.players)
             players = [
                 await asyncio.to_thread(store.player, player["id"])
