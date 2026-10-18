@@ -62,6 +62,49 @@ def _verify_identity(item: dict, edition: dict, detail: dict) -> None:
                 )
 
 
+async def _update_kodi_show_episodes(rpc, kodi_id: int, watched: bool) -> None:
+    """Kodi's SetTVShowDetails(playcount) may return OK without touching episodes."""
+    episodes = []
+    start = 0
+    while True:
+        response = await rpc(
+            "VideoLibrary.GetEpisodes",
+            {
+                "tvshowid": kodi_id,
+                "properties": ["playcount", "tvshowid"],
+                "limits": {"start": start, "end": start + 100},
+            },
+        )
+        page = response.get("episodes") or []
+        if not isinstance(page, list):
+            raise ConnectorError("Kodi n'a pas retourné les épisodes de la série.")
+        for episode in page:
+            if episode.get("tvshowid", kodi_id) != kodi_id:
+                raise ConnectorError("Kodi a retourné un épisode d'une autre série.")
+            if type(episode.get("episodeid")) is not int:
+                raise ConnectorError("Un épisode Kodi ne possède pas d'identifiant valide.")
+        episodes.extend(page)
+        total = (response.get("limits") or {}).get("total", start + len(page))
+        if len(episodes) >= total:
+            break
+        if not page or len(episodes) > 10000:
+            raise ConnectorError("Pagination Kodi invalide : lecture des épisodes interrompue.")
+        start += len(page)
+    if not episodes:
+        raise ConnectorError("La série Kodi n'a aucun épisode à marquer vu/non vu.")
+    for episode in episodes:
+        playcount = int(episode.get("playcount") or 0)
+        response = await rpc(
+            "VideoLibrary.SetEpisodeDetails",
+            {
+                "episodeid": episode["episodeid"],
+                "playcount": max(1, playcount) if watched else 0,
+            },
+        )
+        if response != "OK":
+            raise ConnectorError("Kodi a refusé la modification d'un épisode de la série.")
+
+
 async def _write_kodi(
     player: dict, detail: dict, editions: list[dict], changes: dict
 ) -> str | None:
@@ -120,13 +163,18 @@ async def _write_kodi(
             params = {id_field: kodi_id}
             if "userrating" in updates:
                 params["userrating"] = updates["userrating"]
-            if "watched" in updates:
+            if "watched" in updates and kind != "tvshow":
                 # Retain existing positive play counts when marking as watched.
                 count = item.get("playcount")
                 params["playcount"] = max(1, int(count or 0)) if updates["watched"] else 0
-            response = await rpc("VideoLibrary." + write_method, params)
-            if response != "OK":
-                raise ConnectorError("Kodi n'a pas confirmé la modification du média.")
+            # Do not call SetTVShowDetails with just the ID: use the episode
+            # setters instead, since series playcount is an aggregate.
+            if len(params) > 1:
+                response = await rpc("VideoLibrary." + write_method, params)
+                if response != "OK":
+                    raise ConnectorError("Kodi n'a pas confirmé la modification du média.")
+            if kind == "tvshow" and "watched" in updates:
+                await _update_kodi_show_episodes(rpc, kodi_id, updates["watched"])
     return warning
 
 
