@@ -87,6 +87,15 @@ CREATE TABLE IF NOT EXISTS list_items (
  position INTEGER NOT NULL, PRIMARY KEY(list_id,work_id)
 );
 CREATE INDEX IF NOT EXISTS list_order ON list_items(list_id,position);
+CREATE TABLE IF NOT EXISTS writeback_audit (
+ id TEXT PRIMARY KEY, work_id TEXT REFERENCES works(id) ON DELETE SET NULL,
+ source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
+ source_name TEXT NOT NULL, source_type TEXT NOT NULL, created_at TEXT NOT NULL,
+ status TEXT NOT NULL, method TEXT, attempts TEXT NOT NULL, fields TEXT NOT NULL,
+ message TEXT
+);
+CREATE INDEX IF NOT EXISTS writeback_audit_by_work ON writeback_audit(work_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS writeback_audit_by_source ON writeback_audit(source_id,created_at DESC);
 PRAGMA user_version = 2;
 """
 
@@ -213,6 +222,8 @@ class Store:
         value = dict(row)
         config = json.loads(value["config"])
         config["has_password"] = bool(config.pop("password", ""))
+        config["has_remote_api_key"] = bool(config.pop("remote_api_key", ""))
+        config["has_write_password"] = bool(config.pop("write_password", ""))
         value["config"] = config
         value["enabled"] = bool(value["enabled"])
         return value
@@ -241,10 +252,10 @@ class Store:
             ).fetchone()
             if existing and existing["type"] != data["type"]:
                 raise ValueError("The source type cannot be changed.")
-            if config.get("password") is None:
-                config["password"] = (
-                    json.loads(existing["config"]).get("password", "") if existing else ""
-                )
+            old_config = json.loads(existing["config"]) if existing else {}
+            for secret in ("password", "remote_api_key", "write_password"):
+                if config.get(secret) is None:
+                    config[secret] = old_config.get(secret, "")
             conn.execute(
                 "INSERT INTO sources(id,name,type,enabled,config) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,enabled=excluded.enabled,config=excluded.config",
                 (
@@ -1367,3 +1378,52 @@ class Store:
     def delete_player(self, player_id: str) -> None:
         with self.connect() as conn:
             conn.execute("DELETE FROM players WHERE id=?", (player_id,))
+
+    def record_writebacks(self, work_id: str, changes: dict, results: list[dict]) -> None:
+        """Durable, non-secret trace for Kodi/My Movies writes and fallbacks."""
+        if not results:
+            return
+        fields = encode(sorted(changes))
+        with self.connect() as conn:
+            conn.executemany(
+                "INSERT INTO writeback_audit "
+                "(id,work_id,source_id,source_name,source_type,created_at,status,method,attempts,fields,message) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                [
+                    (
+                        str(uuid4()),
+                        work_id,
+                        r["source_id"],
+                        r["source_name"],
+                        r["source_type"],
+                        now(),
+                        r["status"],
+                        r.get("method"),
+                        encode(r.get("attempts", [])),
+                        fields,
+                        r.get("message"),
+                    )
+                    for r in results
+                ],
+            )
+
+    def writeback_history(
+        self, *, work_id: str | None = None, source_id: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        if not work_id and not source_id:
+            raise ValueError("A media or a source ID is required.")
+        column = "work_id" if work_id else "source_id"
+        with self.connect() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM writeback_audit WHERE {column}=? "
+                "ORDER BY created_at DESC,id DESC LIMIT ?",
+                (work_id or source_id, min(max(1, limit), 200)),
+            ).fetchall()
+            return [
+                {
+                    **dict(row),
+                    "attempts": json.loads(row["attempts"]),
+                    "fields": json.loads(row["fields"]),
+                }
+                for row in rows
+            ]

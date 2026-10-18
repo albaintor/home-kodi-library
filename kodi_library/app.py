@@ -74,8 +74,9 @@ STATIC = Path(__file__).parent / "static"
 def unsecret(model) -> dict:
     value = model.model_dump()
     config = value.get("config", value)
-    if config.get("password") is not None:
-        config["password"] = config["password"].get_secret_value()
+    for secret in ("password", "remote_api_key", "write_password"):
+        if config.get(secret) is not None:
+            config[secret] = config[secret].get_secret_value()
     return value
 
 
@@ -441,7 +442,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             changes = data.model_dump(exclude_unset=True)
             if changes:
                 await asyncio.to_thread(store.update_personal, media_id, changes)
-            sources = await asyncio.to_thread(store.sources)
+            relevant_source_ids = {edition["source_id"] for edition in detail["editions"]}
+            sources = [
+                await asyncio.to_thread(store.source, source_id, private=True)
+                for source_id in relevant_source_ids
+            ]
             public_players = await asyncio.to_thread(store.players)
             players = [
                 await asyncio.to_thread(store.player, player["id"])
@@ -452,9 +457,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             ]
             writeback = await propagate_personal(detail, changes, sources, players)
+            if writeback:
+                await asyncio.to_thread(store.record_writebacks, media_id, changes, writeback)
             updated = await asyncio.to_thread(store.detail, media_id)
             updated["writeback"] = writeback
             return updated
+
+    @app.get(
+        API + "/media/{media_id}/writeback",
+        tags=["Personal"],
+        dependencies=[Depends(authenticated)],
+    )
+    def media_writeback_history(media_id: str, limit: int = Query(default=50, ge=1, le=200)):
+        if not store.detail(media_id):
+            raise HTTPException(404, "Unknown media.")
+        return store.writeback_history(work_id=media_id, limit=limit)
 
     @app.post(
         API + "/media/{media_id}/enrich",
@@ -746,6 +763,46 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @app.post(
+        API + "/sources/{source_id}/scan",
+        response_model=JobView,
+        status_code=202,
+        tags=["Sources"],
+        dependencies=[Depends(writable)],
+    )
+    async def scan_kodi_source(source_id: str, player_id: str | None = None):
+        source = await asyncio.to_thread(store.source, source_id)
+        if not source:
+            raise HTTPException(404, "Unknown source.")
+        if source["type"] != "kodi":
+            raise HTTPException(422, "Only Kodi sources can be scanned.")
+        if player_id:
+            player = await asyncio.to_thread(store.player, player_id)
+            if not player or player["source_id"] != source_id:
+                raise HTTPException(422, "Kodi player is not associated with the selected source.")
+        else:
+            all_players = await asyncio.to_thread(store.players)
+            chosen = next((p for p in all_players if p["source_id"] == source_id), None)
+            if not chosen:
+                raise HTTPException(422, "Configure a Kodi JSON-RPC player for this source.")
+            player = await asyncio.to_thread(store.player, chosen["id"])
+        try:
+            return await sync.submit_scan(source_id, player)
+        except BusyError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get(
+        API + "/sources/{source_id}/writeback",
+        tags=["Sources"],
+        dependencies=[Depends(authenticated)],
+    )
+    def source_writeback_history(source_id: str, limit: int = Query(default=50, ge=1, le=200)):
+        if not store.source(source_id):
+            raise HTTPException(404, "Unknown source.")
+        return store.writeback_history(source_id=source_id, limit=limit)
 
     @app.post(
         API + "/imports/clz",
