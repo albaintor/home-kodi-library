@@ -44,6 +44,9 @@ function savePreferences() {
   if(!filtersRestored)return;
   writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
 }
+function updateSearchClearButton() {
+  $('clear-search').hidden=!$('search').value&&!state.personSearch;
+}
 function restoreFilters() {
   if(filtersRestored)return;
   for(const id of filterIds){
@@ -63,6 +66,7 @@ function restoreFilters() {
   $('deep-search').checked=state.deepSearch;
   $('toggle-filters').setAttribute('aria-expanded','false');
   filtersRestored=true;
+  updateSearchClearButton();
 }
 const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver(entries=>{
   if(entries.some(entry=>entry.isIntersecting)&&!state.loading&&!state.loadError&&state.hasMore&&!$('app').hidden&&!document.querySelector('dialog[open]')) loadMedia({append:true});
@@ -646,6 +650,7 @@ function searchLocalPerson(name,tmdbId='',imdbId='') {
   state.deepSearch=true;
   $('deep-search').checked=true;
   $('search').value=person;
+  updateSearchClearButton();
   $('sort').value='title';
   state.order='asc';
   $('sort-order').textContent='↑ Croissant';
@@ -654,7 +659,7 @@ function searchLocalPerson(name,tmdbId='',imdbId='') {
   $('search').focus({preventScroll:true});
   $('search').scrollIntoView({block:'center',behavior:'smooth'});
 }
-function reset() { state.personSearch=null; ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
+function reset() { state.personSearch=null; ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; updateSearchClearButton(); loadMedia(); }
 function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
 let pagePosition=null;
 function lockPage() {
@@ -1053,7 +1058,22 @@ $('filters-panel').addEventListener('toggle',()=>{
   $('toggle-filters').setAttribute('aria-expanded',String($('filters-panel').open));
 });
 $('reset-filters').addEventListener('click',reset);
-let searchTimer; $('search').addEventListener('input',()=>{state.personSearch=null;savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
+let searchTimer;
+$('search').addEventListener('input',()=>{
+  state.personSearch=null;
+  updateSearchClearButton();
+  savePreferences();
+  clearTimeout(searchTimer);
+  searchTimer=setTimeout(()=>{loadMedia();},250);
+});
+$('clear-search').addEventListener('click',()=>{
+  clearTimeout(searchTimer);
+  state.personSearch=null;
+  $('search').value='';
+  updateSearchClearButton();
+  loadMedia();
+  $('search').focus({preventScroll:true});
+});
 ['kind','source-type','genre','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
 $('deep-search').addEventListener('change',()=>{state.deepSearch=$('deep-search').checked;loadMedia();});
 $('sort-order').addEventListener('click',()=>{state.order=state.order==='asc'?'desc':'asc';$('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';loadMedia();});
