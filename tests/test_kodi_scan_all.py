@@ -13,9 +13,7 @@ def test_websocket_unavailable_uses_correct_http_jsonrpc_scan_path():
             "kodi_library.kodi_scan._websocket_scan",
             side_effect=KodiScanUnavailable("Kodi WebSocket unavailable"),
         ) as ws,
-        patch(
-            "kodi_library.kodi_scan._http_scan", new_callable=AsyncMock
-        ) as http,
+        patch("kodi_library.kodi_scan._http_scan", new_callable=AsyncMock) as http,
     ):
         result = asyncio.run(scan_until_finished({"host": "kodi", "port": 8080}))
     assert result == "http"
@@ -52,9 +50,7 @@ def test_http_scan_invokes_kodi_jsonrpc_and_checks_scan_completion():
         "JSONRPC.Permission",
         "VideoLibrary.Scan",
     ]
-    assert [method for method, _params in calls[2:]] == [
-        "XBMC.GetInfoBooleans"
-    ] * 3
+    assert [method for method, _params in calls[2:]] == ["XBMC.GetInfoBooleans"] * 3
 
 
 def test_scan_all_groups_kodi_instances_by_source(client, admin):
@@ -88,9 +84,7 @@ def test_scan_all_groups_kodi_instances_by_source(client, admin):
             "status": "pending",
         }
 
-    with patch.object(
-        client.app.state.sync, "submit_scans", side_effect=fake_submit
-    ) as submit:
+    with patch.object(client.app.state.sync, "submit_scans", side_effect=fake_submit) as submit:
         response = client.post("/api/v1/sources/scan-all", headers=admin)
     assert response.status_code == 202, response.text
     assert [job["id"] for job in response.json()] == ["scan-job-1"]

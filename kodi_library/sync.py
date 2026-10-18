@@ -95,20 +95,23 @@ class SyncManager:
                     # is safe, but must be labelled as an SQL-only refresh.
                     warnings.append(f"{player['name']} : {exc}")
                 await asyncio.to_thread(
-                    self.store.update_job_progress, job["id"], "kodi_scanning",
-                    index + 1, total
+                    self.store.update_job_progress, job["id"], "kodi_scanning", index + 1, total
                 )
             phase = "kodi_scan_finished" if scanned else "kodi_sql_fallback"
             await asyncio.to_thread(self.store.update_job_progress, job["id"], phase)
             await self._run(
-                job, source, None, scan_triggered=bool(scanned),
+                job,
+                source,
+                None,
+                scan_triggered=bool(scanned),
                 scan_info={"kodi_scanned_players": scanned, "kodi_scan_warnings": warnings},
             )
         except ConnectorError as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
         except asyncio.CancelledError:
             await asyncio.to_thread(
-                self.store.finish_job, job["id"],
+                self.store.finish_job,
+                job["id"],
                 error="Analyse Kodi interrompue avant confirmation de fin.",
             )
             raise

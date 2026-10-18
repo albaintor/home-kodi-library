@@ -983,8 +983,7 @@ class Store:
                     **dict(row),
                     "poster": (
                         f"/api/v1/media/{parent_id}/seasons/{row['season']}/poster"
-                        if isinstance(posters, dict)
-                        and posters.get(str(row["season"]))
+                        if isinstance(posters, dict) and posters.get(str(row["season"]))
                         else None
                     ),
                 }
@@ -1005,9 +1004,8 @@ class Store:
                 return []
             posters = json.loads(row["payload"]).get("season_posters", {})
             candidate = posters.get(str(season)) if isinstance(posters, dict) else None
-            if (
-                isinstance(candidate, str)
-                and re.fullmatch(r"https://image\.tmdb\.org/t/p/w342/[A-Za-z0-9_.-]+", candidate)
+            if isinstance(candidate, str) and re.fullmatch(
+                r"https://image\.tmdb\.org/t/p/w342/[A-Za-z0-9_.-]+", candidate
             ):
                 return [candidate]
             return []

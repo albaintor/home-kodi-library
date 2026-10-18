@@ -80,9 +80,7 @@ async def _websocket_scan(config: dict) -> None:
                         if response.get("id") != 1:
                             continue
                         if not _allowed(response.get("result")):
-                            raise KodiScanUnavailable(
-                                "WebSocket Kodi sans droit UpdateData."
-                            )
+                            raise KodiScanUnavailable("WebSocket Kodi sans droit UpdateData.")
                         break
 
                 await rpc("VideoLibrary.Scan", 2, {"showdialogs": False})
@@ -143,9 +141,7 @@ async def _http_scan(config: dict) -> None:
                         "XBMC.GetInfoBooleans", {"booleans": ["Library.IsScanningVideo"]}
                     )
                     scanning = (
-                        result.get("Library.IsScanningVideo")
-                        if isinstance(result, dict)
-                        else None
+                        result.get("Library.IsScanningVideo") if isinstance(result, dict) else None
                     )
                     if type(scanning) is not bool:
                         raise ConnectorError(
@@ -159,16 +155,12 @@ async def _http_scan(config: dict) -> None:
                         idle_samples += 1
                         # For a very fast scan, allow a short stabilization
                         # window rather than waiting indefinitely for 'true'.
-                        if saw_scanning or (
-                            monotonic() - began >= 4 and idle_samples >= 3
-                        ):
+                        if saw_scanning or (monotonic() - began >= 4 and idle_samples >= 3):
                             return
                     await asyncio.sleep(1)
     except (KodiUnavailable, TimeoutError) as exc:
         if not started:
-            raise KodiScanUnavailable(
-                "Kodi HTTP JSON-RPC indisponible après 6 secondes."
-            ) from exc
+            raise KodiScanUnavailable("Kodi HTTP JSON-RPC indisponible après 6 secondes.") from exc
         raise ConnectorError(
             "Analyse Kodi démarrée, mais confirmation HTTP impossible ; "
             "synchronisation SQL différée."

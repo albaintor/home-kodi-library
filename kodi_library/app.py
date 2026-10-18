@@ -985,7 +985,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "A Kodi source is already synchronizing. Retry later.")
         jobs = []
         for source_id, ids in grouped.items():
-            private_players = [await asyncio.to_thread(store.player, player_id) for player_id in ids]
+            private_players = [
+                await asyncio.to_thread(store.player, player_id) for player_id in ids
+            ]
             try:
                 jobs.append(await sync.submit_scans(source_id, private_players))
             except BusyError as exc:

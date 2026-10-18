@@ -40,9 +40,7 @@ def test_tv_season_poster_paths_are_cached_and_auth_protected(client, admin):
         image = client.get(f"/api/v1/media/{mid}/seasons/1/poster", headers=admin)
         assert image.status_code == 200
         getter.assert_awaited_once_with(["https://image.tmdb.org/t/p/w342/one.jpg"])
-    store.save_enrichment(
-        mid, {"season_posters": {"1": "https://evil.example/poster.jpg"}}
-    )
+    store.save_enrichment(mid, {"season_posters": {"1": "https://evil.example/poster.jpg"}})
     assert client.get(f"/api/v1/media/{mid}/seasons/1/poster", headers=admin).status_code == 404
 
 
@@ -52,7 +50,8 @@ def test_tmdb_tv_enrichment_reads_season_posters_from_series_details():
         async def get(path, **_params):
             assert path == "tv/42"
             return {
-                "credits": {}, "videos": {"results": []},
+                "credits": {},
+                "videos": {"results": []},
                 "seasons": [
                     {"season_number": 0, "poster_path": "/special.jpg"},
                     {"season_number": 1, "poster_path": "/first.jpg"},
