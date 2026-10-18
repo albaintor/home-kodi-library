@@ -39,7 +39,7 @@ function updateFormatSelections() {
   $('format-selection-count').textContent=state.formats.length?`${state.formats.length} sélectionné${state.formats.length>1?'s':''} · filtres cumulés (ET)`:'Sélectionnez plusieurs formats pour les cumuler (ET).';
 }
 
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),personSearch:null,seasons:[],playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
   writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
@@ -208,7 +208,7 @@ function castMarkup(people=[]) {
   const members=list=>`<ul class="cast-grid">${list.map(member=>{
     const links=member.links||{};
     const name=esc(member.name);
-    return `<li class="cast-member"><button type="button" class="person-photo" data-search-person="${name}" aria-label="Rechercher ${name} dans la médiathèque" title="Rechercher les films et séries de ${name}"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="" loading="lazy">`:''}</button><span><button type="button" class="person-name" data-search-person="${name}" title="Rechercher ${name} dans la médiathèque"><strong>${name}</strong></button>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(links).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`;
+    return `<li class="cast-member"><button type="button" class="person-photo" data-search-person="${name}" data-person-tmdb="${esc(member.tmdb_id||'')}" data-person-imdb="${esc(member.imdb_id||'')}" aria-label="Rechercher ${name} dans la médiathèque" title="Rechercher les films et séries de ${name}"><span class="cast-initials" aria-hidden="true">${esc(member.name.split(/\s+/).slice(0,2).map(word=>word[0]).join(''))}</span>${member.thumbnail?`<img src="${esc(url(member.thumbnail))}" alt="" loading="lazy">`:''}</button><span><button type="button" class="person-name" data-search-person="${name}" data-person-tmdb="${esc(member.tmdb_id||'')}" data-person-imdb="${esc(member.imdb_id||'')}" title="Rechercher ${name} dans la médiathèque"><strong>${name}</strong></button>${member.role?`<small>${esc(member.role)}</small>`:''}<span class="person-links">${Object.entries(links).map(([site,link])=>`<a href="${esc(link)}" target="_blank" rel="noopener noreferrer">${site==='imdb_search'?'Recherche IMDb':site.toUpperCase()} ↗</a>`).join(' · ')}</span></span></li>`;
   }).join('')}</ul>`;
   return Object.entries(personCategories).map(([category,label])=>{
     const group=people.filter(p=>(p.category||'cast')===category); if(!group.length)return '';
@@ -421,6 +421,11 @@ function currentParams(offset=0) {
   const params=new URLSearchParams({limit:state.limit,offset,sort:$('sort').value,order:state.order});
   for (const [id,name] of [['search','q'],['kind','kind'],['source-type','source_type'],['genre','genre'],['collection','collection'],['watch-status','watch_status']]) if ($(id).value) params.set(name,$(id).value);
   for (const value of state.formats) params.append('format',value);
+  if(state.personSearch) {
+    params.delete('q');
+    if(state.personSearch.tmdbId)params.set('person_tmdb_id',state.personSearch.tmdbId);
+    else if(state.personSearch.imdbId)params.set('person_imdb_id',state.personSearch.imdbId);
+  }
   if(state.deepSearch) params.set('deep_search','true');
   if (state.recent) params.set('recent_days','30');
   return params;
@@ -625,9 +630,13 @@ async function initialize() {
 }
 // A cast credit searches the local catalogue (including indexed TMDB credits),
 // not TMDB's remote person page. Clear unrelated filters before searching.
-function searchLocalPerson(name) {
+function searchLocalPerson(name,tmdbId='',imdbId='') {
   const person=String(name||'').trim();
   if(!person)return;
+  state.personSearch={
+    tmdbId:/^[0-9]+$/.test(tmdbId)?tmdbId:null,
+    imdbId:/^nm[0-9]+$/.test(imdbId)?imdbId:null
+  };
   if($('detail-dialog').open)$('detail-dialog').close();
   for(const id of ['kind','source-type','genre','collection','watch-status']) $(id).value='';
   state.formats=[];
@@ -643,7 +652,7 @@ function searchLocalPerson(name) {
   $('search').focus({preventScroll:true});
   $('search').scrollIntoView({block:'center',behavior:'smooth'});
 }
-function reset() { ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
+function reset() { state.personSearch=null; ['search','kind','source-type','genre','collection','watch-status'].forEach(id=>$(id).value=''); state.formats=[];state.deepSearch=false;$('deep-search').checked=false;updateFormatSelections(); state.recent=false; loadMedia(); }
 function setView(view, render=true) { state.view=view; writeStorage('kodi_library_view',view);savePreferences(); $('grid-view').setAttribute('aria-pressed',view==='grid'); $('list-view').setAttribute('aria-pressed',view==='list'); if (render&&state.items.length) {renderCards(state.items);observeMore();} }
 let pagePosition=null;
 function lockPage() {
@@ -711,6 +720,7 @@ async function openDetail(id) {
 async function loadSeasons(id,selectedSeason=null) {
   const seasons=await api(`media/${encodeURIComponent(id)}/seasons`);
   if(state.detail?.id!==id||!$('season-list'))return;
+  state.seasons=seasons;
   const seriesPoster=state.detail.artwork?.poster;
   $('season-list').innerHTML=seasons.length?seasons.map(season=>{
     const label=season.season===0?'Spéciaux':`Saison ${season.season}`;
@@ -719,7 +729,7 @@ async function loadSeasons(id,selectedSeason=null) {
       <span class="season-cover">${artwork?`<img loading="lazy" src="${esc(url(artwork))}" alt="">`:'<span aria-hidden="true">▦</span>'}${season.watched_count>0?`<span class="season-watched-flag ${season.watched_count<season.episode_count?'partial':'complete'}" title="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes" aria-label="${season.watched_count<season.episode_count?'Partiellement vu':'Vu'} : ${season.watched_count}/${season.episode_count} épisodes">${season.watched_count<season.episode_count?'◐':'✓'}</span>`:''}</span>
       <span class="season-label">${esc(label)}</span>
       <span class="season-count">${season.episode_count} épisodes · ${season.watched_count} vus</span>
-    </button>${state.role==='admin'?`<div class="season-watch-actions"><button type="button" data-mark-season="${season.season}" data-watched="true" ${state.personalPending.has(id)?'disabled':''}>Tout vu</button><button type="button" data-mark-season="${season.season}" data-watched="false" ${state.personalPending.has(id)?'disabled':''}>Tout non vu</button></div>`:''}</div>`;
+    </button></div>`;
   }).join(''):'Aucune saison importée pour cette série.';
   attachImageFallbacks($('season-list'));
   if(selectedSeason!==null)loadSeasonEpisodes(selectedSeason);
@@ -747,7 +757,11 @@ async function loadSeasonEpisodes(season,offset=0) {
       </button>`;
     }).join('');
 
-    if(!offset)node.innerHTML=`<p class="section-label">SAISON ${season} · ${page.total} ÉPISODES</p>${markup||'<p class="hint">Aucun épisode.</p>'}`;
+    if(!offset){
+      const seasonData=state.seasons?.find(s=>s.season===season);
+      const actions=state.role==='admin'?`<div class="selected-season-watch-actions"><button type="button" data-mark-season="${season}" data-watched="true" ${state.personalPending.has(parent)?'disabled':''}>Tout vu</button><button type="button" data-mark-season="${season}" data-watched="false" ${state.personalPending.has(parent)?'disabled':''}>Tout non vu</button></div>`:'';
+      node.innerHTML=`<div class="selected-season-header"><p class="section-label">${season===0?'SPÉCIAUX':'SAISON '+season} · ${page.total} ÉPISODES${seasonData?' · '+seasonData.watched_count+' vus':''}</p>${actions}</div>${markup||'<p class="hint">Aucun épisode.</p>'}`;
+    }
     else {node.querySelector('[data-load-season]')?.remove();node.insertAdjacentHTML('beforeend',markup);}
     if(page.has_more)node.insertAdjacentHTML('beforeend',`<button class="secondary" data-load-season="${season}" data-offset="${offset+page.items.length}">Afficher plus d’épisodes</button>`);
   }catch(e){if(state.detail?.id===parent&&node.dataset.season===String(season))node.textContent='Chargement des épisodes impossible : '+e.message;}
@@ -941,7 +955,7 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
-  if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson);return;}
+  if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson,button.dataset.personTmdb,button.dataset.personImdb);return;}
   if(button.hasAttribute('data-mark-season')){await saveEpisodeWatches(button.dataset.watched==='true',Number(button.dataset.markSeason));return;}
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
@@ -1037,7 +1051,7 @@ $('filters-panel').addEventListener('toggle',()=>{
   $('toggle-filters').setAttribute('aria-expanded',String($('filters-panel').open));
 });
 $('reset-filters').addEventListener('click',reset);
-let searchTimer; $('search').addEventListener('input',()=>{savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
+let searchTimer; $('search').addEventListener('input',()=>{state.personSearch=null;savePreferences();clearTimeout(searchTimer);searchTimer=setTimeout(()=>{loadMedia();},250);});
 ['kind','source-type','genre','collection','watch-status','sort'].forEach(id=>$(id).addEventListener('change',()=>{loadMedia();}));
 $('deep-search').addEventListener('change',()=>{state.deepSearch=$('deep-search').checked;loadMedia();});
 $('sort-order').addEventListener('click',()=>{state.order=state.order==='asc'?'desc':'asc';$('sort-order').textContent=state.order==='asc'?'↑ Croissant':'↓ Décroissant';loadMedia();});
