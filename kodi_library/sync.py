@@ -10,7 +10,7 @@ from .connectors.base import ConnectorError
 from .connectors.clz import parse_clz
 from .connectors.collection_xml import COLLECTION_TYPES, parse_collection
 from .connectors.kodi import KodiConnector
-from .kodi_scan import scan_until_finished
+from .kodi_scan import KodiScanUnavailable, scan_until_finished
 
 LOGGER = logging.getLogger(__name__)
 
@@ -54,55 +54,76 @@ class SyncManager:
         return job
 
     async def submit_scan(self, source_id: str, player: dict) -> dict[str, Any]:
-        """Reserve a single Kodi source job across scan AND local publication."""
+        return await self.submit_scans(source_id, [player])
+
+    async def submit_scans(self, source_id: str, players: list[dict]) -> dict[str, Any]:
+        """Reserve one job per source, scanning all configured instances first."""
         if source_id in self.active:
             raise BusyError("Une actualisation est déjà en cours pour cette source.")
         source = await asyncio.to_thread(self.store.source, source_id, private=True)
         if not source or source["type"] != "kodi" or not source["enabled"]:
             raise ValueError("Source Kodi inconnue ou désactivée.")
-        if player["source_id"] != source_id:
-            raise ValueError("L'instance Kodi ne correspond pas à la source.")
+        if not players or any(player["source_id"] != source_id for player in players):
+            raise ValueError("Aucune instance Kodi valide pour cette source.")
         self.active.add(source_id)
         try:
             job = await asyncio.to_thread(self.store.new_job, source_id)
         except Exception:
             self.active.discard(source_id)
             raise
-        task = asyncio.create_task(self._run_scan(job, source, player))
+        task = asyncio.create_task(self._run_scan(job, source, players))
         self.tasks.add(task)
         self.scan_tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         task.add_done_callback(self.scan_tasks.discard)
         return job
 
-    async def _run_scan(self, job: dict, source: dict, player: dict) -> None:
+    async def _run_scan(self, job: dict, source: dict, players: list[dict]) -> None:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
-            await asyncio.to_thread(self.store.update_job_progress, job["id"], "kodi_scanning")
-            await scan_until_finished(player["config"])
-            await asyncio.to_thread(self.store.update_job_progress, job["id"], "kodi_scan_finished")
-            # Reuse this job and reservation, so no other sync can race the scan.
-            await self._run(job, source, None, scan_triggered=True)
+            scanned, warnings = [], []
+            total = len(players)
+            for index, player in enumerate(players):
+                await asyncio.to_thread(
+                    self.store.update_job_progress, job["id"], "kodi_scanning", index, total
+                )
+                try:
+                    method = await scan_until_finished(player["config"])
+                    scanned.append({"name": player["name"], "method": method})
+                except KodiScanUnavailable as exc:
+                    # The scan never started. Reading existing Kodi SQL data
+                    # is safe, but must be labelled as an SQL-only refresh.
+                    warnings.append(f"{player['name']} : {exc}")
+                await asyncio.to_thread(
+                    self.store.update_job_progress, job["id"], "kodi_scanning",
+                    index + 1, total
+                )
+            phase = "kodi_scan_finished" if scanned else "kodi_sql_fallback"
+            await asyncio.to_thread(self.store.update_job_progress, job["id"], phase)
+            await self._run(
+                job, source, None, scan_triggered=bool(scanned),
+                scan_info={"kodi_scanned_players": scanned, "kodi_scan_warnings": warnings},
+            )
         except ConnectorError as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
         except asyncio.CancelledError:
             await asyncio.to_thread(
-                self.store.finish_job,
-                job["id"],
+                self.store.finish_job, job["id"],
                 error="Analyse Kodi interrompue avant confirmation de fin.",
             )
             raise
         except Exception:
             LOGGER.exception("Unexpected Kodi scan monitoring failure")
             await asyncio.to_thread(
-                self.store.finish_job,
-                job["id"],
+                self.store.finish_job, job["id"],
                 error="Erreur de suivi de l'analyse Kodi ; catalogue local non actualisé.",
             )
         finally:
             self.active.discard(source["id"])
 
-    async def _run(self, job, source, xml, *, scan_triggered: bool = False):
+    async def _run(
+        self, job, source, xml, *, scan_triggered: bool = False, scan_info: dict | None = None
+    ):
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             if xml is not None:
@@ -129,8 +150,9 @@ class SyncManager:
             publish_started = monotonic()
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
             result["sqlite_publish_ms"] = round((monotonic() - publish_started) * 1000)
-            if scan_triggered:
-                result["kodi_scan"] = "finished"
+            if scan_info is not None:
+                result["kodi_scan"] = "finished" if scan_triggered else "sql_only"
+                result.update(scan_info)
             if database:
                 result["database"] = database
                 result["mariadb_read_ms"] = mariadb_read_ms

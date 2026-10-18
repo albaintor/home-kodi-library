@@ -202,6 +202,7 @@ def main():
                 expect(page.locator(".view-switch")).to_be_visible()
                 expect(page.locator("#filters")).to_be_hidden()
                 expect(page.locator("#search")).to_be_visible()
+                expect(page.locator("#scan-all-kodi")).to_be_visible()
                 assert page.locator("#search").evaluate(
                     "element => !element.closest('#filters-panel')"
                 )
@@ -541,25 +542,18 @@ def main():
                 assert len(enriched_calls) == initial_calls + 2
                 page.locator('[data-close="detail-dialog"]').click()
                 page.locator("#connections-button").click()
-                expect(page.locator("#settings-preferences-title")).to_have_text("Préférences")
-                expect(page.locator("#settings-language")).to_have_value("fr")
-                expect(page.locator("#settings-language")).to_be_visible()
+                expect(page.locator("#settings-preferences-title")).to_have_count(0)
+                expect(page.locator("#settings-language")).to_have_count(0)
+                expect(page.locator("#header-language")).to_have_value("fr")
                 page.locator("#connections-dialog").evaluate(
                     "element => element.scrollTop = element.scrollHeight"
-                )
-                assert page.locator("#settings-language").evaluate(
-                    """element => {
-                      const select = element.getBoundingClientRect();
-                      const dialog = element.closest("dialog").getBoundingClientRect();
-                      return select.top >= dialog.top - 2 && select.bottom <= dialog.bottom + 2;
-                    }"""
                 )
                 page.locator('[data-close="connections-dialog"]').click()
                 page.locator("#connections-button").click()
                 assert page.locator("#connections-dialog").evaluate(
                     "element => element.scrollTop === 0"
                 )
-                expect(page.locator("#settings-language")).to_be_visible()
+                expect(page.locator("#settings-language")).to_have_count(0)
                 page.locator("#test-tmdb").click()
                 expect(page.locator("#tmdb-test-result")).to_contain_text("Connexion TMDB réussie")
                 page.locator("[data-test-player]").click()
@@ -701,23 +695,22 @@ def main():
                 english.locator('[data-close="detail-dialog"]').click()
                 english.locator("#connections-button").click()
                 expect(english.locator("#connections-dialog h2")).to_have_text("Settings")
-                expect(english.locator("#settings-preferences-title")).to_have_text("Preferences")
-                expect(english.locator("label[for='settings-language'] span")).to_have_text(
-                    "Language"
-                )
-                expect(english.locator("#settings-language")).to_have_value("en")
+                expect(english.locator("#settings-preferences-title")).to_have_count(0)
+                expect(english.locator("#header-language")).to_have_value("en")
                 expect(english.locator("#connection-content")).to_contain_text(
                     "Generate pairing code"
                 )
-                english.locator("#settings-language").select_option("fr")
+                english.locator('[data-close="connections-dialog"]').click()
+                english.locator("#header-language").select_option("fr")
                 expect(english.locator("html")).to_have_attribute("lang", "fr")
                 expect(english.locator("#lists-button")).to_have_text("Mes listes")
                 expect(english.locator("#header-language")).to_have_value("fr")
                 english.reload(wait_until="domcontentloaded")
                 expect(english.locator("#header-language")).to_have_value("fr")
                 english.locator("#connections-button").click()
-                expect(english.locator("#settings-language")).to_have_value("fr")
-                english.locator("#settings-language").select_option("en")
+                expect(english.locator("#header-language")).to_have_value("fr")
+                english.locator('[data-close="connections-dialog"]').click()
+                english.locator("#header-language").select_option("en")
                 expect(english.locator("html")).to_have_attribute("lang", "en")
                 expect(english.locator("#header-language")).to_have_value("en")
                 english.close()

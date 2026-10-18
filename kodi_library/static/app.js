@@ -422,6 +422,7 @@ function fillSelect(id, values, label) {
 async function refresh() {
   const [facets,status,players]=await Promise.all([api('facets'),api('status'),api('players')]);
   state.facets=facets; state.players=players;
+  $('scan-all-kodi').hidden=state.role!=='admin'||!players.length;
   state.tmdbAvailable=status.tmdb_available===true;
   fillSelect('genre',facets.genres,'Tous les genres'); fillSelect('collection',facets.collections,'Toutes les collections');
   if(filtersRestored){
@@ -441,19 +442,50 @@ const jobPhaseLabels={
   connecting:'Connexion à MariaDB',loading:'Lecture des métadonnées Kodi',parsing_clz:'Analyse du fichier CLZ',parsing_mymovies:'Analyse du fichier MyMovies',parsing_filmotech:'Analyse du fichier Filmotech',
   movies:'Films',series:'Séries',episodes:'Épisodes',
   verifying_library:'Contrôle de la vidéothèque Kodi',
-  publishing:'Mise à jour du catalogue',completed:'Terminé',failed:'Échec'
+  publishing:'Mise à jour du catalogue',completed:'Terminé',failed:'Échec',
+  kodi_scanning:'Analyse de la médiathèque distante Kodi (JSON-RPC)',
+  kodi_scan_finished:'Kodi analysé · chargement de MariaDB',
+  kodi_sql_fallback:'Kodi injoignable · synchronisation SQL uniquement'
 };
+function indeterminateKodiPhase(job) {
+  return ['kodi_scanning','kodi_scan_finished','kodi_sql_fallback'].includes(job.progress_phase);
+}
+function renderGlobalScanProgress() {
+  const root=$('remote-scan-progress');
+  const ids=new Set(state.globalScanIds||[]);
+  const jobs=state.jobs.filter(job=>ids.has(job.id));
+  root.hidden=!jobs.length;
+  if(!jobs.length)return;
+  const sources=new Map((state.facets?.sources||[]).map(source=>[source.id,source]));
+  root.innerHTML=jobs.map(job=>{
+    const name=sources.get(job.source_id)?.name||'Kodi';
+    const done=job.status==='completed',failed=job.status==='failed';
+    const result=job.result||{};
+    const summary=failed?'Échec':done
+      ?result.kodi_scan==='sql_only'?'SQL actualisé, analyse Kodi non effectuée':'Actualisation terminée'
+      :jobProgressLabel(job);
+    const warning=(result.kodi_scan_warnings||[]).join(' · ');
+    return `<div class="remote-scan-job ${failed?'is-failed':done?'is-completed':''}">
+      <strong>${esc(name)}</strong>
+      <div><span class="remote-scan-status">${esc(summary)}</span>
+        ${!done&&!failed?jobProgressMarkup(job):''}
+        ${failed&&job.error?`<span class="remote-scan-warning">${esc(job.error)}</span>`:''}
+        ${warning?`<p class="remote-scan-warning">${esc(warning)}</p>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
 function jobProgressLabel(job) {
   const phase=jobPhaseLabels[job.progress_phase]||'Préparation';
   const current=Math.max(0,Number(job.progress_current)||0);
   const total=Math.max(0,Number(job.progress_total)||0);
   const overall=Number(job.overall_percent);
-  const overallText=Number.isFinite(overall)&&!job.progress_phase?.startsWith('parsing_')?' · ≈ '+overall+' % global':'';
+  const overallText=Number.isFinite(overall)&&!indeterminateKodiPhase(job)&&!job.progress_phase?.startsWith('parsing_')?' · ≈ '+overall+' % global':'';
   return phase+(total>0?' · '+Math.min(current,total).toLocaleString(displayLocale())+'/'+total.toLocaleString(displayLocale()):'…')+overallText;
 }
 function jobProgressMarkup(job) {
   const percent=Number(job.overall_percent);
-  const showProgress=Number.isFinite(percent)&&!job.progress_phase?.startsWith('parsing_');
+  const showProgress=Number.isFinite(percent)&&!indeterminateKodiPhase(job)&&!job.progress_phase?.startsWith('parsing_');
   return '<div class="sync-phase"><span class="activity-spinner" aria-hidden="true"></span><span>'+esc(jobProgressLabel(job))+'</span></div>'+
     (showProgress?'<progress class="sync-progress" value="'+Math.max(0,Math.min(percent,100))+'" max="100"></progress>':'');
 }
@@ -461,6 +493,7 @@ function renderActivity() {
   const active=state.jobs.filter(j=>['pending','running'].includes(j.status));
   const indicator=$('activity-indicator');
   indicator.hidden=!active.length || $('app').hidden;
+  renderGlobalScanProgress();
   if(!active.length)return;
   const sources=new Map((state.facets?.sources||[]).map(s=>[s.id,s]));
   const kinds=new Set(active.map(j=>sources.get(j.source_id)?.type||'kodi'));
@@ -468,7 +501,7 @@ function renderActivity() {
     :[...kinds].some(type=>collectionTypes.includes(type))?'Import de collection en cours':'Synchronisation Kodi en cours';
   const first=active[0];
   const overall=Number(first.overall_percent);
-  const showProgress=Number.isFinite(overall)&&!first.progress_phase?.startsWith('parsing_');
+  const showProgress=Number.isFinite(overall)&&!indeterminateKodiPhase(first)&&!first.progress_phase?.startsWith('parsing_');
   const percent=showProgress?' · ≈'+overall+' %':'';
   $('activity-label').textContent=active.length>1?`${active.length} tâches en cours`:label+percent;
   $('activity-progress').hidden=!showProgress||active.length!==1;
@@ -503,6 +536,19 @@ async function pollActivity() {
   } finally { state.activityPollBusy=false; }
 }
 $('activity-indicator').addEventListener('click',()=>connections());
+$('scan-all-kodi').addEventListener('click',async()=>{
+  const button=$('scan-all-kodi');
+  button.disabled=true;
+  try {
+    const jobs=await api('sources/scan-all',{method:'POST'});
+    state.globalScanIds=jobs.map(job=>job.id);
+    state.jobs=[...jobs,...state.jobs.filter(job=>!state.globalScanIds.includes(job.id))];
+    renderActivity();
+    toast(`Analyse des médiathèques lancée : ${jobs.length} source(s) Kodi.`);
+  } catch(e){toast(e.message);}
+  finally {button.disabled=false;}
+});
+
 setInterval(()=>{if(!$('app').hidden)pollActivity();},3000);
 async function initialize() {
   try {
@@ -564,7 +610,7 @@ function renderDetail(item) {
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${castMarkup(item.people||item.cast)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}${castMarkup(item.people||item.cast)}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -572,16 +618,26 @@ async function openDetail(id) {
   try {
     const item=await api(`media/${encodeURIComponent(id)}`); if(seq!==state.detailSeq)return;
     renderDetail(item); showDialog('detail-dialog');
-    if(item.tmdb_available&&state.role==='admin'&&item.kind!=='episode'&&(!item.enriched_at||Date.now()-Date.parse(item.enriched_at)>30*86400000)) enrichDetail(false);
-    if (item.kind==='tvshow') {
-      const seasons=await api(`media/${encodeURIComponent(item.id)}/seasons`);
-      if(state.detail?.id===item.id&&$('season-list')){
-        $('season-list').innerHTML=seasons.length?seasons.map(season=>
-          `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="false">Saison ${season.season===0?'0 · Spéciaux':season.season} <span class="muted">${season.episode_count} épisodes · ${season.watched_count} vus</span></button>`
-        ).join(''):'Aucune saison importée pour cette série.';
-      }
-    }
+    if(item.tmdb_available&&state.role==='admin'&&item.kind!=='episode'&&(!item.enriched_at||Date.now()-Date.parse(item.enriched_at)>30*86400000||(item.kind==='tvshow'&&!item.season_posters_cached))) enrichDetail(false);
+    if (item.kind==='tvshow') await loadSeasons(item.id);
+
   } catch(e) {toast(e.message);}
+}
+async function loadSeasons(id,selectedSeason=null) {
+  const seasons=await api(`media/${encodeURIComponent(id)}/seasons`);
+  if(state.detail?.id!==id||!$('season-list'))return;
+  const seriesPoster=state.detail.artwork?.poster;
+  $('season-list').innerHTML=seasons.length?seasons.map(season=>{
+    const label=season.season===0?'Spéciaux':`Saison ${season.season}`;
+    const artwork=season.poster||seriesPoster;
+    return `<button type="button" class="season-button" data-season="${season.season}" aria-expanded="${selectedSeason===season.season}" aria-label="${esc(label)}, ${season.episode_count} épisodes">
+      <span class="season-cover">${artwork?`<img loading="lazy" src="${esc(url(artwork))}" alt="">`:'<span aria-hidden="true">▦</span>'}</span>
+      <span class="season-label">${esc(label)}</span>
+      <span class="season-count">${season.episode_count} épisodes · ${season.watched_count} vus</span>
+    </button>`;
+  }).join(''):'Aucune saison importée pour cette série.';
+  attachImageFallbacks($('season-list'));
+  if(selectedSeason!==null)loadSeasonEpisodes(selectedSeason);
 }
 async function loadSeasonEpisodes(season,offset=0) {
   const detail=state.detail;
@@ -593,9 +649,19 @@ async function loadSeasonEpisodes(season,offset=0) {
   try{
     const page=await api(`media/${encodeURIComponent(parent)}/seasons/${season}/episodes?limit=100&offset=${offset}`);
     if(state.detail?.id!==parent||node.dataset.season!==String(season))return;
-    const markup=page.items.map(e=>
-      `<button type="button" data-media="${esc(e.id)}"><strong>E${String(e.episode??0).padStart(2,'0')}</strong> · ${esc(e.title)} <span class="muted">· ${esc(stateLabels[e.watch_status])}${e.runtime_minutes?' · '+e.runtime_minutes+' min':''}</span>${e.plot?`<small class="episode-synopsis">${esc(e.plot)}</small>`:''}</button>`
-    ).join('');
+    const markup=page.items.map(e=>{
+      const watched=e.watch_status==='watched';
+      const inProgress=e.watch_status==='in_progress';
+      const statusLabel=watched?'Vu':inProgress?'En cours':'Non vu';
+      const statusIcon=watched?'✓':inProgress?'◐':'○';
+      return `<button type="button" class="season-episode" data-media="${esc(e.id)}" aria-label="Épisode ${esc(e.episode??'?')} : ${esc(e.title)}, ${statusLabel}">
+        <span class="season-episode-number">E${String(e.episode??0).padStart(2,'0')}</span>
+        <span class="season-episode-description"><span class="season-episode-title">${esc(e.title)}</span>${e.plot?`<small class="episode-synopsis">${esc(e.plot)}</small>`:''}</span>
+        ${e.runtime_minutes?`<span class="season-episode-duration">${e.runtime_minutes} min</span>`:''}
+        <span class="season-episode-state ${watched?'is-watched':inProgress?'is-progress':'is-unwatched'}" title="${statusLabel}" aria-label="${statusLabel}">${statusIcon}</span>
+      </button>`;
+    }).join('');
+
     if(!offset)node.innerHTML=`<p class="section-label">SAISON ${season} · ${page.total} ÉPISODES</p>${markup||'<p class="hint">Aucun épisode.</p>'}`;
     else {node.querySelector('[data-load-season]')?.remove();node.insertAdjacentHTML('beforeend',markup);}
     if(page.has_more)node.insertAdjacentHTML('beforeend',`<button class="secondary" data-load-season="${season}" data-offset="${offset+page.items.length}">Afficher plus d’épisodes</button>`);
@@ -670,6 +736,8 @@ async function pollJob(job) {
       if(result.library_verified)details.push(`Parcours SQL Kodi vérifié : ${result.library_movie_count} films · ${result.library_excluded_editions} éditions écartées`);
 
       if(result.kodi_scan==='finished') details.unshift('Analyse Kodi terminée, catalogue local mis à jour');
+      if(result.kodi_scan==='sql_only') details.unshift('Kodi non analysé : seule la base SQL existante a été synchronisée.');
+      if(result.kodi_scan_warnings?.length) details.push(...result.kodi_scan_warnings.map(msg=>'Attention : '+msg));
        if(result.removed_editions) details.push(`${result.removed_editions} éditions retirées de cette source`);
       else if(result.database) details.push('Aucune suppression Kodi détectée');
       if(result.removed_works) details.push(`${result.removed_works} œuvres supprimées du catalogue`);
@@ -903,12 +971,15 @@ async function enrichDetail(force) {
     const item=await api(`media/${encodeURIComponent(id)}/enrich?refresh=${force}`,{method:'POST'});
     enriched=true;
     if(seq===state.detailSeq&&$('detail-dialog').open){
+      const expandedSeason=$('season-list')?.querySelector('[aria-expanded="true"]')?.dataset.season;
       if((state.personalSeq||0)!==personalSeq)Object.assign(item,{personal:state.detail.personal,user_rating:state.detail.user_rating,watch_status:state.detail.watch_status});
       const episodes=$('episode-list')?.innerHTML;
       const ratingDraft=$('rating-popover')?.dataset.open?{value:$('rating-slider').value,focused:$('rating-popover').contains(document.activeElement)}:null;
       renderDetail(item);
       if(ratingDraft){showRatingPopover(ratingDraft.focused);$('rating-slider').value=ratingDraft.value;previewRating(Number(ratingDraft.value));}
-      if(episodes&&$('episode-list'))$('episode-list').innerHTML=episodes;
+      if(state.detail?.kind==='tvshow') {
+        loadSeasons(id,expandedSeason===undefined?null:Number(expandedSeason)).catch(()=>{});
+      } else if(episodes&&$('episode-list'))$('episode-list').innerHTML=episodes;
       if($('play-dialog').open)updatePlayEdition();
     }
   } catch(e) {if(seq===state.detailSeq){if($('enrichment-status'))$('enrichment-status').textContent=e.message;toast(e.message);}}

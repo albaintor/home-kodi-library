@@ -3,6 +3,9 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Actualiser les médiathèques distantes": "Refresh remote Kodi libraries",
+  "Lance l’analyse de chaque instance Kodi configurée, puis actualise le catalogue MariaDB.": "Scan all configured Kodi instances, then refresh the MariaDB catalog.",
+  "Actualisation Kodi": "Kodi library refresh",
   "Importer une collection": "Import a collection",
   "Type de collection": "Collection type",
   "Export XML de la collection": "Collection XML export",

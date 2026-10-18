@@ -115,7 +115,28 @@ async def enrich_tmdb(detail: dict, token: str) -> dict:
                 if v.get("site") == "YouTube" and v.get("type") == "Trailer"
                 if (url := youtube_url("https://youtu.be/" + str(v.get("key", ""))))
             ]
-            return {"people": people, "trailers": list(dict.fromkeys(trailers)), "tmdb_id": tmdb_id}
+            # TV details already contain season-specific poster paths. Store
+            # only validated TMDB image URLs alongside the existing credits,
+            # with no additional upstream requests or exposed API credentials.
+            season_posters = {}
+            if kind == "tv":
+                for season in data.get("seasons") or []:
+                    if not isinstance(season, dict):
+                        continue
+                    number, path = season.get("season_number"), season.get("poster_path")
+                    if (
+                        type(number) is int
+                        and 0 <= number <= 10000
+                        and isinstance(path, str)
+                        and re.fullmatch(r"/[A-Za-z0-9_.-]+", path)
+                    ):
+                        season_posters[str(number)] = "https://image.tmdb.org/t/p/w342" + path
+            return {
+                "people": people,
+                "trailers": list(dict.fromkeys(trailers)),
+                "tmdb_id": tmdb_id,
+                **({"season_posters": season_posters} if kind == "tv" else {}),
+            }
     except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
         raise ConnectorError(
             "TMDB enrichment failed. Check the API token, DNS and TMDB availability."

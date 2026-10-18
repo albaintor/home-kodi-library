@@ -38,6 +38,10 @@
     <section class="catalogue">
       <div class="heading-row"><p id="catalogue-status" class="muted">Chargement du catalogue…</p><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
       <section class="catalogue-list-actions" aria-labelledby="custom-lists-title"><div><h2 id="custom-lists-title">Listes personnalisées</h2><p>Films à voir, séries à suivre… organisez vos sélections.</p></div><div class="list-entry-buttons"><button class="secondary" data-action="lists">Ouvrir mes listes</button><button id="create-list-button" class="primary" hidden>+ Créer une liste</button></div></section>
+      <section class="remote-scan-dashboard" aria-label="Actualisation Kodi">
+        <div class="remote-scan-controls"><button id="scan-all-kodi" type="button" class="secondary" hidden>↻ Actualiser les médiathèques distantes</button><span class="hint">Lance l’analyse de chaque instance Kodi configurée, puis actualise le catalogue MariaDB.</span></div>
+        <div id="remote-scan-progress" class="remote-scan-progress" role="status" aria-live="polite" hidden></div>
+      </section>
       <div class="quick-filters" aria-label="Sélections rapides">
         <button data-quick="all" class="active">Tout</button><button data-quick="unwatched">À voir</button><button data-quick="in_progress">En cours</button><button data-quick="watched">Vus</button><button data-quick="recent">Derniers ajouts</button>
       </div>
@@ -73,7 +77,7 @@
     </section>
   </main>
   <dialog id="detail-dialog" class="detail-dialog"><button class="dialog-close" data-close="detail-dialog" aria-label="Fermer la fiche">×</button><div id="detail-content"></div></dialog>
-  <dialog id="connections-dialog" class="connections-dialog"><button class="dialog-close" data-close="connections-dialog" aria-label="Fermer les paramètres">×</button><p class="eyebrow">VOTRE CATALOGUE</p><h2>Paramètres</h2><p class="muted">Importez une collection ou connectez la base Kodi. Les lecteurs sont facultatifs.</p><section class="settings-preferences" aria-labelledby="settings-preferences-title"><div class="settings-preferences-info"><h3 id="settings-preferences-title">Préférences</h3><p class="muted">Choisissez la langue de l’interface. Ce choix est mémorisé dans ce navigateur.</p></div><label class="settings-language" for="settings-language"><span>Langue</span><select id="settings-language" data-language-select aria-label="Langue"><option value="fr">Français</option><option value="en">English</option></select></label></section><div id="connection-content"></div></dialog>
+  <dialog id="connections-dialog" class="connections-dialog"><button class="dialog-close" data-close="connections-dialog" aria-label="Fermer les paramètres">×</button><p class="eyebrow">VOTRE CATALOGUE</p><h2>Paramètres</h2><p class="muted">Importez une collection ou connectez la base Kodi. Les lecteurs sont facultatifs.</p><div id="connection-content"></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
   <dialog id="lists-dialog" class="lists-dialog"><button class="dialog-close" data-close="lists-dialog" aria-label="Fermer les listes">×</button><p class="eyebrow">VOTRE SÉLECTION</p><h2>Mes listes</h2><div id="lists-content"></div></dialog>
   <dialog id="choose-list-dialog" class="small-dialog"><button class="dialog-close" data-close="choose-list-dialog" aria-label="Fermer l’ajout aux listes">×</button><h2>Ajouter à une liste</h2><div id="choose-list-content"></div></dialog>

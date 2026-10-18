@@ -255,6 +255,37 @@ Les items de liste acceptent `sort=position|title|year|date_added|rating|user_ra
 Les `GET` ne déclenchent pas de requêtes TMDB. Le front administrateur appelle automatiquement `POST enrich` à l'ouverture si nécessaire ; une application iOS peut utiliser les mêmes routes. Les clients de lecture consultent les informations importées ou déjà enrichies. Le champ `editions[].metadata.file` expose le chemin Kodi ; le lancement d'une version utilise `edition_id` dans `/players/{id}/play`.
 
 
+## Actualiser les médiathèques Kodi distantes
+
+`POST /api/v1/sources/{source_id}/scan?player_id=...` déclenche l'analyse
+sur l'instance indiquée, puis actualise la base SQLite depuis MariaDB
+**seulement après vérification de la fin de l'analyse Kodi**.
+
+`POST /api/v1/sources/scan-all` (administrateur, HTTP 202) déclenche
+l'analyse de **toutes les instances Kodi configurées**. Les instances
+partageant la même source MariaDB sont analysées successivement dans un
+même job ; l'import SQL est lancé une fois par source. La réponse est
+une liste de `JobView`, suivie via `GET /api/v1/jobs` ou
+`GET /api/v1/jobs/{id}`.
+
+Le serveur tente d'abord les notifications WebSocket de Kodi
+(`ws://hôte:9090/jsonrpc`, connexion limitée à environ 4 s). Lorsque
+ce service est indisponible, il utilise l'endpoint **HTTP JSON-RPC déjà
+testé dans les paramètres Kodi** (`http://hôte:8080/jsonrpc`,
+personnalisable, avec l'authentification de l'instance) pour exécuter
+`VideoLibrary.Scan`. La fin est suivie via
+`XBMC.GetInfoBooleans(Library.IsScanningVideo)`. Un scan déclenché
+mais dont la fin ne peut pas être confirmée **ne** déclenche **pas** de
+mise à jour SQL automatique.
+
+Si aucune connexion ne permet **même de démarrer** l'analyse, la
+synchronisation de la base MariaDB existante est possible, mais elle
+est clairement signalée comme `result.kodi_scan="sql_only"`, avec
+`kodi_scan_warnings`. Elle ne remplace pas le scan de la médiathèque
+distante. L'interface Web masque le pourcentage estimé durant le scan
+distant (aucun taux de progression fiable) et affiche ensuite la
+progression de l'import MariaDB/SQLite.
+
 ## Hiérarchie des séries TV, saisons et épisodes
 
 Le catalogue principal (`GET /api/v1/media` sans `kind` ni `parent_id`)
@@ -325,3 +356,9 @@ Règles de maintenance :
 ## Plages locales sans jeton d'accès
 
 Configurer `LOCAL_AUTH_NETWORKS` (JSON de CIDR) et, si nécessaire, `TRUSTED_PROXY_NETWORKS` dans l'environnement. Aucune plage n'est autorisée par défaut. `GET /auth/session` renvoie `access_method=local` et un CSRF pour les clients autorisés sans Bearer ; envoyer ce CSRF dans `X-CSRF-Token` pour les écritures. Le front le fait automatiquement. Le contrôle Bearer reste disponible indépendamment de l'interface et prioritaire sur l'autorisation locale. Consulter le README pour la configuration du proxy ; ne pas activer le traitement automatique des proxy headers dans Uvicorn.
+
+Les affiches de saison fournies par TMDB sont accessibles dans la réponse
+`GET /api/v1/media/{id_serie}/seasons` via le champ facultatif
+`poster` (`/api/v1/media/{id_serie}/seasons/{saison}/poster`,
+authentifié, image servie depuis le cache serveur). Une absence d'affiche
+laisse au client le choix de réutiliser l'affiche principale de la série.

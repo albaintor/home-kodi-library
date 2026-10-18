@@ -406,6 +406,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         raise HTTPException(404, "Unknown media.")
 
     @app.get(
+        API + "/media/{media_id}/seasons/{season}/poster",
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+        responses={200: {"content": {"image/jpeg": {}, "image/png": {}, "image/webp": {}}}},
+    )
+    async def tv_season_poster(media_id: str, season: int):
+        candidates = await asyncio.to_thread(store.season_poster, media_id, season)
+        if not candidates:
+            raise HTTPException(404, "No season-specific poster.")
+        try:
+            data, content_type = await app.state.artwork.get(candidates)
+            return Response(data, media_type=content_type)
+        except ArtworkError as exc:
+            raise HTTPException(404, str(exc)) from exc
+
+    @app.get(
         API + "/media/{media_id}/diagnostics",
         tags=["Catalogue"],
         dependencies=[Depends(writable)],
@@ -671,6 +687,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 not refresh
                 and updated
                 and datetime.fromisoformat(updated) > datetime.now(UTC) - timedelta(days=30)
+                and (detail["kind"] != "tvshow" or detail.get("season_posters_cached"))
             ):
                 return {**detail, "tmdb_available": bool(settings.tmdb_api_token.strip())}
             try:
@@ -945,6 +962,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+    @app.post(
+        API + "/sources/scan-all",
+        response_model=list[JobView],
+        status_code=202,
+        tags=["Sources"],
+        dependencies=[Depends(writable)],
+    )
+    async def scan_all_kodi_players():
+        """Scan every configured remote Kodi instance, once per SQL source."""
+        players = await asyncio.to_thread(store.players)
+        sources = await asyncio.to_thread(store.sources)
+        available = {s["id"] for s in sources if s["type"] == "kodi" and s["enabled"]}
+        grouped: dict[str, list[str]] = {}
+        for player in players:
+            if player["source_id"] in available:
+                grouped.setdefault(player["source_id"], []).append(player["id"])
+        if not grouped:
+            raise HTTPException(422, "Configure at least one Kodi instance on an enabled source.")
+        if any(sid in sync.active for sid in grouped):
+            raise HTTPException(409, "A Kodi source is already synchronizing. Retry later.")
+        jobs = []
+        for source_id, ids in grouped.items():
+            private_players = [await asyncio.to_thread(store.player, player_id) for player_id in ids]
+            try:
+                jobs.append(await sync.submit_scans(source_id, private_players))
+            except BusyError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except ValueError as exc:
+                raise HTTPException(422, str(exc)) from exc
+        return jobs
 
     @app.post(
         API + "/sources/{source_id}/scan",

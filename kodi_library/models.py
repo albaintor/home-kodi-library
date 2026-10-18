@@ -282,6 +282,7 @@ class MediaDetail(MediaSummary):
     writeback_state: list[SourceWritebackState] = Field(default_factory=list)
     lists: list[ListView] = Field(default_factory=list)
     tmdb_available: bool = False
+    season_posters_cached: bool = False
     enriched_at: str | None = None
 
 
@@ -289,6 +290,7 @@ class SeasonSummary(BaseModel):
     season: int
     episode_count: int
     watched_count: int
+    poster: str | None = None
 
 
 class MediaPage(BaseModel):

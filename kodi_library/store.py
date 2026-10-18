@@ -973,8 +973,44 @@ class Store:
                 " FROM works WHERE kind='episode' AND parent_id=? AND season IS NOT NULL"
                 " GROUP BY season ORDER BY season",
                 (parent_id,),
-            )
-            return [dict(row) for row in rows]
+            ).fetchall()
+            cached = conn.execute(
+                "SELECT payload FROM enrichment WHERE work_id=?", (parent_id,)
+            ).fetchone()
+            posters = json.loads(cached["payload"]).get("season_posters", {}) if cached else {}
+            return [
+                {
+                    **dict(row),
+                    "poster": (
+                        f"/api/v1/media/{parent_id}/seasons/{row['season']}/poster"
+                        if isinstance(posters, dict)
+                        and posters.get(str(row["season"]))
+                        else None
+                    ),
+                }
+                for row in rows
+            ]
+
+    def season_poster(self, parent_id: str, season: int) -> list[str]:
+        """Read a validated server-cached TMDB season poster candidate."""
+        if season < 0 or season > 10000:
+            return []
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT e.payload FROM enrichment e JOIN works w ON w.id=e.work_id"
+                " WHERE w.id=? AND w.kind='tvshow'",
+                (parent_id,),
+            ).fetchone()
+            if not row:
+                return []
+            posters = json.loads(row["payload"]).get("season_posters", {})
+            candidate = posters.get(str(season)) if isinstance(posters, dict) else None
+            if (
+                isinstance(candidate, str)
+                and re.fullmatch(r"https://image\.tmdb\.org/t/p/w342/[A-Za-z0-9_.-]+", candidate)
+            ):
+                return [candidate]
+            return []
 
     def detail(self, work_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -1091,6 +1127,7 @@ class Store:
                 "personal": dict(personal) if personal else {},
                 "lists": self._lists(conn, work_id),
                 "enriched_at": cached["updated_at"] if cached else None,
+                "season_posters_cached": "season_posters" in enriched,
             }
 
     def update_personal(self, work_id: str, changes: dict) -> bool:
