@@ -3,6 +3,7 @@
 This is used only when the Kodi JSON-RPC transport is unavailable. We never
 write through views, and never use the library's SELECT-only credentials.
 """
+
 import math
 import re
 import socket
