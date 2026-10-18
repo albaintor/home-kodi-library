@@ -118,7 +118,8 @@ class SyncManager:
         except Exception:
             LOGGER.exception("Unexpected Kodi scan monitoring failure")
             await asyncio.to_thread(
-                self.store.finish_job, job["id"],
+                self.store.finish_job,
+                job["id"],
                 error="Erreur de suivi de l'analyse Kodi ; catalogue local non actualisé.",
             )
         finally:
