@@ -358,10 +358,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def season_episodes(
         media_id: str,
-        season: int = Query(ge=0, le=10000),
+        season: int,
         limit: int = Query(100, ge=1, le=200),
         offset: int = Query(0, ge=0),
     ):
+        if season < 0 or season > 10000:
+            raise HTTPException(422, "Invalid season.")
         if store.seasons(media_id) is None:
             raise HTTPException(404, "Unknown TV show.")
         return store.media(
