@@ -254,6 +254,49 @@ Les items de liste acceptent `sort=position|title|year|date_added|rating|user_ra
 
 Les `GET` ne déclenchent pas de requêtes TMDB. Le front administrateur appelle automatiquement `POST enrich` à l'ouverture si nécessaire ; une application iOS peut utiliser les mêmes routes. Les clients de lecture consultent les informations importées ou déjà enrichies. Le champ `editions[].metadata.file` expose le chemin Kodi ; le lancement d'une version utilise `edition_id` dans `/players/{id}/play`.
 
+
+## Contrat de compatibilité des applications mobiles
+
+Le numéro de version du serveur (`version`), l'URL REST (`api_version: v1`) et
+la compatibilité des modèles de données mobiles sont **trois notions distinctes**.
+Le serveur annonce une plage de contrats prise en charge, sans imposer une mise
+à jour iOS à chaque livraison technique :
+
+```json
+{
+  "api_version": "v1",
+  "version": "0.1.0",
+  "mobile_compatibility": {"min_contract": 1, "max_contract": 1}
+}
+```
+
+Ces champs supplémentaires figurent dans `GET /api/v1/status` (authentifié) et
+`GET /api/v1/discovery` (public, sans données privées). Les versions précédentes
+de l'application ignorent les nouveaux champs et continuent de fonctionner tant
+que le modèle reste compatible ; **il est impossible de forcer l'affichage d'un
+message dans une version iOS déjà publiée qui ne possède pas ce mécanisme**.
+
+Le client iOS connaît sa propre version de contrat et doit vérifier que
+`min_contract <= version_client <= max_contract` avant de lire le catalogue.
+Si le contrat est trop ancien, il affiche un écran invitant à mettre à jour
+l'application ; s'il est trop récent, il invite à mettre à jour le serveur.
+Si un ancien serveur ne renvoie pas `mobile_compatibility`, l'application
+considère par rétrocompatibilité qu'il prend en charge le contrat **1**.
+
+Règles de maintenance :
+- Un ajout facultatif de champ ou d'endpoint **ne** nécessite **pas** de
+  nouveau contrat : la valeur reste 1.
+- Lorsqu'un modèle devient incompatible, ajouter la gestion du contrat N+1
+  au serveur et à l'application, puis augmenter `max_contract`. Garder
+  `min_contract` sur N pendant une période transitoire **uniquement** si le
+  serveur continue à servir réellement l'ancien modèle.
+- Lorsque l'ancien contrat n'est plus servi, augmenter `min_contract` ;
+  garder **`/api/v1/status` et `/api/v1/discovery` disponibles**, même si le
+  reste de l'API a migré vers une nouvelle version.
+- Ne jamais déduire une compatibilité des numéros de version du serveur ou
+  d'iOS : ils évoluent indépendamment. Les anciens clients déjà publiés
+  doivent être traités comme tels pendant le déploiement.
+
 ## Plages locales sans jeton d'accès
 
 Configurer `LOCAL_AUTH_NETWORKS` (JSON de CIDR) et, si nécessaire, `TRUSTED_PROXY_NETWORKS` dans l'environnement. Aucune plage n'est autorisée par défaut. `GET /auth/session` renvoie `access_method=local` et un CSRF pour les clients autorisés sans Bearer ; envoyer ce CSRF dans `X-CSRF-Token` pour les écritures. Le front le fait automatiquement. Le contrôle Bearer reste disponible indépendamment de l'interface et prioritaire sur l'autorisation locale. Consulter le README pour la configuration du proxy ; ne pas activer le traitement automatique des proxy headers dans Uvicorn.
