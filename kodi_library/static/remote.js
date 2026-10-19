@@ -58,6 +58,10 @@ class KodiRemote {
             <button data-remote-action="subtitle_next">Sous-titres +</button><button data-remote-action="subtitle_off">ST off</button>
             <button data-remote-action="audio_next">Piste audio +</button>
           </div>
+          <div class="remote-stream-choices">
+            <label>Audio <select id="remote-audio-select" aria-label="Choisir la piste audio"></select></label>
+            <label>Sous-titres <select id="remote-subtitle-select" aria-label="Choisir la piste de sous-titres"></select></label>
+          </div>
           <p id="remote-stream-info" class="remote-stream-info"></p>
         </section>
         <p id="remote-error" role="alert"></p>
@@ -79,6 +83,13 @@ class KodiRemote {
       if(button) this.command(button.dataset.remoteAction);
     });
     document.getElementById('remote-seek').addEventListener('change',e=>this.command('seek',Number(e.target.value)));
+    document.getElementById('remote-audio-select').addEventListener('change',e=>{
+      if(e.target.value!=='')this.command('audio_select',null,Number(e.target.value));
+    });
+    document.getElementById('remote-subtitle-select').addEventListener('change',e=>{
+      this.command(e.target.value==='off'?'subtitle_off':'subtitle_select',
+        null,e.target.value==='off'?null:Number(e.target.value));
+    });
     this.showPage(0);
     this.manualSelection=!!saved;
     await Promise.allSettled(this.players.map(async player=>{
@@ -182,12 +193,25 @@ class KodiRemote {
     const audio=s.current_audio?.name||s.current_audio?.language||'';
     const sub=s.subtitles_enabled?(s.current_subtitle?.name||s.current_subtitle?.language||'Activés'):'Désactivés';
     document.getElementById('remote-stream-info').textContent=active?`Audio : ${audio||'—'} · Sous-titres : ${sub}`:'';
+    const audioSelect=document.getElementById('remote-audio-select');
+    const audioItems=Array.isArray(s.audio_streams)?s.audio_streams:[];
+    audioSelect.innerHTML=audioItems.map((item,i)=>
+      `<option value="${item.index??i}">${safe([item.language,item.name].filter(Boolean).join(' · ')||`Piste ${i+1}`)}</option>`).join('');
+    audioSelect.disabled=!active||!audioItems.length||this.role!=='admin';
+    if(s.current_audio?.index!=null)audioSelect.value=String(s.current_audio.index);
+    const subtitleSelect=document.getElementById('remote-subtitle-select');
+    const subItems=Array.isArray(s.subtitles)?s.subtitles:[];
+    subtitleSelect.innerHTML='<option value="off">Désactivés</option>'+subItems.map((item,i)=>
+      `<option value="${item.index??i}">${safe([item.language,item.name].filter(Boolean).join(' · ')||`Piste ${i+1}`)}</option>`).join('');
+    subtitleSelect.disabled=!active||this.role!=='admin';
+    if(s.subtitles_enabled&&s.current_subtitle?.index!=null)subtitleSelect.value=String(s.current_subtitle.index);
+    else subtitleSelect.value='off';
   }
   time(seconds){let n=Math.max(0,Math.floor(seconds||0));const h=Math.floor(n/3600);n%=3600;return h?`${h}:${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`:`${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
-  async command(action, percentage) {
+  async command(action, percentage, index) {
     if(this.role!=='admin'||!this.player)return;
     const out=document.getElementById('remote-error');out.textContent='';
-    try {await this.api(`players/${this.player.id}/remote`,{method:'POST',body:JSON.stringify({action,...(action==='seek'?{percentage}:{})})});}
+    try {await this.api(`players/${this.player.id}/remote`,{method:'POST',body:JSON.stringify({action,...(action==='seek'?{percentage}:{}),...(index!=null?{index}:{})})});}
     catch(e){out.textContent=e.message;}
   }
   stop() {
