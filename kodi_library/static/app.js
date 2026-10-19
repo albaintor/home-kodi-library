@@ -1,3 +1,4 @@
+import { startKodiRemote, stopKodiRemote } from './remote.js';
 import { startI18n, displayLocale, tr, localizedPrompt, localizedConfirm } from './i18n.js';
 startI18n();
 const $ = (id) => document.getElementById(id);
@@ -87,7 +88,7 @@ async function api(path, options={}) {
   }
   return value;
 }
-function showLogin() { ++state.seq; state.controller?.abort(); state.loading=false; moreObserver?.disconnect(); $('app').hidden=true; $('login').hidden=false; }
+function showLogin() { stopKodiRemote(); ++state.seq; state.controller?.abort(); state.loading=false; moreObserver?.disconnect(); $('app').hidden=true; $('login').hidden=false; }
 function date(value) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(displayLocale()); }
 function dateTime(value) {
   if(!value)return '—';
@@ -731,6 +732,7 @@ async function initialize() {
     setView(state.view,false); renderPersonalStatus(); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
     // Only once on authenticated entry; the server enforces the 24h threshold.
     void refreshStaleOnOpen();
+    void startKodiRemote({api,url,role:state.role});
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
 // A cast credit searches the local catalogue (including indexed TMDB credits),
