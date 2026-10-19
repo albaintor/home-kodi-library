@@ -416,6 +416,7 @@ class MobileCompatibility(BaseModel):
 
 class CatalogueStatus(BaseModel):
     version: str
+    data_model_version: int
     api_version: str
     mobile_compatibility: MobileCompatibility
     works: int

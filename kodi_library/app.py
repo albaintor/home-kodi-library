@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
-from . import __version__
+from . import DATA_MODEL_VERSION, __version__
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .compatibility import mobile_compatibility
@@ -225,6 +225,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "service": "home-kodi-library",
             "api_version": "v1",
             "server_version": __version__,
+            "data_model_version": DATA_MODEL_VERSION,
             "pairing": True,
             "mobile_compatibility": mobile_compatibility(),
         }
@@ -306,6 +307,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def status():
         return {
             "version": __version__,
+            "data_model_version": DATA_MODEL_VERSION,
             "api_version": "v1",
             "mobile_compatibility": mobile_compatibility(),
             **store.status(),

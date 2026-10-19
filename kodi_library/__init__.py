@@ -1,3 +1,9 @@
-"""Kodi Library: one catalogue, multiple clients."""
+"""Application and data-model version identifiers.
 
-__version__ = "0.1.0"
+Increment DATA_MODEL_VERSION in compatibility.py for schema/DTO changes.
+The server version exposed to clients automatically incorporates it.
+"""
+
+from .compatibility import DATA_MODEL_VERSION
+
+__version__ = f"0.2.0+model.{DATA_MODEL_VERSION}"
