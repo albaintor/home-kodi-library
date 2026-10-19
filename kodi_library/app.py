@@ -1062,6 +1062,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store.delete_source(source_id)
 
     @app.post(
+        API + "/sources/sync-stale",
+        response_model=list[JobView],
+        status_code=202,
+        tags=["Sources"],
+        dependencies=[Depends(authenticated)],
+    )
+    async def synchronize_stale_on_open():
+        """Refresh MariaDB snapshots on client open if older than 24 hours.
+
+        This endpoint never invokes Kodi's video scan; the server alone
+        decides whether any enabled SQL source is stale.
+        """
+        return await sync.sync_stale_on_open()
+
+    @app.post(
         API + "/sources/{source_id}/sync",
         response_model=JobView,
         status_code=202,

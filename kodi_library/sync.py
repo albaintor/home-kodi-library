@@ -26,6 +26,7 @@ class SyncManager:
         self.tasks: set[asyncio.Task] = set()
         self.scan_tasks: set[asyncio.Task] = set()
         self.scheduler: asyncio.Task | None = None
+        self.stale_sync_lock = asyncio.Lock()
 
     async def submit(self, source_id: str, xml: bytes | None = None) -> dict[str, Any]:
         if source_id in self.active:
@@ -173,6 +174,36 @@ class SyncManager:
             )
         finally:
             self.active.discard(source["id"])
+
+    async def sync_stale_on_open(self) -> list[dict[str, Any]]:
+        """Schedule a SQL-only refresh on open if the last successful one exceeds 24h.
+
+        Serialize the due check and job creation, so concurrent web/iOS opens
+        do not submit the same source twice within the running server process.
+        """
+        cutoff = datetime.now(UTC).timestamp() - 24 * 60 * 60
+        created = []
+        async with self.stale_sync_lock:
+            for source in await asyncio.to_thread(self.store.sources):
+                if source["type"] != "kodi" or not source["enabled"]:
+                    continue
+                if source["id"] in self.active:
+                    continue
+                last = source.get("last_sync")
+                if last:
+                    try:
+                        date = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                        if date.tzinfo is None:
+                            date = date.replace(tzinfo=UTC)
+                        if date.timestamp() >= cutoff:
+                            continue
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+                try:
+                    created.append(await self.submit(source["id"]))
+                except (BusyError, ValueError):
+                    continue
+        return created
 
     def start(self):
         if self.settings.scheduler_enabled:
