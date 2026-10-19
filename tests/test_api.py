@@ -398,3 +398,53 @@ def test_no_periodic_scheduler_and_model_part_of_release():
 
     assert not hasattr(SyncManager, "_schedule")
     assert __version__.endswith(f"+model.{DATA_MODEL_VERSION}")
+
+
+def test_empty_catalogue_bootstrap_is_one_time_not_periodic(client, admin):
+    import asyncio
+    from datetime import UTC, datetime
+    from unittest.mock import patch
+
+    source = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={
+            "name": "Kodi NAS",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader"},
+        },
+    ).json()["id"]
+    manager = client.app.state.sync
+    store = client.app.state.store
+    started = []
+
+    async def fake_submit(source_id):
+        started.append(source_id)
+        manager.active.add(source_id)
+        return {
+            "id": "boot-job",
+            "source_id": source_id,
+            "status": "pending",
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
+
+    with patch.object(manager, "submit", side_effect=fake_submit):
+        initial = asyncio.run(manager.bootstrap_empty_catalogue())
+        assert [job["source_id"] for job in initial] == [source]
+        # A second server/bootstrap check while the import runs does nothing.
+        assert asyncio.run(manager.bootstrap_empty_catalogue()) == []
+        manager.active.clear()
+        store.apply_snapshot(source, [Record("movie:1", "movie", "Film")])
+        assert asyncio.run(manager.bootstrap_empty_catalogue()) == []
+        assert started == [source]
+        # Even with a stale timestamp, populated data does not cause a
+        # background import at startup. Only client-open checks may do so.
+        with store.connect() as conn:
+            conn.execute(
+                "UPDATE sources SET last_sync='2020-01-01T00:00:00+00:00' WHERE id=?",
+                (source,),
+            )
+        assert asyncio.run(manager.bootstrap_empty_catalogue()) == []
+        # Opening the UI after the 24h threshold triggers exactly one import.
+        assert len(asyncio.run(manager.sync_stale_on_open())) == 1
+        assert started == [source, source]
