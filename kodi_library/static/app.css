@@ -369,3 +369,6 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .remote-dialog .remote-player-label select{min-height:42px;padding-inline:10px;max-width:100%}
 .remote-dialog .remote-art-error{font-size:12px;color:var(--muted);margin:2px 0 12px}
 .remote-dialog .remote-art-error[hidden]{display:none}
+
+/* Respect the HTML hidden attribute despite the flex layout rules above. */
+.kodi-header-button[hidden], .remote-indicator[hidden]{display:none!important}
