@@ -32,6 +32,7 @@
         <a class="quiet" href="docs" target="_blank" rel="noopener">API</a>
         <button id="activity-indicator" class="activity-indicator" type="button" aria-live="polite" aria-label="Activité des synchronisations et imports" hidden><span class="activity-spinner" aria-hidden="true"></span><span id="activity-label">Synchronisation…</span><progress id="activity-progress" class="header-progress" value="0" max="100" hidden></progress></button>
         <button id="personal-update-indicator" class="personal-update-indicator" type="button" aria-live="polite" aria-label="État des modifications" hidden><span id="personal-update-icon" aria-hidden="true">↻</span><span id="personal-update-label">Enregistrement…</span></button>
+        <button id="scan-all-kodi" type="button" class="icon-button header-scan-button" title="Actualiser les médiathèques distantes" aria-label="Actualiser les médiathèques distantes" data-tooltip="Actualiser les médiathèques distantes" hidden><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M5.5 9a7 7 0 0 1 12-2l2.5 5"/><path d="M18.5 15a7 7 0 0 1-12 2L4 12"/></svg></button>
         <button id="connections-button" class="quiet">Paramètres</button>
         <button id="logout-button" class="icon-button" aria-label="Se déconnecter">↪</button>
       </nav>
@@ -40,8 +41,7 @@
       <div class="heading-row"><p id="catalogue-status" class="muted">Chargement du catalogue…</p><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
       <section class="catalogue-list-actions" aria-labelledby="custom-lists-title"><div class="list-home-heading"><h2 id="custom-lists-title">Listes personnalisées</h2><p>Films à voir, séries à suivre… organisez vos sélections.</p></div><div id="home-list-thumbnails" class="home-list-thumbnails" aria-label="Vos listes"></div><div class="list-entry-buttons"><button class="secondary" data-action="lists">Ouvrir mes listes</button><button id="create-list-button" class="primary" hidden>+ Créer une liste</button></div></section>
       <section class="remote-scan-dashboard" aria-label="Actualisation Kodi">
-        <div class="remote-scan-controls"><button id="scan-all-kodi" type="button" class="secondary" hidden>↻ Actualiser les médiathèques distantes</button><span class="hint">Lance l’analyse de chaque instance Kodi configurée, puis actualise le catalogue MariaDB.</span></div>
-        <div id="remote-scan-progress" class="remote-scan-progress" role="status" aria-live="polite" hidden></div>
+         <div id="remote-scan-progress" class="remote-scan-progress" role="status" aria-live="polite" hidden></div>
       </section>
       <div class="quick-filters" aria-label="Sélections rapides">
         <button data-quick="all" class="active">Tout</button><button data-quick="unwatched">À voir</button><button data-quick="in_progress">En cours</button><button data-quick="watched">Vus</button><button data-quick="recent">Derniers ajouts</button>

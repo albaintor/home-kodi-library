@@ -300,3 +300,24 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 /* Role/character credits are shown only in local filmography results. */
 .matched-person-role{display:block;margin-top:4px;color:var(--accent);font-size:12px;line-height:1.35;overflow-wrap:anywhere}
 @media(max-width:700px){.matched-person-role{font-size:11px}}
+
+/* Compact remote-scan command in the fixed header, not in the catalogue. */
+.main-header .header-scan-button{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;min-height:38px;border:1px solid var(--border);border-radius:50%;background:var(--raised);color:var(--accent);flex:none}
+.main-header .header-scan-button[hidden]{display:none!important}
+.main-header .header-scan-button:disabled{opacity:.45;cursor:wait}
+/* Readable outbound sync summaries and per-source writeback history. */
+.writeback-recent-details{margin:16px 0;border-top:1px solid var(--border);padding-top:12px}
+.writeback-recent-details summary{cursor:pointer;font-weight:600;margin-bottom:10px}
+.writeback-history-list{list-style:none;margin:10px 0;padding:0;display:grid;gap:9px;max-height:470px;overflow:auto}
+.writeback-history-row{padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;min-width:0}
+.writeback-history-main{display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.writeback-history-main strong{overflow-wrap:anywhere;font-size:13px}
+.writeback-result{font-size:11px;font-weight:650;border:1px solid var(--border);padding:4px 8px;border-radius:18px}
+.writeback-result.updated{color:#78d4a6}.writeback-result.pending{color:#ffc879}.writeback-result.failed,.writeback-result.unavailable{color:#f39999}
+.writeback-history-meta{display:flex;gap:6px 14px;flex-wrap:wrap;margin-top:6px;color:var(--muted);font-size:12px;overflow-wrap:anywhere}
+.writeback-history-row p{font-size:12px;line-height:1.5;overflow-wrap:anywhere;margin:8px 0 0}
+.writeback-source-history{margin:14px 0 18px;padding:12px;border:1px solid var(--border);border-radius:12px}
+.writeback-source-history[hidden]{display:none!important}
+.writeback-history-heading{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.writeback-history-heading h4{margin:0}
+@media(max-width:700px){.writeback-history-meta{display:block}.writeback-history-meta>*{display:block;margin:4px 0}}
