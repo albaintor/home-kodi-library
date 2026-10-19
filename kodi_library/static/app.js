@@ -1,4 +1,4 @@
-import { startKodiRemote, stopKodiRemote } from './remote.js';
+import { startKodiRemote, stopKodiRemote, showKodiRemote } from './remote.js';
 import { startI18n, displayLocale, tr, localizedPrompt, localizedConfirm } from './i18n.js';
 startI18n();
 const $ = (id) => document.getElementById(id);
@@ -1156,7 +1156,21 @@ document.addEventListener('click',async event=>{
       const tested=await api('connections/kodi/test',{method:'POST',body:JSON.stringify({player_id:p.id,host:p.host,port:p.port,username:p.username,tls:p.tls})});
       result.textContent=tested.message;result.className='success-text play-status';
     }
-    if(button.id==='play-button') {savePlaybackDraft();button.disabled=true; await api(`players/${$('play-target').value}/play`,{method:'POST',body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})});result.textContent='Lecture envoyée à Kodi. Si elle ne démarre pas, vérifiez sur Kodi ses accès au fichier du NAS.';result.className='success-text play-status';toast('Lecture envoyée à Kodi.');}
+    if(button.id==='play-button') {
+      savePlaybackDraft();
+      button.disabled=true;
+      const target=$('play-target').value;
+      await api(`players/${target}/play`,{
+        method:'POST',
+        body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})
+      });
+      toast('Lecture envoyée à Kodi.');
+      // Player.Open was acknowledged: close both media dialogs before opening
+      // the same Now Playing remote used by the header Kodi button.
+      if($('play-dialog').open)$('play-dialog').close();
+      if($('detail-dialog').open)$('detail-dialog').close();
+      showKodiRemote(target);
+    }
   }catch(e){if(result){result.textContent=e.message;result.className='error-text play-status';}toast(e.message);}finally{button.disabled=false;}
 });
 $('connections-button').addEventListener('click',connections);
