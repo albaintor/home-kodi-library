@@ -401,6 +401,9 @@ async function saveEpisodeWatches(watched,season=null) {
   document.querySelectorAll('[data-mark-season]').forEach(button=>button.disabled=true);
   try {
     const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season})})});
+    // The mutation succeeded. A subsequent catalogue refresh error must not
+    // relabel an already persisted edit as a failed save.
+    endPersonalSave(false,true);
     if(seq===state.detailSeq&&state.detail?.id===id){
       const updated=await api(`media/${encodeURIComponent(id)}`);
       if(seq===state.detailSeq&&state.detail?.id===id){
@@ -412,9 +415,10 @@ async function saveEpisodeWatches(watched,season=null) {
     toast(`${result.updated} épisode(s) mis à jour sur ${result.total}.`);
     await loadMedia();
     if($('lists-dialog').open)await loadList();
-    endPersonalSave(false,true);
-  }catch(e){toast('Modification impossible : '+e.message);endPersonalSave(true);}
-  finally{
+  }catch(e){
+    toast('Actualisation impossible : '+e.message);
+    if(state.personalSaveCount>0)endPersonalSave(true);
+  }finally{
     state.personalPending.delete(id);
     if(seq===state.detailSeq&&state.detail?.id===id){
       syncPersonalControls();
