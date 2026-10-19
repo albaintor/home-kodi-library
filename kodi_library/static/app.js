@@ -39,7 +39,7 @@ function updateFormatSelections() {
   $('format-selection-count').textContent=state.formats.length?`${state.formats.length} sélectionné${state.formats.length>1?'s':''} · filtres cumulés (ET)`:'Sélectionnez plusieurs formats pour les cumuler (ET).';
 }
 
-const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),personSearch:null,seasons:[],playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
+const state = {csrf:null,role:'read',view:savedView==='list'?'list':'grid',order:preferences.order==='asc'?'asc':'desc',limit:60,recent:preferences.recent===true,formats:[],deepSearch:preferences.deepSearch===true,facets:null,players:[],tmdbAvailable:false,jobs:[],activityPollBusy:false,activityWasRunning:false,personalUpdateState:null,personalRemoteFailure:false,personalPollBusy:false,personalSaveCount:0,seq:0,controller:null,detail:null,detailSeq:0,personalSeq:0,personalPending:new Set(),enrichingIds:new Set(),personSearch:null,seasons:[],playbackDraft:null,playbackMediaId:null,listId:typeof preferences.listId==='string'?preferences.listId:null,listItems:[],listRevision:0,listSort:['position','title','year','date_added','rating','user_rating'].includes(preferences.listSort)?preferences.listSort:'position',listOrder:preferences.listOrder==='desc'?'desc':'asc',listTotal:0,listSeq:0,items:[],ids:new Set(),nextOffset:0,total:0,hasMore:false,loading:false,loadError:false};
 function savePreferences() {
   if(!filtersRestored)return;
   writeStorage(preferenceKey,JSON.stringify({filters:Object.fromEntries(filterIds.map(id=>[id,$(id).value])),formats:state.formats,deepSearch:state.deepSearch,order:state.order,recent:state.recent,view:state.view,listId:state.listId,listSort:state.listSort,listOrder:state.listOrder}));
@@ -132,6 +132,46 @@ async function refreshWritebackQueue(){
     const all=$('retry-all-writebacks');if(all)all.disabled=!data.pending_count||state.role!=='admin';
   }catch(e){summary.textContent='Chargement impossible : '+e.message;}
 }
+// Global status remains in the header when a media detail is dismissed.
+function renderPersonalStatus(){
+  const node=$('personal-update-indicator'),status=state.personalUpdateState;
+  node.hidden=!status||$('app').hidden;
+  if(!status)return;
+  const labels={saving:'Enregistrement…',pending:'Synchronisation externe en attente',saved:'Modifications enregistrées',failed:'Échec de l’enregistrement',remoteFailed:'Modifications locales enregistrées · échec externe'};
+  $('personal-update-icon').textContent=['saving','pending'].includes(status)?'↻':status==='saved'?'✓':'!';
+  $('personal-update-label').textContent=labels[status];
+  node.className='personal-update-indicator '+status;
+  node.title=labels[status];
+  node.setAttribute('aria-label',labels[status]);
+}
+function beginPersonalSave(){
+  state.personalSaveCount++;
+  state.personalUpdateState='saving';
+  state.personalRemoteFailure=false;
+  renderPersonalStatus();
+}
+function endPersonalSave(failed=false,checkRemote=false){
+  state.personalSaveCount=Math.max(0,state.personalSaveCount-1);
+  if(state.personalSaveCount)return;
+  state.personalUpdateState=failed?'failed':checkRemote?'pending':'saved';
+  renderPersonalStatus();
+  if(!failed&&checkRemote)pollPersonalWritebacks();
+}
+async function pollPersonalWritebacks(){
+  if(state.personalPollBusy||state.personalSaveCount||state.personalUpdateState!=='pending'||$('app').hidden)return;
+  state.personalPollBusy=true;
+  try{
+    const result=await api('writebacks/status');
+    if(state.personalUpdateState!=='pending'||state.personalSaveCount)return;
+    if(result.pending_count===0){
+      state.personalUpdateState=state.personalRemoteFailure?'remoteFailed':'saved';
+      renderPersonalStatus();
+    }
+  }catch(e){
+    // Unreachable server does not imply a completed synchronization.
+  }finally{state.personalPollBusy=false;}
+}
+$('personal-update-indicator').addEventListener('click',()=>pollPersonalWritebacks());
 function sourceBadge(type,label) { return `<span class="source-badge" title="${esc(label||sourceName(type))}">${sourceIcon(type)}<span>${esc(label||sourceName(type))}</span></span>`; }
 function badges(item) {
   return (item.media_sources?.length?item.media_sources.map(s=>sourceBadge(s.type,s.type_count>1?s.name:sourceName(s.type))):item.source_types.map(s=>sourceBadge(s))).join('');
@@ -326,7 +366,7 @@ async function savePersonal(values) {
   const item=state.detail;if(!item||state.role!=='admin'||state.personalPending.has(item.id))return;
   const id=item.id,seq=state.detailSeq;
   const previous={personal:{...item.personal},user_rating:item.user_rating,watch_status:item.watch_status};
-  state.personalPending.add(id);++state.personalSeq;hideRatingPopover();
+  state.personalPending.add(id);++state.personalSeq;hideRatingPopover();beginPersonalSave();
   item.personal={...item.personal,...values};
   if(values.user_rating!=null)item.user_rating=values.user_rating;
   if(typeof values.watched==='boolean')item.watch_status=values.watched?'watched':'unwatched';
@@ -342,9 +382,12 @@ async function savePersonal(values) {
       if($('personal-status'))$('personal-status').textContent=warnings.length?'Modification locale enregistrée. '+message:'Modification enregistrée.';
     }
     if(warnings.length)toast(message);
+    state.personalRemoteFailure=warnings.length>0;
+    endPersonalSave(false,warnings.length>0);
   }catch(e){
     if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,previous);if($('personal-status'))$('personal-status').textContent='Échec de l’enregistrement : '+e.message;}
     toast(e.message);
+    endPersonalSave(true);
   }finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
   if(saved){await loadMedia();if($('lists-dialog').open)await loadList();}
 }
@@ -354,7 +397,7 @@ async function saveEpisodeWatches(watched,season=null) {
   const total=Number(item.episode_count)||0;
   if(season===null&&!localizedConfirm(`Attention : ${watched?'marquer comme vus':'marquer comme non vus'} les ${total} épisodes importés de « ${item.title} » (toutes les saisons et les spéciaux) ? Cette action modifie également les états envoyés aux sources configurées.`))return;
   const id=item.id,seq=state.detailSeq,selected=$('season-list')?.querySelector('.season-button[aria-expanded="true"]')?.dataset.season;
-  state.personalPending.add(id);++state.personalSeq;syncPersonalControls();
+  state.personalPending.add(id);++state.personalSeq;syncPersonalControls();beginPersonalSave();
   document.querySelectorAll('[data-mark-season]').forEach(button=>button.disabled=true);
   try {
     const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season})})});
@@ -363,13 +406,14 @@ async function saveEpisodeWatches(watched,season=null) {
       if(seq===state.detailSeq&&state.detail?.id===id){
         renderDetail(updated);
         await loadSeasons(id,selected===undefined?null:Number(selected));
-        if($('personal-status'))$('personal-status').textContent=`${result.updated} épisode(s) modifié(s). Synchronisation des sources en cours.`;
+        if($('personal-status'))$('personal-status').textContent=`${result.updated} épisode(s) modifié(s) localement. État externe dans la barre supérieure.`;
       }
     }
     toast(`${result.updated} épisode(s) mis à jour sur ${result.total}.`);
     await loadMedia();
     if($('lists-dialog').open)await loadList();
-  }catch(e){toast('Modification impossible : '+e.message);}
+    endPersonalSave(false,true);
+  }catch(e){toast('Modification impossible : '+e.message);endPersonalSave(true);}
   finally{
     state.personalPending.delete(id);
     if(seq===state.detailSeq&&state.detail?.id===id){
@@ -624,13 +668,13 @@ $('scan-all-kodi').addEventListener('click',async()=>{
   finally {button.disabled=false;}
 });
 
-setInterval(()=>{if(!$('app').hidden)pollActivity();},3000);
+setInterval(()=>{if(!$('app').hidden){pollActivity();pollPersonalWritebacks();}},3000);
 async function initialize() {
   try {
     const session=await api('auth/session'); state.csrf=session.csrf_token; state.role=session.role;
     $('login').hidden=true; $('app').hidden=false; $('connections-button').hidden=state.role!=='admin'; $('logout-button').hidden=session.access_method!=='session';
     $('create-list-button').hidden=state.role!=='admin';
-    setView(state.view,false); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
+    setView(state.view,false); renderPersonalStatus(); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
   } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
 }
 // A cast credit searches the local catalogue (including indexed TMDB credits),

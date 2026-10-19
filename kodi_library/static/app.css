@@ -107,6 +107,14 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 
 .detail-timestamps .enrichment-caption{margin:0;font-size:inherit;color:inherit}
 
+/* Persistent per-edit status, independent from Kodi imports and scans. */
+.personal-update-indicator{display:inline-flex;align-items:center;gap:7px;border-radius:18px;border:1px solid var(--border);background:var(--raised);color:var(--text);min-height:34px;padding:6px 10px;font-size:12px;max-width:230px}
+.personal-update-indicator[hidden]{display:none!important}
+.personal-update-indicator #personal-update-icon{font-size:17px;font-weight:700}
+.personal-update-indicator.saving,.personal-update-indicator.pending{color:#e4aa47}
+.personal-update-indicator.saved{color:#65c89c}
+.personal-update-indicator.failed,.personal-update-indicator.remoteFailed{color:#e77e7e}
+@media(max-width:700px){.personal-update-indicator{max-width:39px;padding:6px 10px}.personal-update-indicator #personal-update-label{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}}
 /* Persistent activity signal, including scheduled Kodi sync and CLZ import. */
 .activity-indicator{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:6px 10px;background:#bcdb8015;color:var(--accent);border:1px solid #bcdb8055;border-radius:22px;font-size:12px;max-width:230px}
 .activity-indicator:hover{background:#bcdb8028}
