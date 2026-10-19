@@ -92,7 +92,7 @@ def test_kodi_artwork_retries_secondary_image_and_supports_octet_stream(monkeypa
         seen.append((request.url.raw_path.decode(), request.headers.get("Authorization")))
         if "invalid-first" in request.url.raw_path.decode():
             return httpx.Response(404)
-        return httpx.Response(200, content=b"\\x89PNG\\r\\n\\x1a\\n" + b"art",
+        return httpx.Response(200, content=b"\x89PNG\r\n\x1a\n" + b"art",
                               headers={"Content-Type": "application/octet-stream"})
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
