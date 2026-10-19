@@ -72,3 +72,21 @@ Les séries CLZ sont des éditions de collection ; leurs listes d'épisodes éve
 `lists` et `list_items` conservent les sélections, positions manuelles et révisions. Les tris d’affichage sont indépendants des positions enregistrées. L’effacement d’une œuvre sans source restante supprime ses associations et incrémente les révisions des listes concernées.
 
 `enrichment` conserve les crédits et liens TMDB, avec horodatage, séparément des éditions. Les identifiants exacts IMDb/TMDB évitent la recherche approximative par titre. Les données importées ont priorité pour les rôles ; TMDB complète les portraits et identifiants par nom dans les crédits du même média. Les personnes et fonctions sont incluses dans la recherche FTS. Les liens et les URL de portrait exposées par la fiche sont construits par le serveur. Les images utilisent le proxy/cache commun et ses règles contre les URL privées.
+
+
+## Versions serveur, schéma et clients
+
+`/api/v1/status` expose `version` et `data_model_version`. La
+découverte iOS (`/api/v1/discovery`) expose `server_version` et le même
+`data_model_version`.
+
+L'identifiant du serveur contient un suffixe `+model.N` dérivé de
+`DATA_MODEL_VERSION` dans `kodi_library/compatibility.py`. **Toute évolution
+du schéma SQLite ou d'un modèle de données REST doit faire augmenter cette
+constante.** Le suffixe de version serveur évolue alors automatiquement.
+La version de release dans `pyproject.toml` et `kodi_library/__init__.py`
+est mise à jour pour chaque release.
+
+Le `PRAGMA user_version` SQLite et les bornes du contrat mobile
+`MIN_MOBILE_CONTRACT` / `MAX_MOBILE_CONTRACT` sont indépendants : une
+évolution additive ne doit pas rendre les anciens clients iOS incompatibles.
