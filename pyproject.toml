@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "kodi-library"
-version = "0.1.0"
+version = "0.2.0"
 description = "Independent Kodi and physical movie catalogue with a versioned API"
 requires-python = ">=3.12"
 dependencies = [

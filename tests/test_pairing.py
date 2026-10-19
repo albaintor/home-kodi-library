@@ -3,6 +3,8 @@
 import time
 
 from conftest import ADMIN, READ
+
+from kodi_library import DATA_MODEL_VERSION, __version__
 from fastapi.testclient import TestClient
 
 from kodi_library.app import create_app
@@ -16,7 +18,8 @@ def test_public_discovery_is_minimal_and_pairing_is_admin_only(client, admin):
         "service": "home-kodi-library",
         "api_version": "v1",
         "pairing": True,
-        "server_version": "0.1.0",
+        "server_version": __version__,
+        "data_model_version": DATA_MODEL_VERSION,
         "mobile_compatibility": {"min_contract": 1, "max_contract": 1},
     }
     assert client.post("/api/v1/pairing/start", json={}).status_code == 401

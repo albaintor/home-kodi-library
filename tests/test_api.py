@@ -309,10 +309,14 @@ def test_mobile_contract_announced_without_changing_versioned_endpoint(client, a
     assert status.status_code == 200
     assert status.json()["api_version"] == "v1"
     assert status.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert status.json()["data_model_version"] == 3
+    assert status.json()["version"].endswith("+model.3")
 
     discovery = client.get("/api/v1/discovery")
     assert discovery.status_code == 200
     assert discovery.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert discovery.json()["data_model_version"] == status.json()["data_model_version"]
+    assert discovery.json()["server_version"] == status.json()["version"]
 
     assert client.get("/api/v1/status").status_code == 401
     assert client.get("/api/v1/media", headers=admin).status_code == 200
