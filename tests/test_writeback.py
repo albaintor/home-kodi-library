@@ -246,3 +246,33 @@ def test_kodi_offline_retains_local_edit_and_reports_failure(client, admin):
     assert response.json()["user_rating"] == 6
     assert response.json()["writeback"][0]["status"] == "failed"
     assert "UpdateData" in response.json()["writeback"][0]["message"]
+
+
+def test_personal_rating_uses_one_second_kodi_rpc_timeout(client, admin):
+    """Personal changes must not wait 15 s for every unavailable Kodi RPC."""
+    _sid, media_id = prepare_media(client, admin)
+
+    def respond(method, params):
+        if method == "JSONRPC.Permission":
+            return {"ReadData": True, "UpdateData": True}
+        if method == "VideoLibrary.GetMovieDetails":
+            return {
+                "moviedetails": {
+                    "uniqueid": {"tmdb": "123"},
+                    "title": "Example",
+                    "playcount": 0,
+                }
+            }
+        if method == "VideoLibrary.SetMovieDetails":
+            return "OK"
+        raise AssertionError(method)
+
+    with fake_kodi(respond) as constructor:
+        response = client.patch(
+            f"/api/v1/media/{media_id}/personal",
+            headers=admin,
+            json={"user_rating": 8},
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["writeback"][0]["method"] == "jsonrpc"
+    assert constructor.call_args.kwargs["timeout"] == 1.0

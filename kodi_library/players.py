@@ -31,11 +31,15 @@ def endpoint(config: dict) -> str:
 
 
 @asynccontextmanager
-async def connection(config: dict):
+async def connection(config: dict, *, timeout: float = 15.0):
+    """Shorter per-request timeout may be passed for latency-sensitive writes.
+
+    Playback and configuration probes keep the regular 15-second tolerance.
+    """
     url = endpoint(config)
     auth = (config["username"], config.get("password") or "") if config.get("username") else None
     try:
-        async with httpx.AsyncClient(timeout=15, auth=auth, trust_env=False) as client:
+        async with httpx.AsyncClient(timeout=timeout, auth=auth, trust_env=False) as client:
 
             async def rpc(method, params):
                 response = await client.post(

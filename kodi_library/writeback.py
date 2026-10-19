@@ -135,7 +135,11 @@ async def _write_kodi(
     if not updates:
         return None
 
-    async with connection(player["config"]) as rpc:
+    # A disconnected Kodi must not hold the HTTP PATCH for 15 seconds per
+    # JSON-RPC operation. A one-second transport timeout signals KodiUnavailable,
+    # allowing the existing opt-in, validated MariaDB fallback.
+    # This applies to writeback only; playback and connection tests retain 15 s.
+    async with connection(player["config"], timeout=1.0) as rpc:
         permissions = await rpc("JSONRPC.Permission", {})
         if (
             not isinstance(permissions, dict)
