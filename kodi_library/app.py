@@ -1306,4 +1306,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ConnectorError as exc:
             raise HTTPException(502, str(exc)) from exc
 
+    # Remote-control API and authenticated Kodi notification relay.
+    from .remote import router as remote_router
+    app.include_router(remote_router)
+
     return app
