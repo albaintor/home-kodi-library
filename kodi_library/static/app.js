@@ -1154,7 +1154,7 @@ document.addEventListener('click',async event=>{
     const target=$('writeback-source-history');target.hidden=true;target.replaceChildren();return;
   }
   if(button.dataset.quick) {state.recent=button.dataset.quick==='recent'; $('watch-status').value=['all','recent'].includes(button.dataset.quick)?'':button.dataset.quick;  if(state.recent){$('sort').value='date_added';state.order='desc';$('sort-order').textContent='↓ Décroissant';}loadMedia();}
-  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.configureMymovies&&!button.dataset.scanKodi&&!button.dataset.writebackHistory&&!button.dataset.testPlayer&&!['play-button','test-tmdb'].includes(button.id))return;
+  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.addPlayerSource&&!button.dataset.configureMymovies&&!button.dataset.scanKodi&&!button.dataset.writebackHistory&&!button.dataset.testPlayer&&!['play-button','test-tmdb'].includes(button.id))return;
   const result=button.id==='play-button'?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
   if(result){result.className='hint play-status';result.textContent=button.id==='play-button'?'Envoi de la lecture à Kodi…':'Vérification de la connexion…';}
   try {
@@ -1169,7 +1169,13 @@ document.addEventListener('click',async event=>{
       target.innerHTML=`<div class="writeback-history-heading"><h4>Historique des écritures · ${esc(source?.name||'Source')}</h4><button type="button" class="secondary" data-close-writeback-history>Fermer</button></div>${data.length?'<ul class="writeback-history-list">'+data.map(item=>writebackHistoryRow(item,true)).join('')+'</ul>':'<p class="hint">Aucune écriture enregistrée pour cette source.</p>'}`;
       target.scrollIntoView({block:'nearest',behavior:'smooth'});
     }
-    if(button.dataset.removeSource && localizedConfirm('Retirer cette source et ses données importées ?')) {await api(`sources/${button.dataset.removeSource}`,{method:'DELETE'});await refresh();await connections();}
+    if(button.dataset.removeSource && localizedConfirm('Retirer cette source et ses données importées ?')) {
+      await api(`sources/${button.dataset.removeSource}`,{method:'DELETE'});
+      await refresh();
+      await connections();
+      // SQLite removes linked Kodi players through its ON DELETE CASCADE FK.
+      await startKodiRemote({api,url,role:state.role});
+    }
     if(button.dataset.removePlayer && localizedConfirm('Retirer cette instance Kodi ?')) {
       await api(`players/${button.dataset.removePlayer}`,{method:'DELETE'});
       await connections();
