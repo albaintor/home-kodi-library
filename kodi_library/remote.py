@@ -240,25 +240,34 @@ async def remote_events(socket: WebSocket, player_id: str):
                 try:
                     async with session.ws_connect(ws_url, auth=credentials, heartbeat=20, timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
                         last = None
-                        while True:
-                            state = await current_state(player)
-                            if state != last:
-                                await socket.send_json({"type": "state", "state": state})
-                                last = state
-                            # WebSocket notifications interrupt polling immediately.
-                            try:
-                                # When idle, rely mainly on notifications; while playing
-                                # poll time/percentage for the live seek bar.
+                        last_heartbeat = time.monotonic()
+                        # Do not cancel receive() on every position tick: aiohttp
+                        # treats receive cancellation as an abnormal WS closure.
+                        pending_notification = asyncio.create_task(upstream.receive())
+                        try:
+                            while True:
+                                state = await current_state(player)
+                                if state != last:
+                                    await socket.send_json({"type": "state", "state": state})
+                                    last = state
+                                if time.monotonic() - last_heartbeat >= 20:
+                                    await socket.send_json({"type": "heartbeat"})
+                                    last_heartbeat = time.monotonic()
                                 interval = 2 if state.get("active") else 8
-                                message = await asyncio.wait_for(upstream.receive(), timeout=interval)
-                                if message.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
-                                                    aiohttp.WSMsgType.ERROR):
-                                    break
-                                if message.type == aiohttp.WSMsgType.TEXT:
-                                    # Only notifications cause an extra refresh; no data from Kodi is trusted as a command.
-                                    continue
-                            except TimeoutError:
-                                continue
+                                done, _ = await asyncio.wait(
+                                    {pending_notification}, timeout=interval
+                                )
+                                if done:
+                                    message = pending_notification.result()
+                                    if message.type in (
+                                        aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
+                                        aiohttp.WSMsgType.ERROR
+                                    ):
+                                        break
+                                    pending_notification = asyncio.create_task(upstream.receive())
+                        finally:
+                            pending_notification.cancel()
+                            await asyncio.gather(pending_notification, return_exceptions=True)
                     await socket.send_json({"type": "offline", "message": "Kodi WebSocket disconnected."})
                 except (aiohttp.ClientError, ConnectorError, asyncio.TimeoutError, OSError) as exc:
                     LOG.info("Kodi remote events unavailable for %s: %s", player_id, type(exc).__name__)
