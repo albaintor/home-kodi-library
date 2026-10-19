@@ -320,3 +320,81 @@ def test_mobile_contract_announced_without_changing_versioned_endpoint(client, a
 
     assert client.get("/api/v1/status").status_code == 401
     assert client.get("/api/v1/media", headers=admin).status_code == 200
+
+
+def test_on_open_refresh_only_after_24_hours_and_never_duplicates(client, admin):
+    """The web/mobile opening endpoint must not create jobs for recent sources."""
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import patch
+
+    from conftest import READ
+
+    def source(label):
+        response = client.post(
+            "/api/v1/sources",
+            headers=admin,
+            json={
+                "name": label,
+                "type": "kodi",
+                "config": {"host": "nas", "username": "reader"},
+            },
+        )
+        assert response.status_code == 201, response.text
+        return response.json()["id"]
+
+    stale_id = source("Older than 24 hours")
+    recent_id = source("Updated an hour ago")
+    store = client.app.state.store
+    now = datetime.now(UTC)
+    with store.connect() as conn:
+        conn.execute(
+            "UPDATE sources SET last_sync=? WHERE id=?",
+            ((now - timedelta(hours=25)).isoformat(timespec="seconds"), stale_id),
+        )
+        conn.execute(
+            "UPDATE sources SET last_sync=? WHERE id=?",
+            ((now - timedelta(hours=1)).isoformat(timespec="seconds"), recent_id),
+        )
+
+    sync = client.app.state.sync
+    recorded = []
+
+    async def submit(source_id):
+        recorded.append(source_id)
+        sync.active.add(source_id)
+        return {
+            "id": "test-job",
+            "source_id": source_id,
+            "status": "pending",
+            "created_at": now.isoformat(timespec="seconds"),
+        }
+
+    readonly = {"Authorization": f"Bearer {READ}"}
+    with patch.object(sync, "submit", side_effect=submit):
+        first = client.post("/api/v1/sources/sync-stale", headers=readonly)
+        assert first.status_code == 202, first.text
+        assert [item["source_id"] for item in first.json()] == [stale_id]
+        # A second client can open while the first import is still running.
+        second = client.post("/api/v1/sources/sync-stale", headers=readonly)
+        assert second.status_code == 202
+        assert second.json() == []
+        assert recorded == [stale_id]
+
+        sync.active.discard(stale_id)
+        with store.connect() as conn:
+            conn.execute(
+                "UPDATE sources SET last_sync=? WHERE id=?",
+                (datetime.now(UTC).isoformat(timespec="seconds"), stale_id),
+            )
+        third = client.post("/api/v1/sources/sync-stale", headers=readonly)
+        assert third.status_code == 202
+        assert third.json() == []
+        assert recorded == [stale_id]
+
+
+def test_default_scheduler_is_off_and_model_part_of_release():
+    from kodi_library import DATA_MODEL_VERSION, __version__
+    from kodi_library.settings import Settings
+
+    assert Settings().scheduler_enabled is False
+    assert __version__.endswith(f"+model.{DATA_MODEL_VERSION}")
