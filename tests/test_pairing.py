@@ -3,10 +3,9 @@
 import time
 
 from conftest import ADMIN, READ
-
-from kodi_library import DATA_MODEL_VERSION, __version__
 from fastapi.testclient import TestClient
 
+from kodi_library import DATA_MODEL_VERSION, __version__
 from kodi_library.app import create_app
 from kodi_library.settings import Settings
 
