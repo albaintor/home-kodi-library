@@ -372,3 +372,25 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 
 /* Respect the HTML hidden attribute despite the flex layout rules above. */
 .kodi-header-button[hidden], .remote-indicator[hidden]{display:none!important}
+
+/* Kodi instances are owned by a MariaDB catalogue source, not a second list. */
+.kodi-source-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
+.kodi-source-card>div:first-child{min-width:0}
+.source-kodi-instances{border-top:1px solid var(--border);margin-top:12px;padding-top:11px;min-width:0}
+.source-kodi-instances-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:9px}
+.source-kodi-instances-heading strong{font-size:12px}
+.source-kodi-instances-heading button{font-size:11px;min-height:34px;padding:6px 9px}
+.source-kodi-instances .kodi-instance-row{margin:6px 0;padding:9px 11px;border-radius:8px;background:var(--surface);align-items:center;min-width:0}
+.kodi-instance-row>div:first-child{min-width:0;overflow-wrap:anywhere}
+.kodi-instance-row .connection-actions{flex-shrink:0}
+.source-kodi-instances .source-player-editor{margin-top:12px;max-width:100%}
+.source-player-editor[hidden]{display:none!important}
+.source-player-editor summary{cursor:pointer;font-weight:600}
+.source-player-editor .connection-form{width:100%;margin-top:10px}
+@media(max-width:700px){
+  .kodi-source-card{grid-template-columns:minmax(0,1fr)}
+  .kodi-source-card>.connection-actions{justify-content:flex-start}
+  .kodi-instance-row{flex-wrap:wrap}
+  .kodi-instance-row .connection-actions{justify-content:flex-start}
+  .source-player-editor .connection-form{grid-template-columns:minmax(0,1fr);padding:12px}
+}
