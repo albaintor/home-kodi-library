@@ -614,6 +614,7 @@ function renderGlobalScanProgress() {
   const ids=new Set(state.globalScanIds||[]);
   const jobs=state.jobs.filter(job=>ids.has(job.id));
   root.hidden=!jobs.length;
+  root.closest('.remote-scan-dashboard').hidden=!jobs.length;
   if(!jobs.length)return;
   const sources=new Map((state.facets?.sources||[]).map(source=>[source.id,source]));
   root.innerHTML=jobs.map(job=>{
