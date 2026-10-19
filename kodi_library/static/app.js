@@ -382,8 +382,9 @@ async function savePersonal(values) {
       if($('personal-status'))$('personal-status').textContent=warnings.length?'Modification locale enregistrée. '+message:'Modification enregistrée.';
     }
     if(warnings.length)toast(message);
-    state.personalRemoteFailure=warnings.length>0;
-    endPersonalSave(false,warnings.length>0);
+    const outbound=(response.writeback||[]);
+    state.personalRemoteFailure=outbound.some(result=>['failed','unavailable'].includes(result.status));
+    endPersonalSave(false,outbound.some(result=>result.status!=='updated'));
   }catch(e){
     if(seq===state.detailSeq&&state.detail?.id===id){Object.assign(state.detail,previous);if($('personal-status'))$('personal-status').textContent='Échec de l’enregistrement : '+e.message;}
     toast(e.message);
