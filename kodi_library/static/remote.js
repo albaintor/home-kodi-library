@@ -32,7 +32,7 @@ class KodiRemote {
       <dialog id="kodi-remote-dialog" class="remote-dialog" aria-labelledby="remote-heading">
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
         <label class="remote-player-label">Lecteur <select id="remote-player"></select></label>
-        <span id="remote-connection" class="remote-connection remote-status-dot" role="status" data-state="checking" aria-label="Vérification de Kodi" title="Vérification de Kodi"></span><div id="remote-playing-options" class="remote-playing-options" hidden></div>
+        <div id="remote-playing-options" class="remote-playing-options" hidden></div>
         <div class="remote-tabs" role="tablist">
           <button id="remote-tab-now" type="button" aria-selected="true" role="tab">Lecture en cours</button>
           <button id="remote-tab-controls" type="button" aria-selected="false" role="tab">Contrôles</button>
@@ -74,7 +74,7 @@ class KodiRemote {
     this.indicator=document.getElementById('kodi-remote-indicator');
     this.dialog=document.getElementById('kodi-remote-dialog');
     const select=document.getElementById('remote-player');
-    select.innerHTML=this.players.map(p=>`<option value="${safe(p.id)}">${safe(p.name)}</option>`).join('');
+    select.innerHTML=this.players.map(p=>`<option value="${safe(p.id)}">⚪ ${safe(p.name)}</option>`).join('');
     const saved=localStorage.getItem(this.storageKey);
     this.player=this.players.find(p=>p.id===saved)||this.players[0];
     if(this.player) select.value=this.player.id;
@@ -114,7 +114,12 @@ class KodiRemote {
     }
     this.manualSelection=!!saved;
     await Promise.allSettled(this.players.map(async player=>{
-      try {this.states.set(player.id,await this.api(`players/${player.id}/remote`));} catch {}
+      try {
+        const state=await this.api(`players/${player.id}/remote`);
+        this.states.set(player.id,state);
+        this.received.set(player.id,performance.now());
+        this.httpConnected.set(player.id,true);
+      } catch { this.httpConnected.set(player.id,false); }
     }));
     this.refreshChoices();
     this.players.forEach(player=>this.openSocket(player));
@@ -154,13 +159,14 @@ class KodiRemote {
       this.states.set(player.id,status);
       this.received.set(player.id,performance.now());
       this.httpConnected.set(player.id,true);
-      if(this.player?.id===player.id){this.render(status);this.setConnection();}
+      if(this.player?.id===player.id)this.render(status);
+      this.setConnection();
       this.refreshChoices();
     }catch {
       // If only the event socket is unavailable, do not mark Kodi offline.
       // A real HTTP failure is independently observable here.
       this.httpConnected.set(player.id,false);
-      if(this.player?.id===player.id)this.setConnection();
+      this.setConnection();
     }
   }
   updateClock() {
@@ -208,6 +214,7 @@ class KodiRemote {
       active.length===1?`▶ ${this.states.get(active[0].id)?.title||active[0].name}`:'◉ Kodi';
     this.indicator.hidden=active.length===0;
     this.indicator.classList.toggle('playing',active.length>0);
+    this.setConnection();
   }
   openSocket(player) {
     if(this.closed || !player || this.sockets.get(player.id)?.readyState===WebSocket.OPEN ||
@@ -250,23 +257,27 @@ class KodiRemote {
       this.timers.set(player.id,setTimeout(()=>this.openSocket(player),5000));
     }
   }
-  setConnection(message) {
-    const el=document.getElementById('remote-connection');
-    if(!el)return;
-    const id=this.player?.id;
-    const http=id?this.httpConnected.get(id):undefined;
-    const ws=id&&this.wsConnected.get(id)===true;
-    // Kodi reachability is determined by HTTP JSON-RPC, independently from
-    // browser WS upgrades and Kodi's optional notification socket.
-    const state=http===true?'online':http===false?'offline':'checking';
-    const title=!id?'Aucune instance Kodi configurée':
-      state==='online'?(ws?'Kodi connecté · notifications actives':'Kodi connecté · réception via HTTP, reconnexion WebSocket automatique'):
-      state==='offline'?'Kodi indisponible via JSON-RPC HTTP':'Vérification de la connexion Kodi';
-    el.dataset.state=state;
-    el.title=title;
-    el.setAttribute('aria-label',title);
-    el.textContent='';
+  setConnection() {
+    const select=document.getElementById('remote-player');
+    if(!select)return;
+    const marker=(id)=>this.httpConnected.get(id)===true?'🟢':
+      this.httpConnected.get(id)===false?'🔴':'⚪';
+    // Native <select> options cannot reliably render custom HTML or CSS.
+    // Emoji markers work on Safari/iOS and browsers, directly inside the list.
+    for(const player of this.players) {
+      const option=Array.from(select.options).find(o=>o.value===player.id);
+      if(option) option.textContent=`${marker(player.id)} ${player.name}`;
+    }
+    const id=this.player?.id, ws=id&&this.wsConnected.get(id)===true;
+    const ready=id?this.httpConnected.get(id):undefined;
+    select.title=!id?'Aucun lecteur Kodi configuré':
+      ready===true?(ws?'Kodi connecté · notifications actives':
+                       'Kodi connecté · notifications en reconnexion, suivi HTTP actif'):
+      ready===false?'Kodi indisponible par HTTP JSON-RPC':
+                    'Vérification de la connexion Kodi';
+    select.setAttribute('aria-label',`Instance Kodi : ${select.title}`);
   }
+
   render(state) {
     this.state=state||{active:false};
     const s=this.state, active=!!s.active;
