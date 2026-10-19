@@ -63,6 +63,10 @@ def test_error_queues_explicit_edit_and_manual_replay_with_icon(client, admin):
     assert pending["source_type"] == "kodi"
     assert pending["icon"] == "play.rectangle.on.rectangle"
     assert pending["changes"] == {"watched": True, "user_rating": 8}
+    recent = status.json()["recent"][0]
+    assert recent["media_id"] == mid
+    assert recent["media_title"] == "Example"
+    assert recent["updated_at"]
     assert (
         client.get(f"/api/v1/media/{mid}", headers=admin).json()["writeback_state"][0]["status"]
         == "pending"
@@ -86,6 +90,10 @@ def test_error_queues_explicit_edit_and_manual_replay_with_icon(client, admin):
     history = client.get(f"/api/v1/media/{mid}/writeback", headers=admin).json()
     assert len(history) == 2
     assert history[0]["status"] == "updated"
+    assert history[0]["media_title"] == "Example"
+    assert history[0]["created_at"]
+    source_history = client.get(f"/api/v1/sources/{sid}/writeback", headers=admin).json()
+    assert source_history[0]["media_title"] == "Example"
 
 
 def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_fields(
