@@ -26,6 +26,8 @@ class KodiRemote {
     if(this.closed) return;
     document.getElementById('kodi-remote-indicator')?.remove();
     document.getElementById('kodi-remote-dialog')?.remove();
+    // Until Kodi states load, keep the permanent Kodi shortcut visible.
+    document.getElementById('kodi-remote-button').hidden=false;
     document.getElementById('kodi-remote-button').insertAdjacentHTML('afterend',
       '<button id="kodi-remote-indicator" type="button" class="quiet remote-indicator" title="Lecture Kodi en cours" aria-label="Lecture Kodi en cours" hidden>▶</button>');
     document.body.insertAdjacentHTML('beforeend', `
@@ -224,8 +226,12 @@ class KodiRemote {
     }));
     this.indicator.textContent=active.length>1?`▶ ${active.length} Kodi`:
       active.length===1?`▶ ${this.states.get(active[0].id)?.title||active[0].name}`:'◉ Kodi';
-    this.indicator.hidden=active.length===0;
-    this.indicator.classList.toggle('playing',active.length>0);
+    // One header entry at a time: the persistent Kodi button while idle,
+    // replaced with the Now Playing indicator while any Kodi is active.
+    const hasPlayback=active.length>0;
+    this.headerButton.hidden=hasPlayback;
+    this.indicator.hidden=!hasPlayback;
+    this.indicator.classList.toggle('playing',hasPlayback);
     this.setConnection();
   }
   openSocket(player) {
@@ -353,6 +359,7 @@ class KodiRemote {
     this.sockets.forEach(socket=>{socket.onclose=null;socket.close();});this.sockets.clear();
     if(this.onVisibility)document.removeEventListener('visibilitychange',this.onVisibility);
     if(this.headerButton && this.open)this.headerButton.removeEventListener('click',this.open);
+    if(this.headerButton)this.headerButton.hidden=false;
     this.dialog?.remove();this.indicator?.remove();
   }
 }
