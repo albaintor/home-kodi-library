@@ -18,11 +18,11 @@ class KodiRemote {
   }
   async start() {
     try { this.players=await this.api('players'); } catch { return; }
-    if(this.closed || !this.players.length) return;
+    if(this.closed) return;
     document.getElementById('kodi-remote-indicator')?.remove();
     document.getElementById('kodi-remote-dialog')?.remove();
-    document.querySelector('.main-header nav').insertAdjacentHTML('afterbegin',
-      '<button id="kodi-remote-indicator" type="button" class="quiet remote-indicator" title="Télécommande Kodi">◉ Kodi</button>');
+    document.getElementById('kodi-remote-button').insertAdjacentHTML('afterend',
+      '<button id="kodi-remote-indicator" type="button" class="quiet remote-indicator" title="Lecture Kodi en cours" aria-label="Lecture Kodi en cours" hidden>▶</button>');
     document.body.insertAdjacentHTML('beforeend', `
       <dialog id="kodi-remote-dialog" class="remote-dialog" aria-labelledby="remote-heading">
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
@@ -72,9 +72,12 @@ class KodiRemote {
     select.innerHTML=this.players.map(p=>`<option value="${safe(p.id)}">${safe(p.name)}</option>`).join('');
     const saved=localStorage.getItem(this.storageKey);
     this.player=this.players.find(p=>p.id===saved)||this.players[0];
-    select.value=this.player.id;
+    if(this.player) select.value=this.player.id;
     select.addEventListener('change',()=>{this.manualSelection=true;this.player=this.players.find(p=>p.id===select.value);localStorage.setItem(this.storageKey,this.player.id);this.switchPlayer();});
-    this.indicator.addEventListener('click',()=>this.dialog.showModal());
+    this.open = () => this.dialog.showModal();
+    this.headerButton = document.getElementById('kodi-remote-button');
+    this.headerButton.addEventListener('click',this.open);
+    this.indicator.addEventListener('click',this.open);
     document.getElementById('remote-close').addEventListener('click',()=>this.dialog.close());
     document.getElementById('remote-tab-now').addEventListener('click',()=>this.showPage(0));
     document.getElementById('remote-tab-controls').addEventListener('click',()=>this.showPage(1));
@@ -91,6 +94,12 @@ class KodiRemote {
         null,e.target.value==='off'?null:Number(e.target.value));
     });
     this.showPage(0);
+    if(!this.players.length) {
+      this.setConnection('Aucun lecteur Kodi configuré. Ajoutez-en un dans Paramètres.');
+      this.render({active:false});
+      select.disabled=true;
+      return;
+    }
     this.manualSelection=!!saved;
     await Promise.allSettled(this.players.map(async player=>{
       try {this.states.set(player.id,await this.api(`players/${player.id}/remote`));} catch {}
@@ -133,6 +142,7 @@ class KodiRemote {
     }));
     this.indicator.textContent=active.length>1?`▶ ${active.length} Kodi`:
       active.length===1?`▶ ${this.states.get(active[0].id)?.title||active[0].name}`:'◉ Kodi';
+    this.indicator.hidden=active.length===0;
     this.indicator.classList.toggle('playing',active.length>0);
   }
   openSocket(player) {
@@ -219,6 +229,7 @@ class KodiRemote {
     this.timers.forEach(timer=>clearTimeout(timer));this.timers.clear();
     this.sockets.forEach(socket=>{socket.onclose=null;socket.close();});this.sockets.clear();
     if(this.onVisibility)document.removeEventListener('visibilitychange',this.onVisibility);
+    if(this.headerButton && this.open)this.headerButton.removeEventListener('click',this.open);
     this.dialog?.remove();this.indicator?.remove();
   }
 }
