@@ -21,7 +21,6 @@ def main():
                 data_dir=Path(directory),
                 api_token="collection-browser-test-token-0000",
                 local_auth_networks=["127.0.0.0/8"],
-                scheduler_enabled=False,
             )
         )
         store = app.state.store

@@ -73,7 +73,6 @@ def main():
             data_dir=data,
             api_token="browser-test-admin-token-000000000",
             ingress_token="browser-test-ingress-token-0000000",
-            scheduler_enabled=False,
             tmdb_api_token="synthetic-browser-tmdb-token",
         )
         app = create_app(settings)

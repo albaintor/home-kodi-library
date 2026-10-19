@@ -13,7 +13,6 @@ def settings(tmp_path, **kwargs):
         data_dir=tmp_path,
         api_token=ADMIN,
         read_token=READ,
-        scheduler_enabled=False,
         local_auth_networks=["192.168.10.0/24", "fd12:3456::/64"],
         **kwargs,
     )

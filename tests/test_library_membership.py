@@ -117,7 +117,7 @@ def test_sync_uses_mariadb_only_even_when_player_is_configured(store):
         ],
     )
     db = movie_database()
-    manager = SyncManager(store, Settings(scheduler_enabled=False))
+    manager = SyncManager(store, Settings())
 
     def fake_fetch(connector):
         connector.database = "MyVideos131"
