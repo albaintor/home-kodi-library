@@ -356,3 +356,10 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .remote-playing-options button{text-align:left;font-size:12px}
 .remote-playing-options button.selected{color:var(--accent);border-color:var(--accent)}
 @media(max-width:650px){.remote-indicator{max-width:115px;padding:8px;font-size:11px}.remote-dialog{padding:15px}.remote-secondary{grid-template-columns:repeat(2,1fr)}}
+
+/* Persistent Kodi Remote navigation shortcut, adjacent to My Lists. */
+.kodi-header-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;white-space:nowrap}
+.kodi-header-button img{display:block;flex-shrink:0;object-fit:contain}
+.remote-stream-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;text-align:left}
+.remote-stream-choices select{margin-top:5px;max-width:100%}
+@media(max-width:600px){.kodi-header-button{padding:9px 10px;gap:5px}.kodi-header-button img{width:17px;height:17px}.remote-stream-choices{grid-template-columns:1fr}}
