@@ -2,6 +2,10 @@
 const safe = v => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let remote = null;
 export function stopKodiRemote() { remote?.stop(); remote = null; }
+export function showKodiRemote(playerID) {
+  if(!remote) return false;
+  return remote.present(playerID);
+}
 export async function startKodiRemote({api, url, role}) {
   stopKodiRemote();
   const controller = new KodiRemote(api, url, role);
@@ -13,7 +17,7 @@ class KodiRemote {
   constructor(api, url, role) {
     this.api=api; this.url=url; this.role=role; this.players=[]; this.player=null;
     this.state={active:false}; this.sockets=new Map(); this.timers=new Map(); this.states=new Map(); this.closed=false; this.manualSelection=false;
-    this.page=0;
+    this.page=0; this.received=new Map(); this.refreshInterval=null; this.clockInterval=null; this.userSeeking=false;
     this.storageKey='media_catalog.remote.player:'+new URL('.',location.href).pathname;
   }
   async start() {
@@ -74,7 +78,7 @@ class KodiRemote {
     this.player=this.players.find(p=>p.id===saved)||this.players[0];
     if(this.player) select.value=this.player.id;
     select.addEventListener('change',()=>{this.manualSelection=true;this.player=this.players.find(p=>p.id===select.value);localStorage.setItem(this.storageKey,this.player.id);this.switchPlayer();});
-    this.open = () => this.dialog.showModal();
+    this.open = () => this.present();
     this.headerButton = document.getElementById('kodi-remote-button');
     this.headerButton.addEventListener('click',this.open);
     this.indicator.addEventListener('click',this.open);
@@ -85,7 +89,14 @@ class KodiRemote {
       const button=e.target.closest('[data-remote-action]');
       if(button) this.command(button.dataset.remoteAction);
     });
-    document.getElementById('remote-seek').addEventListener('change',e=>this.command('seek',Number(e.target.value)));
+    const seekInput=document.getElementById('remote-seek');
+    seekInput.addEventListener('pointerdown',()=>{this.userSeeking=true;});
+    seekInput.addEventListener('input',()=>{this.userSeeking=true;this.updateClock();});
+    seekInput.addEventListener('change',e=>{
+      this.userSeeking=false;
+      const duration=Number(this.state?.duration)||0;
+      if(duration>0)this.command('seek',null,null,duration*Number(e.target.value)/100);
+    });
     document.getElementById('remote-audio-select').addEventListener('change',e=>{
       if(e.target.value!=='')this.command('audio_select',null,Number(e.target.value));
     });
@@ -106,9 +117,58 @@ class KodiRemote {
     }));
     this.refreshChoices();
     this.players.forEach(player=>this.openSocket(player));
+    // The HTTP endpoint remains authoritative even when the browser's WS
+    // upgrade is blocked by a reverse proxy or fails after device sleep.
+    this.clockInterval=setInterval(()=>{if(!document.hidden)this.updateClock();},500);
+    this.refreshInterval=setInterval(()=>{
+      if(!document.hidden) this.players.forEach(p=>this.refreshPlayer(p));
+    },5000);
     document.addEventListener('visibilitychange',this.onVisibility=()=>{
-      if(!document.hidden) this.players.forEach(p=>{if(this.sockets.get(p.id)?.readyState!==WebSocket.OPEN)this.openSocket(p);});
+      if(!document.hidden) this.players.forEach(p=>{
+        this.refreshPlayer(p);
+        if(this.sockets.get(p.id)?.readyState!==WebSocket.OPEN)this.openSocket(p);
+      });
     });
+  }
+  present(playerID) {
+    if(this.closed || !this.dialog)return false;
+    if(playerID && this.players.some(p=>p.id===playerID)) {
+      this.manualSelection=true;
+      this.player=this.players.find(p=>p.id===playerID);
+      document.getElementById('remote-player').value=playerID;
+      localStorage.setItem(this.storageKey,playerID);
+      this.switchPlayer();
+      // Playback may only become available after Player.Open has returned.
+      void this.refreshPlayer(this.player);
+    }
+    this.showPage(0);
+    if(!this.dialog.open)this.dialog.showModal();
+    return true;
+  }
+  async refreshPlayer(player) {
+    if(this.closed || !player)return;
+    try {
+      const status=await this.api(`players/${player.id}/remote`);
+      if(this.closed)return;
+      this.states.set(player.id,status);
+      this.received.set(player.id,performance.now());
+      if(this.player?.id===player.id){this.render(status);this.setConnection('Connecté (JSON-RPC HTTP)');}
+      this.refreshChoices();
+    }catch {
+      // If only the event socket is unavailable, do not mark Kodi offline.
+      // A real HTTP failure is independently observable here.
+      if(this.player?.id===player.id)this.setConnection('Kodi HTTP indisponible');
+    }
+  }
+  updateClock() {
+    if(!this.player || !this.state?.active)return;
+    const s=this.state, duration=Number(s.duration)||0;
+    const age=Math.max(0,(performance.now()-(this.received.get(this.player.id)??performance.now()))/1000);
+    const rate=s.paused?0:Math.max(0,Number(s.speed)||0);
+    const seconds=Math.max(0,Math.min(duration>0?duration:Infinity,(Number(s.position)||0)+age*rate));
+    const seek=document.getElementById('remote-seek');
+    if(!this.userSeeking && duration>0)seek.value=String(100*seconds/duration);
+    document.getElementById('remote-elapsed').textContent=this.time(this.userSeeking&&duration>0?duration*Number(seek.value)/100:seconds);
   }
   showPage(page) {
     this.page=page;
@@ -160,6 +220,7 @@ class KodiRemote {
           const msg=JSON.parse(event.data);
           if(msg.type==='state'){
             this.states.set(player.id,msg.state);
+            this.received.set(player.id,performance.now());
             if(this.player?.id===player.id) {this.render(msg.state);this.setConnection('Connecté');}
             this.refreshChoices();
           } else if(msg.type==='offline'){
@@ -191,9 +252,9 @@ class KodiRemote {
     if(art.dataset.path!==src){art.dataset.path=src;art.removeAttribute('src');if(src)art.src=src;}
     art.hidden=!src;
     const seek=document.getElementById('remote-seek');
-    seek.value=String(Math.max(0,Math.min(100,Number(s.percentage)||0)));
+    if(!this.userSeeking)seek.value=String(Math.max(0,Math.min(100,Number(s.percentage)||0)));
     seek.disabled=!active||this.role!=='admin';
-    document.getElementById('remote-elapsed').textContent=this.time(s.position||0);
+    this.updateClock();
     document.getElementById('remote-total').textContent=this.time(s.duration||0);
     document.getElementById('remote-playpause').textContent=s.paused?'▶':'⏸';
     for(const b of this.dialog.querySelectorAll('[data-remote-action]')) {
@@ -218,14 +279,21 @@ class KodiRemote {
     else subtitleSelect.value='off';
   }
   time(seconds){let n=Math.max(0,Math.floor(seconds||0));const h=Math.floor(n/3600);n%=3600;return h?`${h}:${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`:`${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
-  async command(action, percentage, index) {
+  async command(action, percentage, index, seconds) {
     if(this.role!=='admin'||!this.player)return;
     const out=document.getElementById('remote-error');out.textContent='';
-    try {await this.api(`players/${this.player.id}/remote`,{method:'POST',body:JSON.stringify({action,...(action==='seek'?{percentage}:{}),...(index!=null?{index}:{})})});}
-    catch(e){out.textContent=e.message;}
+    try {
+      const player=this.player;
+      await this.api(`players/${player.id}/remote`,{method:'POST',body:JSON.stringify({action,...(percentage!=null?{percentage}:{}),...(seconds!=null?{seconds}:{}),...(index!=null?{index}:{})})});
+      // A successful command proves HTTP JSON-RPC works. Refresh now and
+      // reinstate WS events if the connection was lost.
+      void this.refreshPlayer(player);
+      if(this.sockets.get(player.id)?.readyState!==WebSocket.OPEN)this.openSocket(player);
+    } catch(e) {out.textContent=e.message;}
   }
   stop() {
     this.closed=true;
+    clearInterval(this.clockInterval);clearInterval(this.refreshInterval);
     this.timers.forEach(timer=>clearTimeout(timer));this.timers.clear();
     this.sockets.forEach(socket=>{socket.onclose=null;socket.close();});this.sockets.clear();
     if(this.onVisibility)document.removeEventListener('visibilitychange',this.onVisibility);
