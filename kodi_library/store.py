@@ -1943,8 +1943,7 @@ class Store:
                 "SELECT p.*,s.type AS source_type,s.name AS source_name,"
                 "w.title AS media_title FROM writeback_pending p "
                 "JOIN sources s ON s.id=p.source_id "
-                "LEFT JOIN works w ON w.id=p.work_id "
-                + ("WHERE p.work_id=?" if work_id else ""),
+                "LEFT JOIN works w ON w.id=p.work_id " + ("WHERE p.work_id=?" if work_id else ""),
                 (work_id,) if work_id else (),
             ).fetchall()
             for row in pending_rows:
