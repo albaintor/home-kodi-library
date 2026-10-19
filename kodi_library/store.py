@@ -1038,8 +1038,10 @@ class Store:
         if not work_ids:
             return {}
         normalized = fold(person_name.strip()) if person_name else ""
-        namespace = "tmdb_id" if person_tmdb_id is not None else (
-            "imdb_id" if person_imdb_id is not None else None
+        namespace = (
+            "tmdb_id"
+            if person_tmdb_id is not None
+            else ("imdb_id" if person_imdb_id is not None else None)
         )
         identity = person_tmdb_id if person_tmdb_id is not None else person_imdb_id
         credits: dict[str, list[dict]] = defaultdict(list)
@@ -1069,11 +1071,16 @@ class Store:
 
         results = {}
         for work_id, members in credits.items():
-            conflict = bool(namespace and normalized and any(
-                fold(member.get("name", "")) == normalized
-                and str(member.get(namespace) or "") not in ("", identity)
-                for member in members if isinstance(member.get("name"), str)
-            ))
+            conflict = bool(
+                namespace
+                and normalized
+                and any(
+                    fold(member.get("name", "")) == normalized
+                    and str(member.get(namespace) or "") not in ("", identity)
+                    for member in members
+                    if isinstance(member.get("name"), str)
+                )
+            )
             roles = []
             for member in members:
                 name = member.get("name")
@@ -1152,9 +1159,7 @@ class Store:
                 params.extend((namespace, identity))
         elif person_name and person_name.strip():
             # Name-only cast searches should not match unrelated plot/title text.
-            clauses.append(
-                "w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)"
-            )
+            clauses.append("w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)")
             params.append(fold(person_name.strip()))
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
@@ -1238,7 +1243,8 @@ class Store:
             items = self._summaries_with_sources(conn, rows)
             if person_name or person_tmdb_id or person_imdb_id:
                 roles = self._matched_person_roles(
-                    conn, [row["id"] for row in rows],
+                    conn,
+                    [row["id"] for row in rows],
                     person_name=person_name,
                     person_tmdb_id=person_tmdb_id,
                     person_imdb_id=person_imdb_id,

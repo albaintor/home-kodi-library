@@ -542,9 +542,11 @@ def test_local_person_roles_across_sources_and_identifiers(client, admin):
                 "levi",
                 "tvshow",
                 "Chuck",
-                metadata={"people": [
-                    {"name": "Zachary Levi", "tmdb_id": "101", "role": "Chuck Bartowski"}
-                ]},
+                metadata={
+                    "people": [
+                        {"name": "Zachary Levi", "tmdb_id": "101", "role": "Chuck Bartowski"}
+                    ]
+                },
             ),
             Record(
                 "unidentified",
@@ -556,9 +558,11 @@ def test_local_person_roles_across_sources_and_identifiers(client, admin):
                 "homonym",
                 "movie",
                 "Other actor",
-                metadata={"people": [
-                    {"name": "Zachary Levi", "tmdb_id": "202", "role": "Not his character"}
-                ]},
+                metadata={
+                    "people": [
+                        {"name": "Zachary Levi", "tmdb_id": "202", "role": "Not his character"}
+                    ]
+                },
             ),
             Record(
                 "plot",
@@ -571,9 +575,16 @@ def test_local_person_roles_across_sources_and_identifiers(client, admin):
                 "crew",
                 "movie",
                 "Behind the scenes",
-                metadata={"people": [
-                    {"name": "Zachary Levi", "imdb_id": "nm123", "category": "director", "role": "Director"}
-                ]},
+                metadata={
+                    "people": [
+                        {
+                            "name": "Zachary Levi",
+                            "imdb_id": "nm123",
+                            "category": "director",
+                            "role": "Director",
+                        }
+                    ]
+                },
             ),
         ],
     )
@@ -594,9 +605,7 @@ def test_local_person_roles_across_sources_and_identifiers(client, admin):
     assert rows["TMDB character"] == ["Narrator"]
     assert "Other actor" not in rows
     assert "Unrelated title" not in rows
-    page = client.get(
-        "/api/v1/media", params={"person_name": "Zachary Levi"}, headers=admin
-    )
+    page = client.get("/api/v1/media", params={"person_name": "Zachary Levi"}, headers=admin)
     assert page.status_code == 200
     by_title = {item["title"]: item["matched_roles"] for item in page.json()["items"]}
     assert by_title["Other actor"] == ["Not his character"]
