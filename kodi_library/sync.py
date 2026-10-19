@@ -25,7 +25,6 @@ class SyncManager:
         self.active: set[str] = set()
         self.tasks: set[asyncio.Task] = set()
         self.scan_tasks: set[asyncio.Task] = set()
-        self.scheduler: asyncio.Task | None = None
         self.stale_sync_lock = asyncio.Lock()
 
     async def submit(self, source_id: str, xml: bytes | None = None) -> dict[str, Any]:
@@ -205,40 +204,42 @@ class SyncManager:
                     continue
         return created
 
-    def start(self):
-        if self.settings.scheduler_enabled:
-            self.scheduler = asyncio.create_task(self._schedule())
+    async def bootstrap_empty_catalogue(self) -> list[dict[str, Any]]:
+        """Do the first import when the database has no records.
 
-    async def _schedule(self):
-        attempted: dict[str, float] = {}
-        loop = asyncio.get_running_loop()
-        while True:
-            sources = await asyncio.to_thread(self.store.sources)
-            for source in sources:
-                if source["type"] != "kodi" or not source["enabled"] or source["id"] in self.active:
+        Existing populated catalogues must *not* synchronize on server startup.
+        Once the first import is complete, only explicit web/iOS opening checks
+        (or manual actions) can trigger subsequent imports.
+        """
+        async with self.stale_sync_lock:
+            status = await asyncio.to_thread(self.store.status)
+            if status["editions"] > 0:
+                return []
+            created = []
+            for source in await asyncio.to_thread(self.store.sources):
+                if source["type"] != "kodi" or not source["enabled"]:
                     continue
+                if source["id"] in self.active:
+                    continue
+                # A successfully checked but genuinely empty Kodi library is
+                # not imported again on every server/container restart.
                 last = source.get("last_sync")
-                due = (
-                    not last
-                    or (datetime.now(UTC) - datetime.fromisoformat(last)).total_seconds()
-                    >= self.settings.sync_interval
-                )
-                if (
-                    due
-                    and loop.time() - attempted.get(source["id"], -self.settings.sync_interval)
-                    >= self.settings.sync_interval
-                ):
-                    attempted[source["id"]] = loop.time()
+                if last:
                     try:
-                        await self.submit(source["id"])
-                    except (BusyError, ValueError):
+                        dt = datetime.fromisoformat(last.replace("Z", "+00:00"))
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=UTC)
+                        if (datetime.now(UTC) - dt).total_seconds() < 24 * 60 * 60:
+                            continue
+                    except (ValueError, TypeError, OverflowError):
                         pass
-            await asyncio.sleep(30)
+                try:
+                    created.append(await self.submit(source["id"]))
+                except (BusyError, ValueError):
+                    continue
+            return created
 
     async def close(self):
-        if self.scheduler:
-            self.scheduler.cancel()
-            await asyncio.gather(self.scheduler, return_exceptions=True)
         # Scan listeners must not delay shutdown indefinitely.
         for task in self.scan_tasks:
             task.cancel()

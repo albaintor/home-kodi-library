@@ -18,8 +18,6 @@ class Settings:
     max_import_bytes: int = 20 * 1024 * 1024
     max_artwork_bytes: int = 8 * 1024 * 1024
     secure_cookie: bool = False
-    sync_interval: int = 300
-    scheduler_enabled: bool = False
     local_auth_networks: list[str] = field(default_factory=list)
     trusted_proxy_networks: list[str] = field(default_factory=list)
     tmdb_api_token: str = ""
@@ -46,8 +44,6 @@ class Settings:
             raise ValueError("CORS_ORIGINS must list exact origins, not a wildcard.")
         if not (1 <= self.discovery_port <= 65535) or not self.discovery_name.strip():
             raise ValueError("Invalid Bonjour discovery name or port.")
-        if self.sync_interval < 60:
-            raise ValueError("SYNC_INTERVAL must be at least 60 seconds.")
         for name, networks in (
             ("LOCAL_AUTH_NETWORKS", self.local_auth_networks),
             ("TRUSTED_PROXY_NETWORKS", self.trusted_proxy_networks),
@@ -71,8 +67,6 @@ class Settings:
             cors_origins=json.loads(os.environ.get("CORS_ORIGINS", "[]")),
             artwork_mounts=json.loads(os.environ.get("ARTWORK_MOUNTS", "{}")),
             secure_cookie=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
-            sync_interval=int(os.environ.get("SYNC_INTERVAL", "300")),
-            scheduler_enabled=os.environ.get("SCHEDULER_ENABLED", "false").lower() == "true",
             local_auth_networks=json.loads(os.environ.get("LOCAL_AUTH_NETWORKS", "[]")),
             trusted_proxy_networks=json.loads(os.environ.get("TRUSTED_PROXY_NETWORKS", "[]")),
             tmdb_api_token=os.environ.get("TMDB_API_TOKEN", ""),

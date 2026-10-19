@@ -103,7 +103,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app):
         await asyncio.to_thread(store.initialize)
         await asyncio.to_thread(auth.load_devices)
-        sync.start()
+        await sync.bootstrap_empty_catalogue()
         discovery = None
         if settings.discovery_enabled:
             from .discovery import BonjourPublisher

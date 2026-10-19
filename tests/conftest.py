@@ -27,7 +27,6 @@ def client(tmp_path):
             api_token=ADMIN,
             read_token=READ,
             ingress_token=INGRESS,
-            scheduler_enabled=False,
         )
     )
     with TestClient(app) as value:

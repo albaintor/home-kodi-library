@@ -392,9 +392,9 @@ def test_on_open_refresh_only_after_24_hours_and_never_duplicates(client, admin)
         assert recorded == [stale_id]
 
 
-def test_default_scheduler_is_off_and_model_part_of_release():
+def test_no_periodic_scheduler_and_model_part_of_release():
     from kodi_library import DATA_MODEL_VERSION, __version__
-    from kodi_library.settings import Settings
+    from kodi_library.sync import SyncManager
 
-    assert Settings().scheduler_enabled is False
+    assert not hasattr(SyncManager, "_schedule")
     assert __version__.endswith(f"+model.{DATA_MODEL_VERSION}")

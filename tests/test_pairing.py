@@ -113,7 +113,7 @@ def test_device_auth_survives_restart(client, admin, tmp_path):
     data_dir = client.app.state.store.path.parent
     with TestClient(
         create_app(
-            Settings(data_dir=data_dir, api_token=ADMIN, read_token=READ, scheduler_enabled=False)
+            Settings(data_dir=data_dir, api_token=ADMIN, read_token=READ)
         )
     ) as restarted:
         headers = {"Authorization": f"Bearer {token}"}
