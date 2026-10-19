@@ -18,6 +18,7 @@ class KodiRemote {
     this.api=api; this.url=url; this.role=role; this.players=[]; this.player=null;
     this.state={active:false}; this.sockets=new Map(); this.timers=new Map(); this.states=new Map(); this.closed=false; this.manualSelection=false;
     this.page=0; this.received=new Map(); this.refreshInterval=null; this.clockInterval=null; this.userSeeking=false;
+    this.httpConnected=new Map(); this.wsConnected=new Map(); this.socketRetryDelay=new Map();
     this.storageKey='media_catalog.remote.player:'+new URL('.',location.href).pathname;
   }
   async start() {
@@ -31,7 +32,7 @@ class KodiRemote {
       <dialog id="kodi-remote-dialog" class="remote-dialog" aria-labelledby="remote-heading">
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
         <label class="remote-player-label">Lecteur <select id="remote-player"></select></label>
-        <p id="remote-connection" class="remote-connection" role="status"></p><div id="remote-playing-options" class="remote-playing-options" hidden></div>
+        <span id="remote-connection" class="remote-connection remote-status-dot" role="status" data-state="checking" aria-label="Vérification de Kodi" title="Vérification de Kodi"></span><div id="remote-playing-options" class="remote-playing-options" hidden></div>
         <div class="remote-tabs" role="tablist">
           <button id="remote-tab-now" type="button" aria-selected="true" role="tab">Lecture en cours</button>
           <button id="remote-tab-controls" type="button" aria-selected="false" role="tab">Contrôles</button>
@@ -152,12 +153,14 @@ class KodiRemote {
       if(this.closed)return;
       this.states.set(player.id,status);
       this.received.set(player.id,performance.now());
-      if(this.player?.id===player.id){this.render(status);this.setConnection('Connecté (JSON-RPC HTTP)');}
+      this.httpConnected.set(player.id,true);
+      if(this.player?.id===player.id){this.render(status);this.setConnection();}
       this.refreshChoices();
     }catch {
       // If only the event socket is unavailable, do not mark Kodi offline.
       // A real HTTP failure is independently observable here.
-      if(this.player?.id===player.id)this.setConnection('Kodi HTTP indisponible');
+      this.httpConnected.set(player.id,false);
+      if(this.player?.id===player.id)this.setConnection();
     }
   }
   updateClock() {
@@ -180,6 +183,7 @@ class KodiRemote {
   switchPlayer() {
     this.render(this.states.get(this.player?.id)||{active:false});
     this.refreshChoices();
+    this.setConnection();
   }
   refreshChoices() {
     const active=this.players.filter(p=>this.states.get(p.id)?.active);
@@ -213,7 +217,7 @@ class KodiRemote {
     try {
       const ws=new WebSocket(target);
       this.sockets.set(player.id,ws);
-      ws.onopen=()=>{if(this.sockets.get(player.id)!==ws)return;if(this.player?.id===player.id)this.setConnection('Connecté');};
+      ws.onopen=()=>{if(this.sockets.get(player.id)!==ws)return;this.wsConnected.set(player.id,true);this.socketRetryDelay.set(player.id,5000);if(this.player?.id===player.id)this.setConnection();};
       ws.onmessage=event=>{
         if(this.sockets.get(player.id)!==ws)return;
         try {
@@ -221,11 +225,13 @@ class KodiRemote {
           if(msg.type==='state'){
             this.states.set(player.id,msg.state);
             this.received.set(player.id,performance.now());
-            if(this.player?.id===player.id) {this.render(msg.state);this.setConnection('Connecté');}
+            this.httpConnected.set(player.id,true);
+            if(this.player?.id===player.id) {this.render(msg.state);this.setConnection();}
             this.refreshChoices();
           } else if(msg.type==='offline'){
+            this.httpConnected.set(player.id,false);
             this.states.set(player.id,{active:false});
-            if(this.player?.id===player.id){this.setConnection('Kodi indisponible');this.render({active:false});}
+            if(this.player?.id===player.id){this.setConnection();this.render({active:false});}
             this.refreshChoices();
           }
         }catch{}
@@ -233,15 +239,34 @@ class KodiRemote {
       ws.onclose=()=>{
         if(this.sockets.get(player.id)!==ws||this.closed)return;
         this.sockets.delete(player.id);
-        if(this.player?.id===player.id)this.setConnection('Connexion interrompue');
-        this.timers.set(player.id,setTimeout(()=>this.openSocket(player),5000));
+        this.wsConnected.set(player.id,false);
+        if(this.player?.id===player.id)this.setConnection();
+        const delay=this.socketRetryDelay.get(player.id)||5000;
+        this.socketRetryDelay.set(player.id,Math.min(60000,Math.round(delay*1.5)));
+        this.timers.set(player.id,setTimeout(()=>this.openSocket(player),delay));
       };
       ws.onerror=()=>ws.close();
     }catch {
       this.timers.set(player.id,setTimeout(()=>this.openSocket(player),5000));
     }
   }
-  setConnection(message){const el=document.getElementById('remote-connection');if(el)el.textContent=message;}
+  setConnection(message) {
+    const el=document.getElementById('remote-connection');
+    if(!el)return;
+    const id=this.player?.id;
+    const http=id?this.httpConnected.get(id):undefined;
+    const ws=id&&this.wsConnected.get(id)===true;
+    // Kodi reachability is determined by HTTP JSON-RPC, independently from
+    // browser WS upgrades and Kodi's optional notification socket.
+    const state=http===true?'online':http===false?'offline':'checking';
+    const title=!id?'Aucune instance Kodi configurée':
+      state==='online'?(ws?'Kodi connecté · notifications actives':'Kodi connecté · réception via HTTP, reconnexion WebSocket automatique'):
+      state==='offline'?'Kodi indisponible via JSON-RPC HTTP':'Vérification de la connexion Kodi';
+    el.dataset.state=state;
+    el.title=title;
+    el.setAttribute('aria-label',title);
+    el.textContent='';
+  }
   render(state) {
     this.state=state||{active:false};
     const s=this.state, active=!!s.active;
