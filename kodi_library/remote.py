@@ -14,7 +14,6 @@ from urllib.parse import quote_plus, quote, urlsplit
 import aiohttp
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSocket
-from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
@@ -62,8 +61,9 @@ def _kodi_artwork_path(image: str) -> str:
 
 
 class RemoteAction(BaseModel):
-    action: str = Field(pattern=r"^(up|down|left|right|select|back|home|context|info|osd|fullscreen|playpause|stop|next|previous|seek|subtitle_next|subtitle_off|subtitle_on|audio_next)$")
+    action: str = Field(pattern=r"^(up|down|left|right|select|back|home|context|info|osd|fullscreen|playpause|stop|next|previous|seek|subtitle_next|subtitle_off|subtitle_on|subtitle_select|audio_next|audio_select)$")
     percentage: float | None = Field(default=None, ge=0, le=100)
+    index: int | None = Field(default=None, ge=0, le=999)
 
 
 def seconds(value):
@@ -153,12 +153,18 @@ async def remote_command(player_id: str, action: RemoteAction, request: Request,
                     if action.percentage is None:
                         raise HTTPException(422, "A percentage is required to seek.")
                     await rpc("Player.Seek", {"playerid": pid, "value": action.percentage})
-                elif action.action == "audio_next":
-                    await rpc("Player.SetAudioStream", {"playerid": pid, "stream": "next"})
+                elif action.action in ("audio_next", "audio_select"):
+                    if action.action == "audio_select" and action.index is None:
+                        raise HTTPException(422, "An audio stream index is required.")
+                    await rpc("Player.SetAudioStream", {
+                        "playerid": pid, "stream": action.index if action.action == "audio_select" else "next"
+                    })
                 elif action.action.startswith("subtitle_"):
-                    value = action.action.removeprefix("subtitle_")
+                    if action.action == "subtitle_select" and action.index is None:
+                        raise HTTPException(422, "A subtitle index is required.")
+                    value = action.index if action.action == "subtitle_select" else action.action.removeprefix("subtitle_")
                     await rpc("Player.SetSubtitle", {"playerid": pid, "subtitle": value,
-                                                      "enable": value == "next"})
+                                                      "enable": action.action in ("subtitle_next", "subtitle_on", "subtitle_select")})
         return {"ok": True}
     except ConnectorError as exc:
         raise HTTPException(502, str(exc)) from exc
@@ -229,10 +235,10 @@ async def remote_events(socket: WebSocket, player_id: str):
     ws_url = f"{protocol}://{host}:{config.get('websocket_port', 9090)}/jsonrpc"
     credentials = aiohttp.BasicAuth(config["username"], config.get("password") or "") if config.get("username") else None
     try:
-        async with aiohttp.ClientSession(trust_env=False) as session:
+        async with aiohttp.ClientSession(trust_env=False, timeout=aiohttp.ClientTimeout(total=8)) as session:
             while True:
                 try:
-                    async with session.ws_connect(ws_url, auth=credentials, heartbeat=20, timeout=aiohttp.ClientTimeout(total=8)) as upstream:
+                    async with session.ws_connect(ws_url, auth=credentials, heartbeat=20, timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
                         last = None
                         while True:
                             state = await current_state(player)
@@ -241,7 +247,10 @@ async def remote_events(socket: WebSocket, player_id: str):
                                 last = state
                             # WebSocket notifications interrupt polling immediately.
                             try:
-                                message = await asyncio.wait_for(upstream.receive(), timeout=2)
+                                # When idle, rely mainly on notifications; while playing
+                                # poll time/percentage for the live seek bar.
+                                interval = 2 if state.get("active") else 8
+                                message = await asyncio.wait_for(upstream.receive(), timeout=interval)
                                 if message.type in (aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
                                                     aiohttp.WSMsgType.ERROR):
                                     break
