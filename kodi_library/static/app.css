@@ -363,3 +363,19 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .remote-stream-choices{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:16px;text-align:left}
 .remote-stream-choices select{margin-top:5px;max-width:100%}
 @media(max-width:600px){.kodi-header-button{padding:9px 10px;gap:5px}.kodi-header-button img{width:17px;height:17px}.remote-stream-choices{grid-template-columns:1fr}}
+
+/* Stable Kodi connection LED: HTTP JSON-RPC determines reachability; Kodi
+   notification WebSocket status stays in the tooltip, never flashes the LED. */
+.remote-dialog .remote-status-dot{
+  display:inline-block;box-sizing:border-box;vertical-align:middle;
+  width:11px;height:11px;min-width:11px;min-height:11px;
+  padding:0;margin:2px 0 7px 3px;border:1px solid transparent;
+  border-radius:50%;background:#858c98;
+}
+.remote-dialog .remote-status-dot[data-state="online"]{
+  background:#35b668;box-shadow:0 0 0 2px rgba(53,182,104,.14);
+}
+.remote-dialog .remote-status-dot[data-state="offline"]{
+  background:#d85858;box-shadow:0 0 0 2px rgba(216,88,88,.13);
+}
+.remote-dialog .remote-status-dot[data-state="checking"]{background:#858c98}
