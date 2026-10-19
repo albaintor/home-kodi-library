@@ -3,9 +3,13 @@
 The server owns Kodi credentials; clients never connect to Kodi directly.
 """
 import asyncio
+import hashlib
+import hmac
 import logging
+import secrets
 import time
-from urllib.parse import quote, urlsplit
+from collections import OrderedDict
+from urllib.parse import quote_plus, quote, urlsplit
 
 import aiohttp
 import httpx
@@ -20,6 +24,41 @@ from .players import connection, endpoint
 
 LOG = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/players", tags=["Players"])
+# Opaque, deterministic-per-process artwork handles keep even embedded SMB or
+# HTTP image credentials out of web/iOS URLs and JSON responses.
+_ARTWORK_SECRET = secrets.token_bytes(32)
+_ARTWORK_REFS = OrderedDict()
+_ARTWORK_MAX = 512
+_ARTWORK_TTL = 3600
+
+
+def _remember_artwork(player_id: str, kodi_image: str) -> str:
+    key = (player_id, hmac.new(
+        _ARTWORK_SECRET, (player_id + "\0" + kodi_image).encode("utf-8"),
+        hashlib.sha256).hexdigest())
+    _ARTWORK_REFS[key] = (kodi_image, time.monotonic() + _ARTWORK_TTL)
+    _ARTWORK_REFS.move_to_end(key)
+    while len(_ARTWORK_REFS) > _ARTWORK_MAX:
+        _ARTWORK_REFS.popitem(last=False)
+    return f"/api/v1/players/{player_id}/artwork?ref={key[1]}"
+
+
+def _resolve_artwork(player_id: str, ref: str) -> str:
+    if len(ref) != 64 or any(c not in "0123456789abcdef" for c in ref):
+        raise HTTPException(404, "Unknown Kodi artwork.")
+    item = _ARTWORK_REFS.get((player_id, ref))
+    if not item or time.monotonic() >= item[1]:
+        raise HTTPException(404, "Kodi artwork reference expired.")
+    return item[0]
+
+
+def _kodi_artwork_path(image: str) -> str:
+    # Identical to integration-kodi's thumbnail_url() for image:// references.
+    # Raw file paths need Kodi's double-encoded image:// wrapper.
+    if image.startswith("image://"):
+        return quote_plus(image)
+    return quote(f"image://{quote(image, safe='')}/", safe="")
+
 
 
 class RemoteAction(BaseModel):
@@ -57,7 +96,7 @@ async def current_state(player):
             "title": media.get("title") or media.get("label") or "",
             "show_title": media.get("showtitle") or "",
             "season": media.get("season"), "episode": media.get("episode"),
-            "artwork": f"/api/v1/players/{player['id']}/artwork?image={quote(image, safe='')}" if image else None,
+            "artwork": _remember_artwork(player['id'], image) if image else None,
             "position": seconds(props.get("time")), "duration": seconds(props.get("totaltime")),
             "percentage": props.get("percentage", 0), "paused": props.get("speed", 0) == 0,
             "speed": props.get("speed", 0),
@@ -126,9 +165,10 @@ async def remote_command(player_id: str, action: RemoteAction, request: Request,
 
 
 @router.get("/{player_id}/artwork")
-async def remote_artwork(player_id: str, image: str, request: Request, _=Depends(authenticated)):
+async def remote_artwork(player_id: str, ref: str, request: Request, _=Depends(authenticated)):
     player = lookup(request, player_id)
-    if not image or len(image) > 2048 or any(ord(c) < 32 for c in image):
+    image = _resolve_artwork(player_id, ref)
+    if len(image) > 2048 or any(ord(c) < 32 for c in image):
         raise HTTPException(422, "Invalid Kodi image reference.")
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     config = player["config"]
@@ -136,7 +176,7 @@ async def remote_artwork(player_id: str, image: str, request: Request, _=Depends
     try:
         async with httpx.AsyncClient(timeout=8, auth=credentials, trust_env=False,
                                      follow_redirects=False) as client:
-            result = await client.get(f"{base}/image/{quote(image, safe='')}")
+            result = await client.get(f"{base}/image/{_kodi_artwork_path(image)}")
             result.raise_for_status()
             mime = result.headers.get("Content-Type", "").split(";")[0].strip().lower()
             if mime not in ("image/jpeg", "image/png", "image/webp", "image/gif") or len(result.content) > 8_000_000:
