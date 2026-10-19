@@ -39,6 +39,7 @@ class KodiRemote {
         </div>
         <section id="remote-now" class="remote-panel">
           <img id="remote-art" alt="" hidden>
+          <p id="remote-art-error" class="remote-art-error" role="status" hidden></p>
           <h3 id="remote-title">Aucune lecture</h3>
           <p id="remote-subtitle"></p>
           <input id="remote-seek" aria-label="Position de lecture" type="range" min="0" max="100" step=".1" value="0">
@@ -73,6 +74,17 @@ class KodiRemote {
       </dialog>`);
     this.indicator=document.getElementById('kodi-remote-indicator');
     this.dialog=document.getElementById('kodi-remote-dialog');
+    const cover=document.getElementById('remote-art');
+    const coverError=document.getElementById('remote-art-error');
+    cover.addEventListener('load',()=>{
+      coverError.hidden=true;
+      coverError.textContent='';
+    });
+    cover.addEventListener('error',()=>{
+      cover.hidden=true;
+      coverError.hidden=false;
+      coverError.textContent='Artwork Kodi inaccessible (consulter les logs du serveur).';
+    });
     const select=document.getElementById('remote-player');
     select.innerHTML=this.players.map(p=>`<option value="${safe(p.id)}">⚪ ${safe(p.name)}</option>`).join('');
     const saved=localStorage.getItem(this.storageKey);
@@ -285,7 +297,14 @@ class KodiRemote {
     document.getElementById('remote-subtitle').textContent=active?[s.show_title,s.season!=null&&s.episode!=null?`S${s.season} E${s.episode}`:''].filter(Boolean).join(' · '):'';
     const art=document.getElementById('remote-art');
     const src=active&&s.artwork?this.url(String(s.artwork).replace(/^\/+/,'')):'';
-    if(art.dataset.path!==src){art.dataset.path=src;art.removeAttribute('src');if(src)art.src=src;}
+    if(art.dataset.path!==src){
+      art.dataset.path=src;
+      const warning=document.getElementById('remote-art-error');
+      warning.hidden=true;
+      warning.textContent='';
+      art.removeAttribute('src');
+      if(src)art.src=src;
+    }
     art.hidden=!src;
     const seek=document.getElementById('remote-seek');
     if(!this.userSeeking)seek.value=String(Math.max(0,Math.min(100,Number(s.percentage)||0)));
