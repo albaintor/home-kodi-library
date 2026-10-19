@@ -198,6 +198,7 @@ const EN = {
   "Rechercher une bande-annonce sur YouTube": "Search for a trailer on YouTube",
   "Choisir une bande-annonce parmi": "Choose one of",
   "Casting": "Cast",
+  "Rôle": "Role",
   "Réalisation": "Direction",
   "Scénario": "Writing",
   "Production": "Production",

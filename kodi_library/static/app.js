@@ -468,7 +468,7 @@ function openPlayback() {
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
   const roles=state.personSearch&&(item.matched_roles||[]).filter(role=>typeof role==='string'&&role.trim());
-  const credit=roles?.length?`<span class="matched-person-role" title="${esc(roles.join(' · '))}">Rôle : ${esc(roles.join(' · '))}</span>`:'';
+  const credit=roles?.length?`<span class="matched-person-role" title="${esc(roles.join(' · '))}">${esc(tr('Rôle'))} : ${esc(roles.join(' · '))}</span>`:'';
   return `<button class="media-card" data-media="${esc(item.id)}" aria-label="${esc(item.title)}, ${esc(watchDisplayLabel(item))}${roles?.length?', rôle : '+esc(roles.join(' · ')):''}">${poster(item)}<span><span class="card-title">${esc(item.title)}</span>${credit}<span class="card-meta">${meta.map(v=>`<span>${esc(v)}</span>`).join('<span aria-hidden="true">·</span>')}</span><span class="format-badges compact">${formatBadges(item.formats,true)}</span><span class="card-meta">${badges(item)}</span></span>${state.view==='list'?`<span class="list-status">${esc(watchDisplayLabel(item))}<br>${item.rating?`★ ${Number(item.rating).toFixed(1)} · `:''}${date(item.date_added)}</span>`:''}</button>`;
 }
 function attachImageFallbacks(root) { root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>img.classList.add('failed'),{once:true});}); }
@@ -481,6 +481,12 @@ function currentParams(offset=0) {
     if(state.personSearch.tmdbId)params.set('person_tmdb_id',state.personSearch.tmdbId);
     else if(state.personSearch.imdbId)params.set('person_imdb_id',state.personSearch.imdbId);
     params.set('person_name',state.personSearch.name);
+    if(!state.personSearch.tmdbId&&!state.personSearch.imdbId){
+      // Old servers ignore person_name without an identity; retain the
+      // original cast-name FTS fallback until the server is upgraded.
+      params.set('q',state.personSearch.name);
+      params.set('deep_search','true');
+    }
   }
   if(state.deepSearch) params.set('deep_search','true');
   if (state.recent) params.set('recent_days','30');
