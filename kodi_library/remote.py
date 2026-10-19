@@ -63,7 +63,18 @@ def _kodi_artwork_path(image: str) -> str:
 class RemoteAction(BaseModel):
     action: str = Field(pattern=r"^(up|down|left|right|select|back|home|context|info|osd|fullscreen|playpause|stop|next|previous|seek|subtitle_next|subtitle_off|subtitle_on|subtitle_select|audio_next|audio_select)$")
     percentage: float | None = Field(default=None, ge=0, le=100)
+    seconds: float | None = Field(default=None, ge=0, le=172800)
     index: int | None = Field(default=None, ge=0, le=999)
+
+
+def kodi_seek_time(position: float) -> dict[str, int]:
+    """JSON-RPC Player.Seek's absolute time, as in integration-kodi."""
+    millis = max(0, round(position * 1000))
+    seconds_total, milliseconds = divmod(millis, 1000)
+    hours, remainder = divmod(seconds_total, 3600)
+    minutes, secs = divmod(remainder, 60)
+    return {"hours": hours, "minutes": minutes, "seconds": secs,
+            "milliseconds": milliseconds}
 
 
 def seconds(value):
@@ -150,9 +161,16 @@ async def remote_command(player_id: str, action: RemoteAction, request: Request,
                 elif action.action in ("next", "previous"):
                     await rpc("Player.GoTo", {"playerid": pid, "to": action.action})
                 elif action.action == "seek":
-                    if action.percentage is None:
-                        raise HTTPException(422, "A percentage is required to seek.")
-                    await rpc("Player.Seek", {"playerid": pid, "value": action.percentage})
+                    if action.seconds is not None:
+                        # Time-based seek mirrors integration-kodi and avoids
+                        # percentage/duration rounding or incorrectly naked
+                        # numbers in the JSON-RPC value parameter.
+                        seek_value = {"time": kodi_seek_time(action.seconds)}
+                    elif action.percentage is not None:
+                        seek_value = {"percentage": action.percentage}
+                    else:
+                        raise HTTPException(422, "A position or percentage is required to seek.")
+                    await rpc("Player.Seek", {"playerid": pid, "value": seek_value})
                 elif action.action in ("audio_next", "audio_select"):
                     if action.action == "audio_select" and action.index is None:
                         raise HTTPException(422, "An audio stream index is required.")
