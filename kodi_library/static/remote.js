@@ -248,7 +248,7 @@ class KodiRemote {
     document.getElementById('remote-title').textContent=active?s.title||'Lecture Kodi':'Aucune lecture en cours';
     document.getElementById('remote-subtitle').textContent=active?[s.show_title,s.season!=null&&s.episode!=null?`S${s.season} E${s.episode}`:''].filter(Boolean).join(' · '):'';
     const art=document.getElementById('remote-art');
-    const src=active&&s.artwork?this.url(s.artwork):'';
+    const src=active&&s.artwork?this.url(String(s.artwork).replace(/^\\/+/,'')):'';
     if(art.dataset.path!==src){art.dataset.path=src;art.removeAttribute('src');if(src)art.src=src;}
     art.hidden=!src;
     const seek=document.getElementById('remote-seek');
