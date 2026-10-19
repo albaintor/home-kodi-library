@@ -234,44 +234,87 @@ async def remote_events(socket: WebSocket, player_id: str):
     protocol = "wss" if config.get("tls") else "ws"
     ws_url = f"{protocol}://{host}:{config.get('websocket_port', 9090)}/jsonrpc"
     credentials = aiohttp.BasicAuth(config["username"], config.get("password") or "") if config.get("username") else None
+    # The HTTP JSON-RPC connection and Kodi's TCP WebSocket service are
+    # independent. A disabled/blocked port 9090 must NEVER make a working
+    # HTTP-controlled Kodi look offline. Continue polling playback via HTTP
+    # while retrying the notification subscription.
+    upstream = None
+    notification_task = None
+    next_retry = 0.0
+    retry_delay = 2.0
+    last_state = None
+    last_heartbeat = time.monotonic()
     try:
-        async with aiohttp.ClientSession(trust_env=False, timeout=aiohttp.ClientTimeout(total=8)) as session:
+        async with aiohttp.ClientSession(
+            trust_env=False, timeout=aiohttp.ClientTimeout(total=None, sock_connect=5)
+        ) as session:
             while True:
+                if upstream is None and time.monotonic() >= next_retry:
+                    try:
+                        upstream = await session.ws_connect(
+                            ws_url,
+                            auth=credentials,
+                            heartbeat=20,
+                            timeout=aiohttp.ClientWSTimeout(ws_receive=None, ws_close=3),
+                        )
+                        notification_task = asyncio.create_task(upstream.receive())
+                        retry_delay = 2.0
+                        LOG.info("Kodi notifications connected for player %s", player_id)
+                    except (aiohttp.ClientError, TimeoutError, OSError, ValueError) as exc:
+                        LOG.warning("Kodi notifications unavailable for player %s (%s); "
+                                    "using HTTP state polling", player_id, type(exc).__name__)
+                        next_retry = time.monotonic() + retry_delay
+                        retry_delay = min(30.0, retry_delay * 1.7)
+
+                # Independent playback snapshot, including initial connection
+                # and time changes when Kodi emits no position notifications.
                 try:
-                    async with session.ws_connect(ws_url, auth=credentials, heartbeat=20, timeout=aiohttp.ClientWSTimeout(ws_close=5)) as upstream:
-                        last = None
-                        last_heartbeat = time.monotonic()
-                        # Do not cancel receive() on every position tick: aiohttp
-                        # treats receive cancellation as an abnormal WS closure.
-                        pending_notification = asyncio.create_task(upstream.receive())
+                    state = await asyncio.wait_for(current_state(player), timeout=8)
+                    # A websocket transport error is NOT an offline player.
+                    state["websocket_connected"] = upstream is not None
+                    if state != last_state:
+                        await socket.send_json({"type": "state", "state": state})
+                        last_state = state
+                except (ConnectorError, httpx.HTTPError, TimeoutError, OSError) as exc:
+                    LOG.warning("Kodi HTTP state unavailable for player %s: %s",
+                                player_id, type(exc).__name__)
+                    offline = {"type": "offline", "message": "Kodi HTTP JSON-RPC unavailable."}
+                    if last_state != offline:
+                        await socket.send_json(offline)
+                        last_state = offline
+
+                if time.monotonic() - last_heartbeat >= 15:
+                    await socket.send_json({"type": "heartbeat"})
+                    last_heartbeat = time.monotonic()
+
+                wait = 2.0 if last_state and last_state.get("active") else 5.0
+                if notification_task is not None:
+                    done, _ = await asyncio.wait({notification_task}, timeout=wait)
+                    if done:
                         try:
-                            while True:
-                                state = await current_state(player)
-                                if state != last:
-                                    await socket.send_json({"type": "state", "state": state})
-                                    last = state
-                                if time.monotonic() - last_heartbeat >= 20:
-                                    await socket.send_json({"type": "heartbeat"})
-                                    last_heartbeat = time.monotonic()
-                                interval = 2 if state.get("active") else 8
-                                done, _ = await asyncio.wait(
-                                    {pending_notification}, timeout=interval
-                                )
-                                if done:
-                                    message = pending_notification.result()
-                                    if message.type in (
-                                        aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
-                                        aiohttp.WSMsgType.ERROR
-                                    ):
-                                        break
-                                    pending_notification = asyncio.create_task(upstream.receive())
-                        finally:
-                            pending_notification.cancel()
-                            await asyncio.gather(pending_notification, return_exceptions=True)
-                    await socket.send_json({"type": "offline", "message": "Kodi WebSocket disconnected."})
-                except (aiohttp.ClientError, ConnectorError, asyncio.TimeoutError, OSError) as exc:
-                    LOG.info("Kodi remote events unavailable for %s: %s", player_id, type(exc).__name__)
-                    await socket.send_json({"type": "offline", "message": "Kodi unavailable."})
-                await asyncio.sleep(4)
+                            message = notification_task.result()
+                        except (aiohttp.ClientError, RuntimeError, OSError):
+                            message = None
+                        if message is None or message.type in (
+                            aiohttp.WSMsgType.CLOSE, aiohttp.WSMsgType.CLOSED,
+                            aiohttp.WSMsgType.ERROR
+                        ):
+                            notification_task = None
+                            await upstream.close()
+                            upstream = None
+                            next_retry = time.monotonic() + retry_delay
+                            retry_delay = min(30.0, retry_delay * 1.7)
+                        else:
+                            # Subscribed automatically to Player.OnPlay/OnPause,
+                            # OnStop/OnSeek etc. by the Kodi JSON-RPC WS service.
+                            notification_task = asyncio.create_task(upstream.receive())
+                else:
+                    await asyncio.sleep(wait)
     except (WebSocketDisconnect, RuntimeError, OSError):
         return
+    finally:
+        if notification_task is not None:
+            notification_task.cancel()
+            await asyncio.gather(notification_task, return_exceptions=True)
+        if upstream is not None:
+            await upstream.close()
