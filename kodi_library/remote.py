@@ -9,7 +9,7 @@ import logging
 import secrets
 import time
 from collections import OrderedDict
-from urllib.parse import quote_plus, quote, urlsplit
+from urllib.parse import quote_plus, quote, urlparse, urlsplit
 
 import aiohttp
 import httpx
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, WebSoc
 from pydantic import BaseModel, Field
 from starlette.websockets import WebSocketDisconnect
 
+from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, authenticated, secure_equal, writable
 from .connectors.base import ConnectorError
 from .players import connection, endpoint
@@ -31,18 +32,35 @@ _ARTWORK_MAX = 512
 _ARTWORK_TTL = 3600
 
 
-def _remember_artwork(player_id: str, kodi_image: str) -> str:
+def _artwork_sources(media: dict) -> list[str]:
+    """Kodi's art fields take priority over thumbnail, as in integration-kodi."""
+    art = media.get("art") or {}
+    if not isinstance(art, dict):
+        art = {}
+    candidates = (
+        art.get("poster"), art.get("thumb"), art.get("fanart"),
+        media.get("fanart"), media.get("thumbnail"),
+    )
+    return list(dict.fromkeys(
+        value for value in candidates if isinstance(value, str) and value.strip()
+    ))
+
+
+def _remember_artwork(player_id: str, kodi_image: str | list[str]) -> str:
+    candidates = (kodi_image,) if isinstance(kodi_image, str) else tuple(kodi_image)
+    if not candidates:
+        raise ValueError("Artwork reference requires at least one image.")
     key = (player_id, hmac.new(
-        _ARTWORK_SECRET, (player_id + "\0" + kodi_image).encode("utf-8"),
+        _ARTWORK_SECRET, (player_id + "\0" + "\0".join(candidates)).encode("utf-8"),
         hashlib.sha256).hexdigest())
-    _ARTWORK_REFS[key] = (kodi_image, time.monotonic() + _ARTWORK_TTL)
+    _ARTWORK_REFS[key] = (candidates, time.monotonic() + _ARTWORK_TTL)
     _ARTWORK_REFS.move_to_end(key)
     while len(_ARTWORK_REFS) > _ARTWORK_MAX:
         _ARTWORK_REFS.popitem(last=False)
     return f"/api/v1/players/{player_id}/artwork?ref={key[1]}"
 
 
-def _resolve_artwork(player_id: str, ref: str) -> str:
+def _resolve_artwork_candidates(player_id: str, ref: str) -> tuple[str, ...]:
     if len(ref) != 64 or any(c not in "0123456789abcdef" for c in ref):
         raise HTTPException(404, "Unknown Kodi artwork.")
     item = _ARTWORK_REFS.get((player_id, ref))
@@ -51,13 +69,39 @@ def _resolve_artwork(player_id: str, ref: str) -> str:
     return item[0]
 
 
-def _kodi_artwork_path(image: str) -> str:
-    # Identical to integration-kodi's thumbnail_url() for image:// references.
-    # Raw file paths need Kodi's double-encoded image:// wrapper.
-    if image.startswith("image://"):
-        return quote_plus(image)
-    return quote(f"image://{quote(image, safe='')}/", safe="")
+def _resolve_artwork(player_id: str, ref: str) -> str:
+    """Compatibility helper for a single artwork reference."""
+    return _resolve_artwork_candidates(player_id, ref)[0]
 
+
+def _kodi_artwork_path(image: str) -> str:
+    """Match integration-kodi's two different image URL encoders exactly.
+
+    Kodi.thumbnail_url: quote_plus(existing image:// URI).
+    Kodi.get_thumbnail_from_file: quote(path) -> image://.../ -> quote again.
+    """
+    if urlparse(image).scheme.lower() == "image":
+        return quote_plus(image)
+    encoded = quote(image, safe="")
+    image_url = f"image://{encoded}/"
+    return quote(image_url, safe="")
+
+
+def _kodi_artwork_url(config: dict, image: str) -> str:
+    """Construct the same credential-encoded /image URL as integration-kodi.
+
+    This URL only exists server-side. Clients receive opaque artwork refs.
+    Never log this full URL: it contains the Kodi HTTP credentials.
+    """
+    address = urlsplit(endpoint(config).removesuffix("/jsonrpc"))
+    user = config.get("username")
+    auth = ""
+    if user is not None:
+        auth = (
+            f"{quote(str(user), safe='')}:"
+            f"{quote(str(config.get('password') or ''), safe='')}@"
+        )
+    return f"{address.scheme}://{auth}{address.netloc}/image/{_kodi_artwork_path(image)}"
 
 
 class RemoteAction(BaseModel):
@@ -97,17 +141,16 @@ async def current_state(player):
                 "time", "totaltime", "speed", "percentage", "audiostreams",
                 "currentaudiostream", "subtitles", "currentsubtitle", "subtitleenabled"]}),
             rpc("Player.GetItem", {"playerid": pid, "properties": [
-                "title", "showtitle", "season", "episode", "thumbnail", "art", "file"]}),
+                "title", "showtitle", "season", "episode", "thumbnail", "fanart", "art", "file"]}),
         )
         media = item.get("item", {})
-        art = media.get("art") or {}
-        image = media.get("thumbnail") or art.get("thumb") or art.get("poster") or art.get("fanart")
+        images = _artwork_sources(media)
         return {
             "active": True, "player_id": pid, "type": active.get("type"),
             "title": media.get("title") or media.get("label") or "",
             "show_title": media.get("showtitle") or "",
             "season": media.get("season"), "episode": media.get("episode"),
-            "artwork": _remember_artwork(player['id'], image) if image else None,
+            "artwork": _remember_artwork(player['id'], images) if images else None,
             "position": seconds(props.get("time")), "duration": seconds(props.get("totaltime")),
             "percentage": props.get("percentage", 0), "paused": props.get("speed", 0) == 0,
             "speed": props.get("speed", 0),
@@ -191,23 +234,45 @@ async def remote_command(player_id: str, action: RemoteAction, request: Request,
 @router.get("/{player_id}/artwork")
 async def remote_artwork(player_id: str, ref: str, request: Request, _=Depends(authenticated)):
     player = lookup(request, player_id)
-    image = _resolve_artwork(player_id, ref)
-    if len(image) > 2048 or any(ord(c) < 32 for c in image):
-        raise HTTPException(422, "Invalid Kodi image reference.")
-    base = endpoint(player["config"]).removesuffix("/jsonrpc")
-    config = player["config"]
-    credentials = (config["username"], config.get("password") or "") if config.get("username") else None
-    try:
-        async with httpx.AsyncClient(timeout=8, auth=credentials, trust_env=False,
-                                     follow_redirects=False) as client:
-            result = await client.get(f"{base}/image/{_kodi_artwork_path(image)}")
-            result.raise_for_status()
-            mime = result.headers.get("Content-Type", "").split(";")[0].strip().lower()
-            if mime not in ("image/jpeg", "image/png", "image/webp", "image/gif") or len(result.content) > 8_000_000:
-                raise HTTPException(502, "Invalid or oversized Kodi artwork.")
-            return Response(content=result.content, media_type=mime, headers={"Cache-Control": "private, max-age=30"})
-    except httpx.HTTPError as exc:
-        raise HTTPException(502, "Cannot retrieve artwork from Kodi.") from exc
+    sources = _resolve_artwork_candidates(player_id, ref)
+    last_failure = "unknown error"
+    # HTTPX resolves the percent-escaped user:pass@host exactly as the
+    # integration-kodi image URL and emits the corresponding Basic Auth header.
+    # All credentials remain in the server, never in the web/iOS URL.
+    async with httpx.AsyncClient(
+        timeout=8, trust_env=False, follow_redirects=False
+    ) as client:
+        for image in sources:
+            if len(image) > 2048 or any(ord(c) < 32 for c in image):
+                last_failure = "invalid artwork reference"
+                continue
+            try:
+                response = await client.get(_kodi_artwork_url(player["config"], image))
+            except (httpx.HTTPError, ValueError) as exc:
+                last_failure = f"HTTP transport {type(exc).__name__}"
+                continue
+            if response.status_code != 200:
+                last_failure = f"Kodi returned HTTP {response.status_code}"
+                continue
+            content = response.content
+            if len(content) > 16_000_000:
+                last_failure = "Kodi image too large"
+                continue
+            try:
+                mime = Artwork._image_type(content)
+            except ArtworkError:
+                # Kodi and some reverse proxies send application/octet-stream
+                # even for images. Identify by bytes rather than trusting MIME.
+                last_failure = "Kodi returned unsupported image bytes"
+                continue
+            return Response(content=content, media_type=mime, headers={
+                "Cache-Control": "private, max-age=300",
+                "X-Content-Type-Options": "nosniff",
+            })
+    # Do not log the image URL: filenames and image:// references can carry
+    # embedded SMB authentication credentials.
+    LOG.warning("Kodi artwork unavailable for player %s: %s", player_id, last_failure)
+    raise HTTPException(502, f"Kodi artwork unavailable: {last_failure}.")
 
 
 def websocket_authorized(socket: WebSocket):
