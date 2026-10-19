@@ -1020,6 +1020,80 @@ class Store:
             for row in rows
         ]
 
+    @staticmethod
+    def _matched_person_roles(
+        conn: sqlite3.Connection,
+        work_ids: list[str],
+        *,
+        person_name: str | None,
+        person_tmdb_id: str | None,
+        person_imdb_id: str | None,
+    ) -> dict[str, list[str]]:
+        """Extract credits for one person in a page, without N detail queries.
+
+        Work-person identity and name matching follow the same rules as the
+        indexed search. Credits without an ID are eligible only when no
+        same-name credit claims an incompatible ID on this title.
+        """
+        if not work_ids:
+            return {}
+        normalized = fold(person_name.strip()) if person_name else ""
+        namespace = "tmdb_id" if person_tmdb_id is not None else (
+            "imdb_id" if person_imdb_id is not None else None
+        )
+        identity = person_tmdb_id if person_tmdb_id is not None else person_imdb_id
+        credits: dict[str, list[dict]] = defaultdict(list)
+        placeholders = ",".join("?" for _ in work_ids)
+        for row in conn.execute(
+            f"SELECT work_id,payload FROM records WHERE work_id IN ({placeholders})",
+            work_ids,
+        ):
+            metadata = json.loads(row["payload"]).get("metadata") or {}
+            if not isinstance(metadata, dict):
+                continue
+            for field in ("people", "cast"):
+                members = metadata.get(field)
+                if isinstance(members, list):
+                    credits[row["work_id"]].extend(
+                        person for person in members if isinstance(person, dict)
+                    )
+        for row in conn.execute(
+            f"SELECT work_id,payload FROM enrichment WHERE work_id IN ({placeholders})",
+            work_ids,
+        ):
+            members = json.loads(row["payload"]).get("people")
+            if isinstance(members, list):
+                credits[row["work_id"]].extend(
+                    person for person in members if isinstance(person, dict)
+                )
+
+        results = {}
+        for work_id, members in credits.items():
+            conflict = bool(namespace and normalized and any(
+                fold(member.get("name", "")) == normalized
+                and str(member.get(namespace) or "") not in ("", identity)
+                for member in members if isinstance(member.get("name"), str)
+            ))
+            roles = []
+            for member in members:
+                name = member.get("name")
+                if not isinstance(name, str):
+                    continue
+                named = bool(normalized and fold(name.strip()) == normalized)
+                if namespace:
+                    known = str(member.get(namespace) or "")
+                    matched = known == identity or (named and not known and not conflict)
+                else:
+                    matched = named
+                if not matched:
+                    continue
+                role = member.get("role")
+                if isinstance(role, str) and role.strip() and role.strip() not in roles:
+                    roles.append(role.strip())
+            if roles:
+                results[work_id] = roles
+        return results
+
     def media(
         self,
         *,
@@ -1076,6 +1150,12 @@ class Store:
                     "WHERE namespace=? AND person_id=?)"
                 )
                 params.extend((namespace, identity))
+        elif person_name and person_name.strip():
+            # Name-only cast searches should not match unrelated plot/title text.
+            clauses.append(
+                "w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)"
+            )
+            params.append(fold(person_name.strip()))
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
             index = "works_fts" if deep_search else "works_title_fts"
@@ -1155,8 +1235,18 @@ class Store:
                 + f" ORDER BY w.{column} IS NULL,w.{column} {order},w.id ASC LIMIT ? OFFSET ?",
                 (*params, limit, offset),
             ).fetchall()
+            items = self._summaries_with_sources(conn, rows)
+            if person_name or person_tmdb_id or person_imdb_id:
+                roles = self._matched_person_roles(
+                    conn, [row["id"] for row in rows],
+                    person_name=person_name,
+                    person_tmdb_id=person_tmdb_id,
+                    person_imdb_id=person_imdb_id,
+                )
+                for item in items:
+                    item["matched_roles"] = roles.get(item["id"], [])
             return {
-                "items": self._summaries_with_sources(conn, rows),
+                "items": items,
                 "total": total,
                 "limit": limit,
                 "offset": offset,

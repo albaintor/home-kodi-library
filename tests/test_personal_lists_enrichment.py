@@ -529,3 +529,79 @@ def test_person_imdb_id_matches_unidentified_local_credits(client, admin):
         "IMDb identified",
         "IMDb local credit",
     }
+
+
+def test_local_person_roles_across_sources_and_identifiers(client, admin):
+    """Cast search returns real character credits, never roles of homonyms."""
+    store = client.app.state.store
+    source = store.save_source({"name": "Kodi actors", "type": "kodi"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "levi",
+                "tvshow",
+                "Chuck",
+                metadata={"people": [
+                    {"name": "Zachary Levi", "tmdb_id": "101", "role": "Chuck Bartowski"}
+                ]},
+            ),
+            Record(
+                "unidentified",
+                "movie",
+                "Local credit",
+                metadata={"cast": [{"name": "Zachary Levi", "role": "Flynn Rider"}]},
+            ),
+            Record(
+                "homonym",
+                "movie",
+                "Other actor",
+                metadata={"people": [
+                    {"name": "Zachary Levi", "tmdb_id": "202", "role": "Not his character"}
+                ]},
+            ),
+            Record(
+                "plot",
+                "movie",
+                "Unrelated title",
+                plot="Zachary Levi is mentioned but not in the credits.",
+            ),
+            Record("enriched", "movie", "TMDB character"),
+            Record(
+                "crew",
+                "movie",
+                "Behind the scenes",
+                metadata={"people": [
+                    {"name": "Zachary Levi", "imdb_id": "nm123", "category": "director", "role": "Director"}
+                ]},
+            ),
+        ],
+    )
+    indexed = {item["title"]: item["id"] for item in store.media()["items"]}
+    store.save_enrichment(
+        indexed["TMDB character"],
+        {"people": [{"name": "Zachary Levi", "tmdb_id": "101", "role": "Narrator"}]},
+    )
+    response = client.get(
+        "/api/v1/media",
+        params={"person_name": "Zachary Levi", "person_tmdb_id": "101"},
+        headers=admin,
+    )
+    assert response.status_code == 200, response.text
+    rows = {item["title"]: item["matched_roles"] for item in response.json()["items"]}
+    assert rows["Chuck"] == ["Chuck Bartowski"]
+    assert rows["Local credit"] == ["Flynn Rider"]
+    assert rows["TMDB character"] == ["Narrator"]
+    assert "Other actor" not in rows
+    assert "Unrelated title" not in rows
+    page = client.get(
+        "/api/v1/media", params={"person_name": "Zachary Levi"}, headers=admin
+    )
+    assert page.status_code == 200
+    by_title = {item["title"]: item["matched_roles"] for item in page.json()["items"]}
+    assert by_title["Other actor"] == ["Not his character"]
+    assert by_title["Behind the scenes"] == ["Director"]
+    assert "Unrelated title" not in by_title
+    # Ordinary catalogue pages must not load or invent role metadata.
+    ordinary = client.get("/api/v1/media", headers=admin).json()["items"]
+    assert all(item["matched_roles"] == [] for item in ordinary)

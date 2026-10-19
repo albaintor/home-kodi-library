@@ -147,6 +147,9 @@ class MediaSummary(BaseModel):
     collections: list[str] = Field(default_factory=list)
     source_types: list[str] = Field(default_factory=list)
     media_sources: list[MediaSource] = Field(default_factory=list)
+    # Filled only for a local cast/crew search; omitted roles mean no known
+    # character/job, not that the person has no credit for the title.
+    matched_roles: list[str] = Field(default_factory=list)
     artwork: ArtworkLinks
 
 
