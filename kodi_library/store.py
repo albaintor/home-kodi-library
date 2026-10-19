@@ -1915,7 +1915,8 @@ class Store:
         """Last upstream result per source, overlaid with unresolved pending changes."""
         with self.connect() as conn:
             query = (
-                "SELECT a.* FROM writeback_audit a "
+                "SELECT a.*,w.title AS media_title FROM writeback_audit a "
+                "LEFT JOIN works w ON w.id=a.work_id "
                 + ("WHERE a.work_id=? " if work_id else "")
                 + "ORDER BY a.created_at DESC,a.rowid DESC LIMIT ?"
             )
@@ -1927,6 +1928,7 @@ class Store:
                 if key not in latest:
                     latest[key] = {
                         "media_id": row["work_id"],
+                        "media_title": row["media_title"],
                         "source_id": row["source_id"],
                         "source_name": row["source_name"],
                         "source_type": row["source_type"],
@@ -1938,8 +1940,10 @@ class Store:
                         "message": row["message"],
                     }
             pending_rows = conn.execute(
-                "SELECT p.*,s.type AS source_type,s.name AS source_name "
-                "FROM writeback_pending p JOIN sources s ON s.id=p.source_id "
+                "SELECT p.*,s.type AS source_type,s.name AS source_name,"
+                "w.title AS media_title FROM writeback_pending p "
+                "JOIN sources s ON s.id=p.source_id "
+                "LEFT JOIN works w ON w.id=p.work_id "
                 + ("WHERE p.work_id=?" if work_id else ""),
                 (work_id,) if work_id else (),
             ).fetchall()
@@ -1947,6 +1951,8 @@ class Store:
                 key = (row["work_id"], row["source_id"])
                 last = latest.get(key, {})
                 latest[key] = {
+                    "media_id": row["work_id"],
+                    "media_title": row["media_title"],
                     "source_id": row["source_id"],
                     "source_name": row["source_name"],
                     "source_type": row["source_type"],
@@ -2022,8 +2028,9 @@ class Store:
         column = "work_id" if work_id else "source_id"
         with self.connect() as conn:
             rows = conn.execute(
-                f"SELECT * FROM writeback_audit WHERE {column}=? "
-                "ORDER BY created_at DESC,rowid DESC LIMIT ?",
+                f"SELECT a.*,w.title AS media_title FROM writeback_audit a "
+                f"LEFT JOIN works w ON w.id=a.work_id WHERE a.{column}=? "
+                "ORDER BY a.created_at DESC,a.rowid DESC LIMIT ?",
                 (work_id or source_id, min(max(1, limit), 200)),
             ).fetchall()
             return [

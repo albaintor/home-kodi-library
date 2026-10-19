@@ -215,6 +215,7 @@ class WritebackResult(BaseModel):
 
 class SourceWritebackState(BaseModel):
     media_id: str | None = None
+    media_title: str | None = None
     source_id: str
     source_name: str
     source_type: str
