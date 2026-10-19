@@ -17,7 +17,7 @@ class KodiRemote {
     this.storageKey='media_catalog.remote.player:'+new URL('.',location.href).pathname;
   }
   async start() {
-    try { this.players=await this.api('players'); } catch { return; }
+    try { this.players=await this.api('players'); } catch { this.players=[]; }
     if(this.closed) return;
     document.getElementById('kodi-remote-indicator')?.remove();
     document.getElementById('kodi-remote-dialog')?.remove();
