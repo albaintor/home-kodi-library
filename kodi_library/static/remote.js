@@ -12,8 +12,8 @@ export async function startKodiRemote({api, url, role}) {
 class KodiRemote {
   constructor(api, url, role) {
     this.api=api; this.url=url; this.role=role; this.players=[]; this.player=null;
-    this.state={active:false}; this.socket=null; this.timer=null; this.closed=false;
-    this.retry=1500; this.page=0; this.connected=false;
+    this.state={active:false}; this.sockets=new Map(); this.timers=new Map(); this.states=new Map(); this.closed=false; this.manualSelection=false;
+    this.page=0;
     this.storageKey='media_catalog.remote.player:'+new URL('.',location.href).pathname;
   }
   async start() {
@@ -27,7 +27,7 @@ class KodiRemote {
       <dialog id="kodi-remote-dialog" class="remote-dialog" aria-labelledby="remote-heading">
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
         <label class="remote-player-label">Lecteur <select id="remote-player"></select></label>
-        <p id="remote-connection" class="remote-connection" role="status"></p>
+        <p id="remote-connection" class="remote-connection" role="status"></p><div id="remote-playing-options" class="remote-playing-options" hidden></div>
         <div class="remote-tabs" role="tablist">
           <button id="remote-tab-now" type="button" aria-selected="true" role="tab">Lecture en cours</button>
           <button id="remote-tab-controls" type="button" aria-selected="false" role="tab">Contrôles</button>
@@ -69,7 +69,7 @@ class KodiRemote {
     const saved=localStorage.getItem(this.storageKey);
     this.player=this.players.find(p=>p.id===saved)||this.players[0];
     select.value=this.player.id;
-    select.addEventListener('change',()=>{this.player=this.players.find(p=>p.id===select.value);localStorage.setItem(this.storageKey,this.player.id);this.switchPlayer();});
+    select.addEventListener('change',()=>{this.manualSelection=true;this.player=this.players.find(p=>p.id===select.value);localStorage.setItem(this.storageKey,this.player.id);this.switchPlayer();});
     this.indicator.addEventListener('click',()=>this.dialog.showModal());
     document.getElementById('remote-close').addEventListener('click',()=>this.dialog.close());
     document.getElementById('remote-tab-now').addEventListener('click',()=>this.showPage(0));
@@ -80,14 +80,15 @@ class KodiRemote {
     });
     document.getElementById('remote-seek').addEventListener('change',e=>this.command('seek',Number(e.target.value)));
     this.showPage(0);
-    // Select an already playing Kodi when no previous player was explicitly chosen.
-    if(!saved && this.players.length>1) {
-      for(const p of this.players) {
-        try { const state=await this.api(`players/${p.id}/remote`); if(state.active) {this.player=p;select.value=p.id;break;} } catch {}
-      }
-    }
-    this.switchPlayer();
-    document.addEventListener('visibilitychange',this.onVisibility=()=>{if(!document.hidden && this.socket?.readyState!==WebSocket.OPEN) this.switchPlayer();});
+    this.manualSelection=!!saved;
+    await Promise.allSettled(this.players.map(async player=>{
+      try {this.states.set(player.id,await this.api(`players/${player.id}/remote`));} catch {}
+    }));
+    this.refreshChoices();
+    this.players.forEach(player=>this.openSocket(player));
+    document.addEventListener('visibilitychange',this.onVisibility=()=>{
+      if(!document.hidden) this.players.forEach(p=>{if(this.sockets.get(p.id)?.readyState!==WebSocket.OPEN)this.openSocket(p);});
+    });
   }
   showPage(page) {
     this.page=page;
@@ -97,41 +98,71 @@ class KodiRemote {
     document.getElementById('remote-tab-controls').setAttribute('aria-selected',String(page===1));
   }
   switchPlayer() {
-    clearTimeout(this.timer);
-    if(this.socket) {this.socket.onclose=null;this.socket.close();this.socket=null;}
-    this.connected=false; this.retry=1500; this.render({active:false});
-    this.openSocket();
+    this.render(this.states.get(this.player?.id)||{active:false});
+    this.refreshChoices();
   }
-  openSocket() {
-    if(this.closed || !this.player) return;
-    const selected=this.player.id;
-    const http=this.url(`api/v1/players/${selected}/events`);
-    const endpoint=http.replace(/^http/i,'ws');
+  refreshChoices() {
+    const active=this.players.filter(p=>this.states.get(p.id)?.active);
+    if(active.length===1 && !this.manualSelection) {
+      this.player=active[0];
+      document.getElementById('remote-player').value=this.player.id;
+      this.render(this.states.get(this.player.id));
+    }
+    const choices=document.getElementById('remote-playing-options');
+    if(!choices)return;
+    choices.hidden=active.length<2;
+    choices.innerHTML=active.length<2?'':`<strong>Plusieurs lectures en cours : choisissez Kodi</strong>`+
+      active.map(p=>`<button type="button" data-select-kodi="${safe(p.id)}" class="${p.id===this.player?.id?'selected':''}">▶ ${safe(p.name)} · ${safe(this.states.get(p.id)?.title||'Lecture en cours')}</button>`).join('');
+    choices.querySelectorAll('[data-select-kodi]').forEach(button=>button.addEventListener('click',()=>{
+      this.manualSelection=true;
+      this.player=this.players.find(p=>p.id===button.dataset.selectKodi);
+      localStorage.setItem(this.storageKey,this.player.id);
+      document.getElementById('remote-player').value=this.player.id;
+      this.switchPlayer();
+    }));
+    this.indicator.textContent=active.length>1?`▶ ${active.length} Kodi`:
+      active.length===1?`▶ ${this.states.get(active[0].id)?.title||active[0].name}`:'◉ Kodi';
+    this.indicator.classList.toggle('playing',active.length>0);
+  }
+  openSocket(player) {
+    if(this.closed || !player || this.sockets.get(player.id)?.readyState===WebSocket.OPEN ||
+       this.sockets.get(player.id)?.readyState===WebSocket.CONNECTING) return;
+    clearTimeout(this.timers.get(player.id));
+    const target=this.url(`api/v1/players/${player.id}/events`).replace(/^http/i,'ws');
     try {
-      const ws=new WebSocket(endpoint);
-      this.socket=ws;
-      ws.onopen=()=>{if(this.socket!==ws)return;this.connected=true;this.retry=1500;this.setConnection('Connecté');};
+      const ws=new WebSocket(target);
+      this.sockets.set(player.id,ws);
+      ws.onopen=()=>{if(this.sockets.get(player.id)!==ws)return;if(this.player?.id===player.id)this.setConnection('Connecté');};
       ws.onmessage=event=>{
-        if(this.socket!==ws)return;
-        try{
-          const message=JSON.parse(event.data);
-          if(message.type==='state') {this.render(message.state);this.setConnection('Connecté');}
-          else if(message.type==='offline') {this.setConnection(message.message||'Kodi indisponible');this.render({active:false});}
+        if(this.sockets.get(player.id)!==ws)return;
+        try {
+          const msg=JSON.parse(event.data);
+          if(msg.type==='state'){
+            this.states.set(player.id,msg.state);
+            if(this.player?.id===player.id) {this.render(msg.state);this.setConnection('Connecté');}
+            this.refreshChoices();
+          } else if(msg.type==='offline'){
+            this.states.set(player.id,{active:false});
+            if(this.player?.id===player.id){this.setConnection('Kodi indisponible');this.render({active:false});}
+            this.refreshChoices();
+          }
         }catch{}
       };
-      ws.onclose=()=>{if(this.socket!==ws || this.closed)return;this.socket=null;this.connected=false;this.setConnection('Connexion interrompue');this.timer=setTimeout(()=>this.openSocket(),this.retry);this.retry=Math.min(this.retry*2,30000);};
+      ws.onclose=()=>{
+        if(this.sockets.get(player.id)!==ws||this.closed)return;
+        this.sockets.delete(player.id);
+        if(this.player?.id===player.id)this.setConnection('Connexion interrompue');
+        this.timers.set(player.id,setTimeout(()=>this.openSocket(player),5000));
+      };
       ws.onerror=()=>ws.close();
-    } catch {
-      this.setConnection('WebSocket indisponible');
-      this.timer=setTimeout(()=>this.openSocket(),this.retry);
+    }catch {
+      this.timers.set(player.id,setTimeout(()=>this.openSocket(player),5000));
     }
   }
   setConnection(message){const el=document.getElementById('remote-connection');if(el)el.textContent=message;}
   render(state) {
     this.state=state||{active:false};
     const s=this.state, active=!!s.active;
-    this.indicator.classList.toggle('playing',active);
-    this.indicator.textContent=active?`▶ ${s.title||'Kodi'}`:'◉ Kodi';
     document.getElementById('remote-title').textContent=active?s.title||'Lecture Kodi':'Aucune lecture en cours';
     document.getElementById('remote-subtitle').textContent=active?[s.show_title,s.season!=null&&s.episode!=null?`S${s.season} E${s.episode}`:''].filter(Boolean).join(' · '):'';
     const art=document.getElementById('remote-art');
@@ -160,8 +191,9 @@ class KodiRemote {
     catch(e){out.textContent=e.message;}
   }
   stop() {
-    this.closed=true;clearTimeout(this.timer);
-    if(this.socket){this.socket.onclose=null;this.socket.close();this.socket=null;}
+    this.closed=true;
+    this.timers.forEach(timer=>clearTimeout(timer));this.timers.clear();
+    this.sockets.forEach(socket=>{socket.onclose=null;socket.close();});this.sockets.clear();
     if(this.onVisibility)document.removeEventListener('visibilitychange',this.onVisibility);
     this.dialog?.remove();this.indicator?.remove();
   }
