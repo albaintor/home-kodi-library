@@ -394,3 +394,12 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
   .kodi-instance-row .connection-actions{justify-content:flex-start}
   .source-player-editor .connection-form{grid-template-columns:minmax(0,1fr);padding:12px}
 }
+
+
+/* Backup actions and bottom-aligned Kodi remote controls. */
+.backup-file-picker{display:inline-flex;align-items:center;cursor:pointer;padding:10px 14px;border:1px solid var(--border);border-radius:9px}
+.remote-connection-button{display:block;width:100%;text-align:left;font-size:12px;color:var(--muted);background:transparent;border:0;padding:5px 0 9px;cursor:pointer}
+.remote-connection-button:hover,.remote-connection-button:focus-visible{color:var(--accent)}
+.remote-dialog[open]{display:flex;flex-direction:column;height:min(90dvh,740px)}
+.remote-dialog .remote-panel:not([hidden]){margin-top:auto}
+.remote-dialog .remote-panel[hidden]{display:none}

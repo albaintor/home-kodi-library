@@ -33,7 +33,7 @@ class KodiRemote {
     document.body.insertAdjacentHTML('beforeend', `
       <dialog id="kodi-remote-dialog" class="remote-dialog" aria-labelledby="remote-heading">
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
-        <label class="remote-player-label">Lecteur <select id="remote-player"></select></label>
+        <label class="remote-player-label">Lecteur <select id="remote-player"></select></label><button id="remote-connection" class="remote-connection-button" type="button" title="Réessayer la connexion Kodi">Connexion en cours… ↻</button>
         <div id="remote-playing-options" class="remote-playing-options" hidden></div>
         <div class="remote-tabs" role="tablist">
           <button id="remote-tab-now" type="button" aria-selected="true" role="tab">Lecture en cours</button>
@@ -98,6 +98,7 @@ class KodiRemote {
     this.headerButton.addEventListener('click',this.open);
     this.indicator.addEventListener('click',this.open);
     document.getElementById('remote-close').addEventListener('click',()=>this.dialog.close());
+    document.getElementById('remote-connection').addEventListener('click',()=>this.reconnect());
     document.getElementById('remote-tab-now').addEventListener('click',()=>this.showPage(0));
     document.getElementById('remote-tab-controls').addEventListener('click',()=>this.showPage(1));
     this.dialog.addEventListener('click',e=>{
@@ -164,6 +165,19 @@ class KodiRemote {
     this.showPage(0);
     if(!this.dialog.open)this.dialog.showModal();
     return true;
+  }
+  async reconnect() {
+    const player=this.player;
+    if(!player)return;
+    const button=document.getElementById('remote-connection');
+    if(button)button.textContent='Reconnexion…';
+    await this.refreshPlayer(player);
+    const socket=this.sockets.get(player.id);
+    if(socket?.readyState!==WebSocket.OPEN) {
+      if(socket) {socket.onclose=null;socket.close();this.sockets.delete(player.id);}
+      this.openSocket(player);
+    }
+    this.setConnection();
   }
   async refreshPlayer(player) {
     if(this.closed || !player)return;
@@ -294,6 +308,14 @@ class KodiRemote {
       ready===false?'Kodi indisponible par HTTP JSON-RPC':
                     'Vérification de la connexion Kodi';
     select.setAttribute('aria-label',`Instance Kodi : ${select.title}`);
+    const indicator=document.getElementById('remote-connection');
+    if(indicator) {
+      indicator.textContent=!id?'Aucun lecteur configuré':
+        ready===true?'Connecté ↻':ready===false?'Déconnecté ↻':'Connexion en cours… ↻';
+      indicator.disabled=!id;
+      indicator.title=select.title+' · Toucher pour reconnecter';
+      indicator.setAttribute('aria-label',indicator.textContent+' · Reconnecter Kodi');
+    }
   }
 
   render(state) {
