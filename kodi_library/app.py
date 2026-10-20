@@ -28,8 +28,8 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
 from .artwork import Artwork, ArtworkError
-from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
+from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
 from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector

@@ -9,7 +9,7 @@ import logging
 import secrets
 import time
 from collections import OrderedDict
-from urllib.parse import quote_plus, quote, urlparse, urlsplit
+from urllib.parse import quote, quote_plus, urlparse, urlsplit
 
 import aiohttp
 import httpx

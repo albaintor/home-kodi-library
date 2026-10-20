@@ -3,15 +3,21 @@ import asyncio
 from urllib.parse import quote, quote_plus
 
 import httpx
-
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
 from kodi_library import remote
-from kodi_library.remote import (RemoteAction, _artwork_sources, _kodi_artwork_path,
-                                _kodi_artwork_url, _remember_artwork, _resolve_artwork,
-                                _resolve_artwork_candidates, seconds)
+from kodi_library.remote import (
+    RemoteAction,
+    _artwork_sources,
+    _kodi_artwork_path,
+    _kodi_artwork_url,
+    _remember_artwork,
+    _resolve_artwork,
+    _resolve_artwork_candidates,
+    seconds,
+)
 
 
 def test_image_scheme_encoding_matches_existing_integration():
