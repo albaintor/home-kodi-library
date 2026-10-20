@@ -137,6 +137,7 @@ class KodiRemote {
       } catch { this.httpConnected.set(player.id,false); }
     }));
     this.refreshChoices();
+    this.setConnection();
     this.players.forEach(player=>this.openSocket(player));
     // The HTTP endpoint remains authoritative even when the browser's WS
     // upgrade is blocked by a reverse proxy or fails after device sleep.
