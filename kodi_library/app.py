@@ -1,6 +1,7 @@
 """Versioned REST API consumed identically by the web UI and native clients."""
 
 import asyncio
+import json
 import logging
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -27,6 +28,7 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
 from .artwork import Artwork, ArtworkError
+from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
@@ -823,6 +825,43 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+
+
+    @app.get(
+        API + "/backup", tags=["Backup"], dependencies=[Depends(authenticated)],
+    )
+    def download_backup():
+        return export_backup(store)
+
+    @app.post(
+        API + "/backup", tags=["Backup"], dependencies=[Depends(writable)],
+    )
+    async def restore_backup(request: Request, background_tasks: BackgroundTasks):
+        if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
+            raise HTTPException(422, "A JSON backup is required.")
+        if request.headers.get("content-length", "").isdigit() and int(
+            request.headers["content-length"]
+        ) > MAX_BACKUP_BYTES:
+            raise HTTPException(413, "Backup exceeds 100 MiB.")
+        payload = await request.body()
+        if len(payload) > MAX_BACKUP_BYTES:
+            raise HTTPException(413, "Backup exceeds 100 MiB.")
+        try:
+            document = json.loads(payload)
+            async with personal_edit_lock:
+                previous, restored = await asyncio.to_thread(import_backup, store, document)
+        except (ValueError, UnicodeError) as exc:
+            raise HTTPException(422, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+        async def rebuild_thumbnails():
+            # Purge cached mosaics even if a restored list reuses the same revision.
+            ids = set(previous) | set(restored)
+            await asyncio.gather(*(thumbnails.delete(item) for item in ids))
+            await asyncio.gather(*(thumbnails.warm(item) for item in restored))
+        background_tasks.add_task(rebuild_thumbnails)
+        return {"status": "restored", "lists": len(restored), "media": len(document["tables"]["works"])}
 
     @app.get(
         API + "/lists",
