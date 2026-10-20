@@ -1,4 +1,5 @@
 """Kodi Remote: URI encoding, opaque credential handling, and safe commands."""
+
 import asyncio
 from urllib.parse import quote, quote_plus
 
@@ -61,14 +62,14 @@ def test_position_translation():
 
 def test_credentialed_artwork_url_matches_integration_kodi_exactly():
     config = {
-        "host": "kodi.local", "port": 8080, "tls": False,
-        "username": "user@home", "password": "sp ace:%!/",
+        "host": "kodi.local",
+        "port": 8080,
+        "tls": False,
+        "username": "user@home",
+        "password": "sp ace:%!/",
     }
     image = "image://smb%3a%2f%2fhost%2fMy%20film%20%26%20show.jpg/"
-    expected = (
-        "http://user%40home:sp%20ace%3A%25%21%2F@kodi.local:8080/image/"
-        + quote_plus(image)
-    )
+    expected = "http://user%40home:sp%20ace%3A%25%21%2F@kodi.local:8080/image/" + quote_plus(image)
     assert _kodi_artwork_url(config, image) == expected
     assert _kodi_artwork_path("smb://host/My film.jpg") == quote(
         "image://" + quote("smb://host/My film.jpg", safe="") + "/", safe=""
@@ -76,8 +77,10 @@ def test_credentialed_artwork_url_matches_integration_kodi_exactly():
 
 
 def test_kodi_art_prefers_art_over_thumbnail_and_keeps_fallbacks():
-    movie = {"art": {"poster": "image://poster/", "thumb": "image://thumb/"},
-             "thumbnail": "image://small/"}
+    movie = {
+        "art": {"poster": "image://poster/", "thumb": "image://thumb/"},
+        "thumbnail": "image://small/",
+    }
     sources = _artwork_sources(movie)
     assert sources == ["image://poster/", "image://thumb/", "image://small/"]
     link = _remember_artwork("example", sources)
@@ -86,24 +89,32 @@ def test_kodi_art_prefers_art_over_thumbnail_and_keeps_fallbacks():
 
 def test_kodi_artwork_retries_secondary_image_and_supports_octet_stream(monkeypatch):
     config = {
-        "host": "kodi.local", "port": 8080, "tls": False,
-        "username": "user@home", "password": "test:secret",
+        "host": "kodi.local",
+        "port": 8080,
+        "tls": False,
+        "username": "user@home",
+        "password": "test:secret",
     }
     images = ["image://invalid-first/", "image://working-second/"]
     ref = _remember_artwork("remote-player", images).split("ref=", 1)[1]
-    monkeypatch.setattr(remote, "lookup",
-                        lambda request, player_id: {"config": config})
+    monkeypatch.setattr(remote, "lookup", lambda request, player_id: {"config": config})
     seen = []
+
     def handler(request):
         seen.append((request.url.raw_path.decode(), request.headers.get("Authorization")))
         if "invalid-first" in request.url.raw_path.decode():
             return httpx.Response(404)
-        return httpx.Response(200, content=b"\x89PNG\r\n\x1a\n" + b"art",
-                              headers={"Content-Type": "application/octet-stream"})
+        return httpx.Response(
+            200,
+            content=b"\x89PNG\r\n\x1a\n" + b"art",
+            headers={"Content-Type": "application/octet-stream"},
+        )
+
     transport = httpx.MockTransport(handler)
     original_client = httpx.AsyncClient
-    monkeypatch.setattr(remote.httpx, "AsyncClient",
-                        lambda **kwargs: original_client(transport=transport, **kwargs))
+    monkeypatch.setattr(
+        remote.httpx, "AsyncClient", lambda **kwargs: original_client(transport=transport, **kwargs)
+    )
     result = asyncio.run(remote.remote_artwork("remote-player", ref, object()))
     assert result.status_code == 200
     assert result.media_type == "image/png"

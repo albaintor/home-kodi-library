@@ -12,9 +12,18 @@ MAX_BACKUP_BYTES = 100 * 1024 * 1024
 
 # Parent rows precede dependants; generated FTS and transient state are rebuilt.
 TABLES = (
-    "sources", "works", "records", "identifiers", "personal",
-    "enrichment", "lists", "list_items", "work_person_ids",
-    "work_person_names", "catalogue_meta", "players",
+    "sources",
+    "works",
+    "records",
+    "identifiers",
+    "personal",
+    "enrichment",
+    "lists",
+    "list_items",
+    "work_person_ids",
+    "work_person_names",
+    "catalogue_meta",
+    "players",
 )
 SECRETS = {"password", "remote_api_key", "api_key", "access_token", "token", "secret"}
 
@@ -25,7 +34,8 @@ def _without_secrets(config: str) -> str:
         raise ValueError("Invalid connection configuration.")
     return json.dumps(
         {key: ("" if key.lower() in SECRETS else item) for key, item in value.items()},
-        ensure_ascii=False, separators=(",", ":"),
+        ensure_ascii=False,
+        separators=(",", ":"),
     )
 
 
@@ -41,9 +51,12 @@ def export_backup(store) -> dict:
                     row["config"] = _without_secrets(row["config"])
             tables[table] = rows
         return {
-            "format": FORMAT, "version": FORMAT_VERSION,
-            "schema_version": SCHEMA_VERSION, "exported_at": now(),
-            "credentials_omitted": True, "tables": tables,
+            "format": FORMAT,
+            "version": FORMAT_VERSION,
+            "schema_version": SCHEMA_VERSION,
+            "exported_at": now(),
+            "credentials_omitted": True,
+            "tables": tables,
         }
 
 
@@ -51,13 +64,18 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
     """Atomically replace catalogue data. Preserve existing paired-device access."""
     if not isinstance(document, dict) or document.get("format") != FORMAT:
         raise ValueError("Not a Home Kodi Library backup.")
-    if document.get("version") != FORMAT_VERSION or document.get("schema_version") != SCHEMA_VERSION:
+    if (
+        document.get("version") != FORMAT_VERSION
+        or document.get("schema_version") != SCHEMA_VERSION
+    ):
         raise ValueError("Unsupported backup format or database schema.")
     tables = document.get("tables")
     if not isinstance(tables, dict) or set(tables) != set(TABLES):
         raise ValueError("Backup is missing required catalogue tables.")
-    if any(not isinstance(tables[name], list) or
-           any(not isinstance(row, dict) for row in tables[name]) for name in TABLES):
+    if any(
+        not isinstance(tables[name], list) or any(not isinstance(row, dict) for row in tables[name])
+        for name in TABLES
+    ):
         raise ValueError("Invalid backup table data.")
 
     with store.connect() as conn:
@@ -70,8 +88,10 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
                 if not row or set(row) - columns[table]:
                     raise ValueError(f"Invalid columns in backup table {table}.")
                 # No binary blobs or nested objects should reach SQLite bind parameters.
-                if any(not isinstance(value, (str, int, float, type(None), bool))
-                       for value in row.values()):
+                if any(
+                    not isinstance(value, (str, int, float, type(None), bool))
+                    for value in row.values()
+                ):
                     raise ValueError(f"Invalid value in backup table {table}.")
 
         old_lists = [row["id"] for row in conn.execute("SELECT id FROM lists")]
@@ -81,7 +101,9 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
                 row["id"]: json.loads(row["config"])
                 for row in conn.execute(f"SELECT id,config FROM {table}")
             }
-        if conn.execute("SELECT 1 FROM jobs WHERE status IN ('pending','running') LIMIT 1").fetchone():
+        if conn.execute(
+            "SELECT 1 FROM jobs WHERE status IN ('pending','running') LIMIT 1"
+        ).fetchone():
             raise RuntimeError("Wait for active imports or synchronizations to finish.")
 
         # A single write transaction prevents partially restored catalogues.
@@ -89,11 +111,23 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
         conn.execute("PRAGMA defer_foreign_keys=ON")
         try:
             for table in (
-                "writeback_pending", "writeback_audit", "jobs",
-                "list_items", "lists", "personal", "enrichment", "identifiers",
-                "work_person_ids", "work_person_names", "records",
-                "players", "works_fts", "works_title_fts",
-                "works", "sources", "catalogue_meta",
+                "writeback_pending",
+                "writeback_audit",
+                "jobs",
+                "list_items",
+                "lists",
+                "personal",
+                "enrichment",
+                "identifiers",
+                "work_person_ids",
+                "work_person_names",
+                "records",
+                "players",
+                "works_fts",
+                "works_title_fts",
+                "works",
+                "sources",
+                "catalogue_meta",
             ):
                 conn.execute(f"DELETE FROM {table}")
 
@@ -107,13 +141,17 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
                         # Restore passwords only when the identical connection already
                         # exists locally; backups never contain those credentials.
                         previous = existing_secrets[table].get(row["id"], {})
-                        if (all(config.get(key) == previous.get(key) for key in
-                                ("host", "port", "username", "tls"))):
+                        if all(
+                            config.get(key) == previous.get(key)
+                            for key in ("host", "port", "username", "tls")
+                        ):
                             for key in SECRETS:
                                 if key in previous and not config.get(key):
                                     config[key] = previous[key]
-                        row["config"] = _without_secrets(json.dumps(config)) if not previous else json.dumps(
-                            config, ensure_ascii=False, separators=(",", ":")
+                        row["config"] = (
+                            _without_secrets(json.dumps(config))
+                            if not previous
+                            else json.dumps(config, ensure_ascii=False, separators=(",", ":"))
                         )
                     names = list(row)
                     marks = ",".join("?" for _ in names)
@@ -126,15 +164,17 @@ def import_backup(store, document: object) -> tuple[list[str], list[str]]:
             conn.execute("UPDATE lists SET revision=revision+1")
             conn.executemany(
                 "INSERT INTO works_fts(work_id,search_text) VALUES(?,?)",
-                ((row["id"], row["search_text"])
-                 for row in conn.execute("SELECT id,search_text FROM works")),
+                (
+                    (row["id"], row["search_text"])
+                    for row in conn.execute("SELECT id,search_text FROM works")
+                ),
             )
             conn.executemany(
                 "INSERT INTO works_title_fts(work_id,titles) VALUES(?,?)",
-                ((row["id"], fold(" ".join(filter(None, (
-                    row["title"], row["original_title"]
-                )))))
-                 for row in conn.execute("SELECT id,title,original_title FROM works")),
+                (
+                    (row["id"], fold(" ".join(filter(None, (row["title"], row["original_title"])))))
+                    for row in conn.execute("SELECT id,title,original_title FROM works")
+                ),
             )
             if conn.execute("PRAGMA foreign_key_check").fetchone():
                 raise ValueError("Backup contains broken media or list references.")

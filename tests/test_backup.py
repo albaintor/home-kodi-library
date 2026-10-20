@@ -9,17 +9,21 @@ from kodi_library.connectors.base import Record
 
 def _library(client):
     store = client.app.state.store
-    source = store.save_source({
-        "name": "Disc archive",
-        "type": "clz",
-        "config": {"password": "server-only-secret", "host": "nas"},
-    })
-    store.apply_snapshot(source["id"], [
-        Record("disc:1", "movie", "Example film", year=2020),
-        Record("disc:2", "movie", "Another film", year=2021),
-    ])
-    work = next(item for item in store.media()["items"]
-                if item["title"] == "Example film")["id"]
+    source = store.save_source(
+        {
+            "name": "Disc archive",
+            "type": "clz",
+            "config": {"password": "server-only-secret", "host": "nas"},
+        }
+    )
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record("disc:1", "movie", "Example film", year=2020),
+            Record("disc:2", "movie", "Another film", year=2021),
+        ],
+    )
+    work = next(item for item in store.media()["items"] if item["title"] == "Example film")["id"]
     store.update_personal(work, {"user_rating": 9.0, "watched": 1})
     playlist = store.save_list({"name": "Favorites", "description": "My selection"})
     store.change_list_item(playlist["id"], work)

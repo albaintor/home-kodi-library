@@ -826,22 +826,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
 
-
     @app.get(
-        API + "/backup", tags=["Backup"], dependencies=[Depends(authenticated)],
+        API + "/backup",
+        tags=["Backup"],
+        dependencies=[Depends(authenticated)],
     )
     def download_backup():
         return export_backup(store)
 
     @app.post(
-        API + "/backup", tags=["Backup"], dependencies=[Depends(writable)],
+        API + "/backup",
+        tags=["Backup"],
+        dependencies=[Depends(writable)],
     )
     async def restore_backup(request: Request, background_tasks: BackgroundTasks):
         if request.headers.get("content-type", "").split(";")[0].strip() != "application/json":
             raise HTTPException(422, "A JSON backup is required.")
-        if request.headers.get("content-length", "").isdigit() and int(
-            request.headers["content-length"]
-        ) > MAX_BACKUP_BYTES:
+        if (
+            request.headers.get("content-length", "").isdigit()
+            and int(request.headers["content-length"]) > MAX_BACKUP_BYTES
+        ):
             raise HTTPException(413, "Backup exceeds 100 MiB.")
         payload = await request.body()
         if len(payload) > MAX_BACKUP_BYTES:
@@ -860,8 +864,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ids = set(previous) | set(restored)
             await asyncio.gather(*(thumbnails.delete(item) for item in ids))
             await asyncio.gather(*(thumbnails.warm(item) for item in restored))
+
         background_tasks.add_task(rebuild_thumbnails)
-        return {"status": "restored", "lists": len(restored), "media": len(document["tables"]["works"])}
+        return {
+            "status": "restored",
+            "lists": len(restored),
+            "media": len(document["tables"]["works"]),
+        }
 
     @app.get(
         API + "/lists",
@@ -1347,6 +1356,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Remote-control API and authenticated Kodi notification relay.
     from .remote import router as remote_router
+
     app.include_router(remote_router)
 
     return app
