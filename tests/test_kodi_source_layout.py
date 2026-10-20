@@ -20,7 +20,9 @@ def test_kodi_instance_cards_span_the_entire_source_card():
     actions = source_template.index('<div class="connection-actions">', start)
     instances = source_template.index('<section class="source-kodi-instances"', start)
     assert start < actions < instances
-    assert '</button></div>${s.type===\'kodi\'?\`<section class="source-kodi-instances"' not in source_template
+    assert source_template.index('data-remove-source=', actions) < instances
+    # Source controls finish before the full-width instance grid row begins.
+    assert 'Retirer</button></div>${s.type===' not in source_template[:actions]
     assert '.source-kodi-instances{grid-column:1/-1;width:100%;' in css
     assert '.kodi-instance-row>div:first-child{flex:1 1 180px;' in css
     assert '.kodi-instance-row .connection-actions{flex-shrink:0;max-width:none}' in css
