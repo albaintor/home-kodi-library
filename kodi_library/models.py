@@ -189,6 +189,7 @@ class PersonalInput(StrictModel):
 class EpisodeWatchInput(StrictModel):
     watched: bool
     season: int | None = Field(default=None, ge=0, le=10000)
+    up_to_episode: int | None = Field(default=None, ge=0, le=100000)
 
 
 class EpisodeWatchResult(BaseModel):
@@ -196,6 +197,7 @@ class EpisodeWatchResult(BaseModel):
     updated: int
     watched: bool
     season: int | None = None
+    up_to_episode: int | None = None
 
 
 class PersonalView(BaseModel):

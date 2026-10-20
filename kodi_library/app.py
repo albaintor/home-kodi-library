@@ -447,10 +447,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def edit_episode_watches(
         media_id: str, data: EpisodeWatchInput, background_tasks: BackgroundTasks
     ):
-        """Mark one season or all imported episodes, including specials."""
+        """Mark a season, all episodes, or those through an inclusive cutoff."""
+        if data.up_to_episode is not None and data.season is None:
+            raise HTTPException(422, "up_to_episode requires a season.")
         async with personal_edit_lock:
             result = await asyncio.to_thread(
-                store.set_episode_watch_status, media_id, data.watched, data.season
+                store.set_episode_watch_status,
+                media_id,
+                data.watched,
+                data.season,
+                data.up_to_episode,
             )
             if result is None:
                 raise HTTPException(404, "Unknown TV show.")

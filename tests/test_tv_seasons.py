@@ -120,7 +120,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
     parent_status = client.get(f"/api/v1/media/{series_id}", headers=admin).json()["watch_status"]
     bulk_season = client.patch(endpoint, headers=admin, json={"watched": True, "season": 1})
     assert bulk_season.status_code == 200, bulk_season.text
-    assert bulk_season.json() == {"total": 3, "updated": 2, "watched": True, "season": 1}
+    assert bulk_season.json() == {"total": 3, "updated": 2, "watched": True, "season": 1, "up_to_episode": None}
     assert [
         item["watched_count"]
         for item in client.get(f"/api/v1/media/{series_id}/seasons", headers=admin).json()
@@ -132,7 +132,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
 
     all_unwatched = client.patch(endpoint, headers=admin, json={"watched": False})
     assert all_unwatched.status_code == 200
-    assert all_unwatched.json() == {"total": 6, "updated": 4, "watched": False, "season": None}
+    assert all_unwatched.json() == {"total": 6, "updated": 4, "watched": False, "season": None, "up_to_episode": None}
     assert (
         client.get(f"/api/v1/media/{series_id}", headers=admin).json()["watched_episode_count"] == 0
     )
@@ -161,3 +161,60 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
         ).status_code
         == 404
     )
+
+
+def test_watch_up_to_selected_episode_scopes_to_season(client, admin):
+    from kodi_library.connectors.base import Record
+
+    response = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={"name": "TV", "type": "kodi", "config": {"host": "nas", "username": "reader"}},
+    )
+    assert response.status_code == 201
+    source_id = response.json()["id"]
+    client.app.state.store.apply_snapshot(
+        source_id,
+        [
+            Record("show:100", "tvshow", "Show"),
+            Record("special:1", "episode", "Special", parent_key="show:100", season=0, episode=1),
+            Record("ep:1", "episode", "One", parent_key="show:100", season=1, episode=1),
+            Record("ep:2", "episode", "Two", parent_key="show:100", season=1, episode=2),
+            Record("ep:3", "episode", "Three", parent_key="show:100", season=1, episode=3),
+            Record("other:1", "episode", "Other", parent_key="show:100", season=2, episode=1),
+        ],
+    )
+    series_id = client.app.state.store.media(kind="tvshow")["items"][0]["id"]
+    path = f"/api/v1/media/{series_id}/episodes/watch"
+    assert client.patch(
+        path, headers=admin, json={"watched": True, "up_to_episode": 2}
+    ).status_code == 422
+    assert client.patch(
+        path, headers=admin, json={"watched": True, "season": 1, "up_to_episode": -1}
+    ).status_code == 422
+    response = client.patch(
+        path, headers=admin, json={"watched": True, "season": 1, "up_to_episode": 2}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {
+        "total": 2,
+        "updated": 2,
+        "watched": True,
+        "season": 1,
+        "up_to_episode": 2,
+    }
+    assert [row["watched_count"] for row in client.get(
+        f"/api/v1/media/{series_id}/seasons", headers=admin
+    ).json()] == [0, 2, 0]
+
+    again = client.patch(
+        path, headers=admin, json={"watched": True, "season": 1, "up_to_episode": 2}
+    )
+    assert again.status_code == 200
+    assert again.json()["updated"] == 0
+    assert client.patch(
+        path, headers=admin, json={"watched": False, "season": 1, "up_to_episode": 1}
+    ).json()["updated"] == 1
+    assert [row["watched_count"] for row in client.get(
+        f"/api/v1/media/{series_id}/seasons", headers=admin
+    ).json()] == [0, 1, 0]

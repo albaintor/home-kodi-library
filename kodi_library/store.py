@@ -1289,20 +1289,29 @@ class Store:
             ]
 
     def set_episode_watch_status(
-        self, parent_id: str, watched: bool, season: int | None = None
+        self,
+        parent_id: str,
+        watched: bool,
+        season: int | None = None,
+        up_to_episode: int | None = None,
     ) -> dict[str, Any] | None:
-        """Atomically mark imported episodes in one TV show (optionally one season).
+        """Change all episodes, one season, or episodes through an inclusive cutoff.
 
-        Only changed effective states receive local overrides. Parent TV-show
-        preferences are untouched; series progress is derived from episodes.
+        An episode cutoff never affects another season or later episodes.
+        Only changed effective watch states receive local overrides.
         """
+        if up_to_episode is not None and season is None:
+            raise ValueError("A season is required when selecting an episode cutoff.")
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
             show = conn.execute("SELECT kind FROM works WHERE id=?", (parent_id,)).fetchone()
             if not show or show["kind"] != "tvshow":
                 return None
             condition = " AND season=?" if season is not None else ""
-            params = (parent_id, season) if season is not None else (parent_id,)
+            params: tuple[Any, ...] = (parent_id, season) if season is not None else (parent_id,)
+            if up_to_episode is not None:
+                condition += " AND episode<=?"
+                params += (up_to_episode,)
             rows = conn.execute(
                 "SELECT id,watch_status FROM works "
                 "WHERE kind='episode' AND parent_id=?" + condition + " ORDER BY season,episode,id",
@@ -1324,6 +1333,7 @@ class Store:
             "ids": changed_ids,
             "watched": watched,
             "season": season,
+            "up_to_episode": up_to_episode,
         }
 
     def season_poster(self, parent_id: str, season: int) -> list[str]:
