@@ -878,7 +878,7 @@ async function loadSeasonEpisodes(season,offset=0) {
   }catch(e){if(state.detail?.id===parent&&node.dataset.season===String(season))node.textContent='Chargement des épisodes impossible : '+e.message;}
 }
 // The native-looking web context menu is also available on touch screens.
-let episodeLongPressTimer=null, suppressEpisodeTap=false;
+let episodeLongPressTimer=null, episodeLongPressStart=null, suppressEpisodeTap=false;
 function closeEpisodeContextMenu() {
   document.getElementById('episode-context-menu')?.remove();
 }
@@ -911,17 +911,22 @@ document.addEventListener('pointerdown',event=>{
   if(!episode||state.role!=='admin'||event.pointerType!=='touch')return;
   clearTimeout(episodeLongPressTimer);
   const x=event.clientX,y=event.clientY;
+  episodeLongPressStart={x,y};
   episodeLongPressTimer=setTimeout(()=>{
     episodeLongPressTimer=null;
+    episodeLongPressStart=null;
     suppressEpisodeTap=true;
     openEpisodeContextMenu(episode,x,y);
+    setTimeout(()=>{suppressEpisodeTap=false;},750);
   },550);
 });
 for(const kind of ['pointerup','pointercancel','pointermove']){
   document.addEventListener(kind,event=>{
-    if(kind==='pointermove'&&episodeLongPressTimer&&event.buttons===1)return;
+    if(kind==='pointermove'&&episodeLongPressTimer&&episodeLongPressStart&&
+       Math.hypot(event.clientX-episodeLongPressStart.x,event.clientY-episodeLongPressStart.y)<10)return;
     clearTimeout(episodeLongPressTimer);
     episodeLongPressTimer=null;
+    episodeLongPressStart=null;
   });
 }
 document.addEventListener('click',event=>{
@@ -931,6 +936,14 @@ document.addEventListener('click',event=>{
 },true);
 document.addEventListener('keydown',event=>{
   if(event.key==='Escape')closeEpisodeContextMenu();
+  if(event.key==='ContextMenu'||(event.shiftKey&&event.key==='F10')){
+    const episode=document.activeElement?.closest('.season-episode[data-episode-number]');
+    if(episode&&state.role==='admin'){
+      event.preventDefault();
+      const rect=episode.getBoundingClientRect();
+      openEpisodeContextMenu(episode,rect.left+24,rect.top+24);
+    }
+  }
 });
 async function diagnoseKodi() {
   const item=state.detail;
