@@ -1,0 +1,25 @@
+name: Temporary format and backup tests
+on:
+  push:
+permissions:
+  contents: read
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -e '.[dev]'
+      - name: Produce Ruff-formatted file contents
+        run: |
+          ruff format kodi_library/app.py kodi_library/backup.py kodi_library/remote.py tests/test_backup.py tests/test_remote.py
+          python - <<'PY'
+          from pathlib import Path
+          import base64
+          for file in ('kodi_library/app.py', 'kodi_library/backup.py', 'kodi_library/remote.py', 'tests/test_backup.py', 'tests/test_remote.py'):
+              print('FORMAT_FILE:' + file + ':' + base64.b64encode(Path(file).read_bytes()).decode('ascii'), flush=True)
+          PY
+      - name: Test backup restore
+        run: pytest -q tests/test_backup.py
