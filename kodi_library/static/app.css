@@ -404,3 +404,8 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .remote-dialog[open]{display:flex;flex-direction:column;height:min(90dvh,740px)}
 .remote-dialog .remote-panel:not([hidden]){margin-top:auto}
 .remote-dialog .remote-panel[hidden]{display:none}
+
+/* Episode context menu: right click or long press, never overlapping other cards. */
+.episode-context-menu{position:fixed;z-index:60;min-width:245px;max-width:calc(100vw - 16px);padding:5px;background:var(--raised);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 34px #0009}
+.episode-context-menu button{display:block;width:100%;font-size:12px;text-align:left;color:var(--text);background:transparent;border:0;padding:11px;min-height:40px;white-space:normal}
+.episode-context-menu button:hover,.episode-context-menu button:focus-visible{background:var(--surface)}

@@ -420,16 +420,17 @@ async function savePersonal(values) {
   }finally{state.personalPending.delete(id);if(seq===state.detailSeq&&state.detail?.id===id)syncPersonalControls();}
   if(saved){await loadMedia();if($('lists-dialog').open)await loadList();}
 }
-async function saveEpisodeWatches(watched,season=null) {
+async function saveEpisodeWatches(watched,season=null,upToEpisode=null) {
   const item=state.detail;
   if(!item||item.kind!=='tvshow'||state.role!=='admin'||state.personalPending.has(item.id))return;
   const total=Number(item.episode_count)||0;
   if(season===null&&!localizedConfirm(`Attention : ${watched?'marquer comme vus':'marquer comme non vus'} les ${total} épisodes importés de « ${item.title} » (toutes les saisons et les spéciaux) ? Cette action modifie également les états envoyés aux sources configurées.`))return;
+  if(upToEpisode!==null&&!localizedConfirm(`Marquer comme vus les épisodes de la saison ${season}, du début jusqu'à l'épisode ${upToEpisode} inclus ?`))return;
   const id=item.id,seq=state.detailSeq,selected=$('season-list')?.querySelector('.season-button[aria-expanded="true"]')?.dataset.season;
   state.personalPending.add(id);++state.personalSeq;syncPersonalControls();beginPersonalSave();
   document.querySelectorAll('[data-mark-season]').forEach(button=>button.disabled=true);
   try {
-    const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season})})});
+    const result=await api(`media/${encodeURIComponent(id)}/episodes/watch`,{method:'PATCH',body:JSON.stringify({watched,...(season===null?{}:{season}),...(upToEpisode===null?{}:{up_to_episode:upToEpisode})})});
     // The mutation succeeded. A subsequent catalogue refresh error must not
     // relabel an already persisted edit as a failed save.
     endPersonalSave(false,true);
@@ -810,6 +811,7 @@ function resumeProgress(item) {
   </div>`;
 }
 function renderDetail(item) {
+  closeEpisodeContextMenu();
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
@@ -858,7 +860,7 @@ async function loadSeasonEpisodes(season,offset=0) {
       const inProgress=e.watch_status==='in_progress';
       const statusLabel=watched?'Vu':inProgress?'En cours':'Non vu';
       const statusIcon=watched?'✓':inProgress?'◐':'○';
-      return `<button type="button" class="season-episode" data-media="${esc(e.id)}" aria-label="Épisode ${esc(e.episode??'?')} : ${esc(e.title)}, ${statusLabel}">
+      return `<button type="button" class="season-episode" data-media="${esc(e.id)}" data-episode-season="${season}" data-episode-number="${Number(e.episode??0)}" title="Clic droit ou appui long : marquer les épisodes précédents comme vus" aria-label="Épisode ${esc(e.episode??'?')} : ${esc(e.title)}, ${statusLabel}">
         <span class="season-episode-number">E${String(e.episode??0).padStart(2,'0')}</span>
         <span class="season-episode-description"><span class="season-episode-title">${esc(e.title)}</span>${e.plot?`<small class="episode-synopsis">${esc(e.plot)}</small>`:''}</span>
         ${e.runtime_minutes?`<span class="season-episode-duration">${e.runtime_minutes} min</span>`:''}
@@ -875,6 +877,61 @@ async function loadSeasonEpisodes(season,offset=0) {
     if(page.has_more)node.insertAdjacentHTML('beforeend',`<button class="secondary" data-load-season="${season}" data-offset="${offset+page.items.length}">Afficher plus d’épisodes</button>`);
   }catch(e){if(state.detail?.id===parent&&node.dataset.season===String(season))node.textContent='Chargement des épisodes impossible : '+e.message;}
 }
+// The native-looking web context menu is also available on touch screens.
+let episodeLongPressTimer=null, suppressEpisodeTap=false;
+function closeEpisodeContextMenu() {
+  document.getElementById('episode-context-menu')?.remove();
+}
+function openEpisodeContextMenu(button,x,y) {
+  if(state.role!=='admin'||!button||state.personalPending.has(state.detail?.id))return;
+  const season=Number(button.dataset.episodeSeason);
+  const number=Number(button.dataset.episodeNumber);
+  if(!Number.isInteger(season)||!Number.isInteger(number)||number<0)return;
+  closeEpisodeContextMenu();
+  const menu=document.createElement('div');
+  menu.id='episode-context-menu';
+  menu.className='episode-context-menu';
+  menu.setAttribute('role','menu');
+  menu.innerHTML=`<button role="menuitem" type="button" data-watch-through-season="${season}" data-watch-through-episode="${number}">✓ Marquer comme vus jusqu'à l'épisode ${number} inclus</button>`;
+  document.body.append(menu);
+  menu.style.left=Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))+'px';
+  menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px';
+  menu.querySelector('button')?.focus({preventScroll:true});
+}
+document.addEventListener('contextmenu',event=>{
+  const episode=event.target.closest('.season-episode[data-episode-number]');
+  if(!episode||state.role!=='admin')return;
+  event.preventDefault();
+  openEpisodeContextMenu(episode,event.clientX,event.clientY);
+});
+document.addEventListener('pointerdown',event=>{
+  if(event.target.closest('#episode-context-menu'))return;
+  closeEpisodeContextMenu();
+  const episode=event.target.closest('.season-episode[data-episode-number]');
+  if(!episode||state.role!=='admin'||event.pointerType!=='touch')return;
+  clearTimeout(episodeLongPressTimer);
+  const x=event.clientX,y=event.clientY;
+  episodeLongPressTimer=setTimeout(()=>{
+    episodeLongPressTimer=null;
+    suppressEpisodeTap=true;
+    openEpisodeContextMenu(episode,x,y);
+  },550);
+});
+for(const kind of ['pointerup','pointercancel','pointermove']){
+  document.addEventListener(kind,event=>{
+    if(kind==='pointermove'&&episodeLongPressTimer&&event.buttons===1)return;
+    clearTimeout(episodeLongPressTimer);
+    episodeLongPressTimer=null;
+  });
+}
+document.addEventListener('click',event=>{
+  if(suppressEpisodeTap&&event.target.closest('.season-episode')){
+    event.preventDefault();event.stopImmediatePropagation();suppressEpisodeTap=false;
+  }
+},true);
+document.addEventListener('keydown',event=>{
+  if(event.key==='Escape')closeEpisodeContextMenu();
+});
 async function diagnoseKodi() {
   const item=state.detail;
   const display=$('kodi-diagnostic');
@@ -1090,6 +1147,12 @@ document.addEventListener('submit',async event=>{
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
   if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson,button.dataset.personTmdb,button.dataset.personImdb);return;}
+  if(button.hasAttribute('data-watch-through-episode')){
+    const season=Number(button.dataset.watchThroughSeason),episode=Number(button.dataset.watchThroughEpisode);
+    closeEpisodeContextMenu();
+    await saveEpisodeWatches(true,season,episode);
+    return;
+  }
   if(button.hasAttribute('data-mark-season')){await saveEpisodeWatches(button.dataset.watched==='true',Number(button.dataset.markSeason));return;}
   if(button.dataset.close) $(button.dataset.close).close();
   if(button.dataset.media) openDetail(button.dataset.media);
