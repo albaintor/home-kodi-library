@@ -307,7 +307,7 @@ async def propagate_personal(
                     }
                 )
                 break
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 attempts.append("jsonrpc:unavailable")
                 errors.append("Kodi est injoignable après une seconde.")
             except KodiUnavailable as exc:
