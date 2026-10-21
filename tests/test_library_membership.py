@@ -107,10 +107,13 @@ def test_sql_navigation_removes_residual_movie_even_if_movie_row_is_present(stor
 
 
 def test_sync_falls_back_to_mariadb_when_player_is_offline(store):
-    source_id = store.save_source({
-        "name": "Kodi", "type": "kodi",
-        "config": {"host": "nas", "username": "reader"},
-    })["id"]
+    source_id = store.save_source(
+        {
+            "name": "Kodi",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader"},
+        }
+    )["id"]
     store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080})
     store.apply_snapshot(
         source_id,
