@@ -11,9 +11,14 @@ from kodi_library.connectors.kodi_jsonrpc import fetch_kodi_snapshot, normalize_
 
 def test_record_normalizer_keeps_identity_and_parent_links():
     row = {
-        "episodeid": 44, "tvshowid": 10, "title": "Pilot",
-        "season": 1, "episode": 1, "playcount": 1,
-        "uniqueid": {"tvdb": "9876"}, "runtime": 600,
+        "episodeid": 44,
+        "tvshowid": 10,
+        "title": "Pilot",
+        "season": 1,
+        "episode": 1,
+        "playcount": 1,
+        "uniqueid": {"tvdb": "9876"},
+        "runtime": 600,
     }
     record = normalize_jsonrpc("episode", row)
     assert record.external_key == "episode:44"
@@ -32,14 +37,18 @@ def test_jsonrpc_fetches_all_pages():
 
     async def rpc(method, params):
         calls.append((method, params["limits"]["start"]))
-        label = {"GetMovies": ("movies", "movieid"), "GetTVShows": ("tvshows", "tvshowid"),
-                 "GetEpisodes": ("episodes", "episodeid")}
+        label = {
+            "GetMovies": ("movies", "movieid"),
+            "GetTVShows": ("tvshows", "tvshowid"),
+            "GetEpisodes": ("episodes", "episodeid"),
+        }
         key, id_field = label[method.split(".")[-1]]
         if key == "movies":
             if params["limits"]["start"] == 0:
-                return {"limits": {"total": 201}, key: [
-                    {id_field: i, "title": str(i)} for i in range(200)
-                ]}
+                return {
+                    "limits": {"total": 201},
+                    key: [{id_field: i, "title": str(i)} for i in range(200)],
+                }
             return {"limits": {"total": 201}, key: [{id_field: 200, "title": "200"}]}
         if key == "episodes":
             return {"limits": {"total": 0}, key: []}
@@ -54,9 +63,7 @@ def test_jsonrpc_fetches_all_pages():
     with patch("kodi_library.connectors.kodi_jsonrpc.connection", dummy):
         records = asyncio.run(fetch_kodi_snapshot({"host": "localhost"}))
     assert len(records) == 202
-    assert calls[:2] == [
-        ("VideoLibrary.GetMovies", 0), ("VideoLibrary.GetMovies", 200)
-    ]
+    assert calls[:2] == [("VideoLibrary.GetMovies", 0), ("VideoLibrary.GetMovies", 200)]
 
 
 def test_incomplete_page_never_returns_a_partial_snapshot():

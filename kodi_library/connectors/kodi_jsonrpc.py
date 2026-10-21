@@ -12,24 +12,88 @@ from .kodi import artwork_candidates
 PAGE_SIZE = 200
 FIELDS = {
     "movie": (
-        "VideoLibrary.GetMovies", "movies", "movieid",
-        ["title", "originaltitle", "year", "plot", "runtime", "rating",
-         "userrating", "playcount", "lastplayed", "dateadded", "file", "art",
-         "thumbnail", "fanart", "genre", "uniqueid", "resume", "streamdetails",
-         "cast", "director", "writer", "set", "trailer"],
+        "VideoLibrary.GetMovies",
+        "movies",
+        "movieid",
+        [
+            "title",
+            "originaltitle",
+            "year",
+            "plot",
+            "runtime",
+            "rating",
+            "userrating",
+            "playcount",
+            "lastplayed",
+            "dateadded",
+            "file",
+            "art",
+            "thumbnail",
+            "fanart",
+            "genre",
+            "uniqueid",
+            "resume",
+            "streamdetails",
+            "cast",
+            "director",
+            "writer",
+            "set",
+            "trailer",
+        ],
     ),
     "tvshow": (
-        "VideoLibrary.GetTVShows", "tvshows", "tvshowid",
-        ["title", "originaltitle", "year", "plot", "rating", "userrating",
-         "playcount", "lastplayed", "dateadded", "art", "thumbnail", "fanart",
-         "genre", "uniqueid", "episode", "watchedepisodes", "cast", "studio"],
+        "VideoLibrary.GetTVShows",
+        "tvshows",
+        "tvshowid",
+        [
+            "title",
+            "originaltitle",
+            "year",
+            "plot",
+            "rating",
+            "userrating",
+            "playcount",
+            "lastplayed",
+            "dateadded",
+            "art",
+            "thumbnail",
+            "fanart",
+            "genre",
+            "uniqueid",
+            "episode",
+            "watchedepisodes",
+            "cast",
+            "studio",
+        ],
     ),
     "episode": (
-        "VideoLibrary.GetEpisodes", "episodes", "episodeid",
-        ["title", "showtitle", "season", "episode", "tvshowid", "plot", "runtime",
-         "rating", "userrating", "playcount", "lastplayed", "dateadded", "file",
-         "art", "thumbnail", "fanart", "uniqueid", "resume", "streamdetails",
-         "cast", "director", "writer"],
+        "VideoLibrary.GetEpisodes",
+        "episodes",
+        "episodeid",
+        [
+            "title",
+            "showtitle",
+            "season",
+            "episode",
+            "tvshowid",
+            "plot",
+            "runtime",
+            "rating",
+            "userrating",
+            "playcount",
+            "lastplayed",
+            "dateadded",
+            "file",
+            "art",
+            "thumbnail",
+            "fanart",
+            "uniqueid",
+            "resume",
+            "streamdetails",
+            "cast",
+            "director",
+            "writer",
+        ],
     ),
 }
 
@@ -60,9 +124,14 @@ def normalize_jsonrpc(kind, row):
         runtime = 0
     raw_people = row.get("cast") if isinstance(row.get("cast"), list) else []
     people = [
-        {"name": person.get("name"), "role": person.get("role"), "category": "cast",
-         "order": person.get("order")}
-        for person in raw_people if isinstance(person, dict) and person.get("name")
+        {
+            "name": person.get("name"),
+            "role": person.get("role"),
+            "category": "cast",
+            "order": person.get("order"),
+        }
+        for person in raw_people
+        if isinstance(person, dict) and person.get("name")
     ]
     for category in ("director", "writer"):
         for name in row.get(category) or []:
@@ -77,9 +146,15 @@ def normalize_jsonrpc(kind, row):
     ids = identifiers(uniqueid)
     total_episodes = row.get("episode") if kind == "tvshow" else None
     watched_episodes = row.get("watchedepisodes") if kind == "tvshow" else None
-    watched = ((watched_episodes >= total_episodes) if type(watched_episodes) is int
-               and type(total_episodes) is int and total_episodes > 0 else None
-               ) if kind == "tvshow" else (play_count > 0 if play_count is not None else None)
+    watched = (
+        (
+            (watched_episodes >= total_episodes)
+            if type(watched_episodes) is int and type(total_episodes) is int and total_episodes > 0
+            else None
+        )
+        if kind == "tvshow"
+        else (play_count > 0 if play_count is not None else None)
+    )
     movie_set = row.get("set") or ""
     return Record(
         external_key=f"{kind}:{media_id}",
@@ -136,23 +211,34 @@ async def fetch_kodi_snapshot(player_config, progress=None):
         for kind, (method, key, _id_field, properties) in FIELDS.items():
             start = 0
             while True:
-                payload = await rpc(method, {
-                    "properties": properties,
-                    "limits": {"start": start, "end": start + PAGE_SIZE},
-                })
+                payload = await rpc(
+                    method,
+                    {
+                        "properties": properties,
+                        "limits": {"start": start, "end": start + PAGE_SIZE},
+                    },
+                )
                 if not isinstance(payload, dict) or not isinstance(payload.get("limits"), dict):
                     raise ConnectorError(f"Kodi returned an incomplete {method} response.")
                 items = payload.get(key, [])
                 limits = payload["limits"]
                 total = limits.get("total")
-                if (not isinstance(items, list) or type(total) is not int or total < 0
-                        or len(items) > PAGE_SIZE or (total > start and not items)):
+                if (
+                    not isinstance(items, list)
+                    or type(total) is not int
+                    or total < 0
+                    or len(items) > PAGE_SIZE
+                    or (total > start and not items)
+                ):
                     raise ConnectorError(f"Kodi returned an incomplete {method} page.")
                 records.extend(normalize_jsonrpc(kind, item) for item in items)
                 start += len(items)
                 if progress:
-                    progress({"movie": "movies", "tvshow": "series", "episode": "episodes"}[kind],
-                             min(start, total), total)
+                    progress(
+                        {"movie": "movies", "tvshow": "series", "episode": "episodes"}[kind],
+                        min(start, total),
+                        total,
+                    )
                 if start >= total:
                     break
     return records

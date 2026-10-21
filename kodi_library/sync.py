@@ -164,7 +164,9 @@ class SyncManager:
                         # also capped in total; an unreachable device must not
                         # delay SQL fallback for a full HTTP timeout.
                         async with asyncio.timeout(max(0.01, deadline - monotonic())):
-                            async with connection(private["config"], timeout=min(0.9, remaining)) as rpc:
+                            async with connection(
+                                private["config"], timeout=min(0.9, remaining)
+                            ) as rpc:
                                 if await rpc("JSONRPC.Ping", {}) != "pong":
                                     raise ConnectorError("Kodi returned an invalid JSON-RPC ping.")
                         offline = False
@@ -182,8 +184,8 @@ class SyncManager:
                     if not source["config"].get("host") or not source["config"].get("username"):
                         raise ConnectorError(
                             "Kodi JSON-RPC est indisponible et aucun repli MariaDB n'est configuré."
-                            if offline else
-                            "Configurez une instance Kodi JSON-RPC ou un repli MariaDB."
+                            if offline
+                            else "Configurez une instance Kodi JSON-RPC ou un repli MariaDB."
                         )
                     connector = KodiConnector(
                         source["config"],
