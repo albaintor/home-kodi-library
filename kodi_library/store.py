@@ -418,6 +418,25 @@ class Store:
                 self._rebuild(conn, work_id)
             self._prune(conn)
 
+    def has_multiple_kodi_movie_versions(self, source_id: str) -> bool:
+        """Protect SQL-imported movie editions not enumerable by standard JSON-RPC."""
+        with self.connect() as conn:
+            keys = [
+                row[0]
+                for row in conn.execute(
+                    "SELECT external_key FROM records WHERE source_id=? "
+                    "AND external_key LIKE 'movie:%:%'",
+                    (source_id,),
+                )
+            ]
+        movies = set()
+        for key in keys:
+            movie_id = key.split(":")[1]
+            if movie_id in movies:
+                return True
+            movies.add(movie_id)
+        return False
+
     def apply_snapshot(self, source_id: str, records: list[Record]) -> dict[str, Any]:
         """Atomic replacement per source; stable edition IDs across subsequent imports."""
         with self.connect() as conn:

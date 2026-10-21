@@ -209,6 +209,18 @@ class SyncManager:
                     mariadb_read_ms = round((monotonic() - fetch_started) * 1000)
                     database = connector.database
                     transport = "mariadb"
+            if (
+                xml is None
+                and transport == "jsonrpc"
+                and await asyncio.to_thread(
+                    self.store.has_multiple_kodi_movie_versions, source["id"]
+                )
+            ):
+                raise ConnectorError(
+                    "La source contient des éditions multiples de films importées via SQL. "
+                    "JSON-RPC ne permet pas de retrouver leurs fichiers de manière exhaustive. "
+                    "Import annulé pour préserver les éditions existantes."
+                )
             await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
             publish_started = monotonic()
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)

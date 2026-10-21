@@ -79,3 +79,16 @@ def test_incomplete_page_never_returns_a_partial_snapshot():
     with patch("kodi_library.connectors.kodi_jsonrpc.connection", dummy):
         with pytest.raises(ConnectorError, match="incomplete"):
             asyncio.run(fetch_kodi_snapshot({"host": "localhost"}))
+
+
+def test_rpc_cannot_erase_multiple_sql_movie_versions(store):
+    from kodi_library.connectors.base import Record
+
+    sid = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
+    store.apply_snapshot(
+        sid, [Record("movie:21:100", "movie", "Movie"),
+              Record("movie:21:200", "movie", "Movie")]
+    )
+    assert store.has_multiple_kodi_movie_versions(sid) is True
+    original = store.media(kind="movie")["total"]
+    assert original == 1
