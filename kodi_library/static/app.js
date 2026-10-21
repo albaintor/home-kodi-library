@@ -75,20 +75,91 @@ const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver
 let toastTimer;
 function toast(message) { $('toast').textContent=tr(message); $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,5500); }
 function error(message) { $('error-banner').textContent=tr(message); $('error-banner').hidden=false; }
+// The application shell stays loaded while the API/server is unreachable.
+const RETRY_SECONDS=10;
+let offlineTimer=null,offlineRemaining=RETRY_SECONDS,offlineBusy=false;
+function unavailableError(message) {
+  const failure=new Error(message || 'Le serveur ne répond pas.');
+  failure.serverUnavailable=true;
+  return failure;
+}
+function stopOfflineTimer() { if(offlineTimer!==null){clearInterval(offlineTimer);offlineTimer=null;} }
+function scheduleOfflineRetry() {
+  stopOfflineTimer();
+  offlineRemaining=RETRY_SECONDS;
+  $('retry-server-countdown').textContent='Nouvelle tentative dans '+offlineRemaining+' s…';
+  offlineTimer=setInterval(()=>{
+    if($('server-unavailable').hidden){stopOfflineTimer();return;}
+    offlineRemaining-=1;
+    if(offlineRemaining<=0) { stopOfflineTimer();void retryServerConnection(); }
+    else $('retry-server-countdown').textContent='Nouvelle tentative dans '+offlineRemaining+' s…';
+  },1000);
+}
+function showServerUnavailable(failure) {
+  if($('server-unavailable').hidden) {
+    stopKodiRemote(); ++state.seq; state.controller?.abort(); state.loading=false;
+    moreObserver?.disconnect();
+    document.querySelectorAll('dialog[open]').forEach(dialog=>dialog.close());
+    $('app').hidden=true; $('login').hidden=true; $('server-unavailable').hidden=false;
+  }
+  $('server-unavailable-reason').textContent=failure?.message||'Le serveur ne répond pas.';
+  if(!offlineTimer&&!offlineBusy) scheduleOfflineRetry();
+}
+function showLogin() {
+  stopOfflineTimer();stopKodiRemote();++state.seq;state.controller?.abort();state.loading=false;
+  moreObserver?.disconnect();$('server-unavailable').hidden=true;$('app').hidden=true;$('login').hidden=false;
+}
+async function retryServerConnection() {
+  if(offlineBusy||$('server-unavailable').hidden)return;
+  offlineBusy=true;stopOfflineTimer();
+  const button=$('retry-server');button.disabled=true;
+  $('retry-server-countdown').textContent='Connexion en cours…';
+  try {
+    await api('auth/session',{cache:'no-store'});
+    await initialize();
+  } catch(failure) {
+    if(failure.status===401) showLogin();
+    else if(failure.serverUnavailable) showServerUnavailable(failure);
+    else $('server-unavailable-reason').textContent=failure.message;
+  } finally {
+    offlineBusy=false;button.disabled=false;
+    if(!$('server-unavailable').hidden&&!offlineTimer)scheduleOfflineRetry();
+  }
+}
+$('retry-server').addEventListener('click',()=>void retryServerConnection());
+window.addEventListener('online',()=>{if(!$('server-unavailable').hidden)void retryServerConnection();});
+if('serviceWorker' in navigator && window.isSecureContext) {
+  // Cache only the public static shell, never API responses or credentials.
+  navigator.serviceWorker.register(url('service-worker.js'),{scope:baseURL.pathname}).catch(()=>{});
+}
 async function api(path, options={}) {
   const headers=new Headers(options.headers || {});
   if (options.body && !(options.body instanceof FormData)) headers.set('Content-Type','application/json');
   if (state.csrf && options.method && options.method !== 'GET') headers.set('X-CSRF-Token',state.csrf);
-  const response=await fetch(url(`api/v1/${path}`),{...options,headers,credentials:'same-origin'});
+  let response;
+  try {
+    response=await fetch(url(`api/v1/${path}`),{...options,headers,credentials:'same-origin'});
+  } catch(failure) {
+    if(failure.name==='AbortError')throw failure;
+    const unavailable=unavailableError('Le serveur ne répond pas ou la connexion réseau est interrompue.');
+    showServerUnavailable(unavailable);
+    throw unavailable;
+  }
+  if([502,503,504].includes(response.status)||(response.status===500&&path==='auth/session')) {
+    const unavailable=unavailableError('Le serveur est momentanément indisponible (HTTP '+response.status+').');
+    showServerUnavailable(unavailable);
+    throw unavailable;
+  }
   if (response.status===204) return null;
   const value=await response.json();
   if (!response.ok) {
     if (response.status===401 && path!=='auth/session') showLogin();
-    throw new Error(value.error?.message || `Erreur ${response.status}`);
+    const failure=new Error(value.error?.message || `Erreur ${response.status}`);
+    failure.status=response.status;
+    throw failure;
   }
   return value;
 }
-function showLogin() { stopKodiRemote(); ++state.seq; state.controller?.abort(); state.loading=false; moreObserver?.disconnect(); $('app').hidden=true; $('login').hidden=false; }
 function date(value) { if (!value) return '—'; const d=new Date(value); return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString(displayLocale()); }
 function dateTime(value) {
   if(!value)return '—';
@@ -728,13 +799,18 @@ async function refreshStaleOnOpen() {
 async function initialize() {
   try {
     const session=await api('auth/session'); state.csrf=session.csrf_token; state.role=session.role;
+    stopOfflineTimer(); $('server-unavailable').hidden=true;
     $('login').hidden=true; $('app').hidden=false; $('connections-button').hidden=state.role!=='admin'; $('logout-button').hidden=session.access_method!=='session';
     $('create-list-button').hidden=state.role!=='admin';
     setView(state.view,false); renderPersonalStatus(); await refresh(); await refreshHomeListThumbnails(); await pollActivity();
     // Only once on authenticated entry; the server enforces the 24h threshold.
     void refreshStaleOnOpen();
     void startKodiRemote({api,url,role:state.role});
-  } catch (e) { if ($('app').hidden) showLogin(); else error(e.message); }
+  } catch (e) {
+    if(e.serverUnavailable)showServerUnavailable(e);
+    else if(e.status===401||$('app').hidden)showLogin();
+    else error(e.message);
+  }
 }
 // A cast credit searches the local catalogue (including indexed TMDB credits),
 // not TMDB's remote person page. Clear unrelated filters before searching.
