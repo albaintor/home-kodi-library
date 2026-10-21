@@ -54,8 +54,7 @@ def test_discovery_endpoint_is_admin_only_and_does_not_persist_credentials(clien
     path = "/api/v1/connections/mariadb/databases"
     assert client.post(path, json=body).status_code == 401
     assert (
-        client.post(path, json=body, headers={"Authorization": f"Bearer {READ}"}).status_code
-        == 403
+        client.post(path, json=body, headers={"Authorization": f"Bearer {READ}"}).status_code == 403
     )
     response = {
         "databases": [{"name": "MyVideos131", "version": 131}],
