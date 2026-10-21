@@ -10,6 +10,8 @@ from .connectors.base import ConnectorError
 from .connectors.clz import parse_clz
 from .connectors.collection_xml import COLLECTION_TYPES, parse_collection
 from .connectors.kodi import KodiConnector
+from .connectors.kodi_jsonrpc import fetch_kodi_snapshot
+from .players import KodiUnavailable, connection
 from .kodi_scan import KodiScanUnavailable, scan_until_finished
 
 LOGGER = logging.getLogger(__name__)
@@ -144,23 +146,61 @@ class SyncManager:
                     records = await asyncio.to_thread(parse_collection, xml, source["type"])
                 database = None
             else:
-                connector = KodiConnector(
-                    source["config"],
-                    progress=lambda phase, current, total: self.store.update_job_progress(
-                        job["id"], phase, current, total
-                    ),
-                )
-                fetch_started = monotonic()
-                records = await asyncio.to_thread(connector.fetch)
-                mariadb_read_ms = round((monotonic() - fetch_started) * 1000)
-                database = connector.database
+                database = None
+                connector = None
+                mariadb_read_ms = None
+                transport = None
+                players = await asyncio.to_thread(self.store.players)
+                candidates = [p for p in players if p["source_id"] == source["id"]]
+                offline = bool(candidates)
+                for player in candidates:
+                    private = await asyncio.to_thread(self.store.player, player["id"])
+                    try:
+                        # One fast probe for offline Kodi. Connection timeout is
+                        # also capped in total; an unreachable device must not
+                        # delay SQL fallback for a full HTTP timeout.
+                        async with asyncio.timeout(1.0):
+                            async with connection(private["config"], timeout=0.9) as rpc:
+                                if await rpc("JSONRPC.Ping", {}) != "pong":
+                                    raise ConnectorError("Kodi returned an invalid JSON-RPC ping.")
+                        offline = False
+                        records = await fetch_kodi_snapshot(
+                            private["config"],
+                            progress=lambda phase, current, total: self.store.update_job_progress(
+                                job["id"], phase, current, total
+                            ),
+                        )
+                        transport = "jsonrpc"
+                        break
+                    except (KodiUnavailable, TimeoutError):
+                        continue
+                if transport is None:
+                    if not source["config"].get("host") or not source["config"].get("username"):
+                        raise ConnectorError(
+                            "Kodi JSON-RPC est indisponible et aucun repli MariaDB n'est configuré."
+                            if offline else
+                            "Configurez une instance Kodi JSON-RPC ou un repli MariaDB."
+                        )
+                    connector = KodiConnector(
+                        source["config"],
+                        progress=lambda phase, current, total: self.store.update_job_progress(
+                            job["id"], phase, current, total
+                        ),
+                    )
+                    fetch_started = monotonic()
+                    records = await asyncio.to_thread(connector.fetch)
+                    mariadb_read_ms = round((monotonic() - fetch_started) * 1000)
+                    database = connector.database
+                    transport = "mariadb"
             await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
             publish_started = monotonic()
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
             result["sqlite_publish_ms"] = round((monotonic() - publish_started) * 1000)
             if scan_info is not None:
-                result["kodi_scan"] = "finished" if scan_triggered else "sql_only"
+                result["kodi_scan"] = "finished" if scan_triggered else "fallback_or_jsonrpc"
                 result.update(scan_info)
+            if xml is None:
+                result["import_method"] = transport
             if database:
                 result["database"] = database
                 result["mariadb_read_ms"] = mariadb_read_ms

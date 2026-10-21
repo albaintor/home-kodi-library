@@ -1112,8 +1112,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(writable)],
     )
     def create_source(data: SourceInput):
-        if data.type == "kodi" and (not data.config.host or not data.config.username):
-            raise HTTPException(422, "A Kodi source requires a MariaDB host and username.")
+        # The primary source can be Kodi JSON-RPC only. MariaDB is optional.
+        if data.type == "kodi" and bool(data.config.host) != bool(data.config.username):
+            raise HTTPException(422, "MariaDB fallback requires both host and username.")
         return store.save_source(unsecret(data))
 
     @app.put(
@@ -1127,6 +1128,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(409, "Wait for this source's current job before editing it.")
         if not store.source(source_id):
             raise HTTPException(404, "Unknown source.")
+        if data.type == "kodi" and bool(data.config.host) != bool(data.config.username):
+            raise HTTPException(422, "MariaDB fallback requires both host and username.")
         try:
             return store.save_source(unsecret(data), source_id)
         except ValueError as exc:
@@ -1333,7 +1336,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         source = store.source(data.source_id)
         if not source or source["type"] != "kodi":
             raise HTTPException(
-                422, "Associate this Kodi player with an existing Kodi MariaDB source."
+                422, "Associate this Kodi instance with an existing Kodi library source."
             )
         if any(c in data.host for c in ("/", "@", "?", "#")):
             raise HTTPException(422, "Enter a Kodi hostname, not a URL.")
