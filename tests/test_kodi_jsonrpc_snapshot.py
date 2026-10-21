@@ -86,8 +86,11 @@ def test_rpc_cannot_erase_multiple_sql_movie_versions(store):
 
     sid = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
     store.apply_snapshot(
-        sid, [Record("movie:21:100", "movie", "Movie"),
-              Record("movie:21:200", "movie", "Movie")]
+        sid,
+        [
+            Record("movie:21:100", "movie", "Movie", identifiers={"tmdb": "21"}),
+            Record("movie:21:200", "movie", "Movie", identifiers={"tmdb": "21"}),
+        ],
     )
     assert store.has_multiple_kodi_movie_versions(sid) is True
     original = store.media(kind="movie")["total"]
