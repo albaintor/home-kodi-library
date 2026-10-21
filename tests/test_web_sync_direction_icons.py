@@ -12,7 +12,7 @@ def test_incoming_refresh_button_uses_download_arrow():
     assert f'aria-label="{label}"' in button
     assert '<rect x="3" y="3" width="18" height="18" rx="2"/>' in button
     assert 'd="M12 8v8m-4-4 4 4 4-4"' in button
-    assert 'M20 7v5h-5' not in button
+    assert "M20 7v5h-5" not in button
 
 
 def test_outgoing_indicator_uses_upload_arrow():
