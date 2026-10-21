@@ -2,8 +2,9 @@
 
 from unittest.mock import patch
 
-from kodi_library.connectors.kodi import KodiConnector
 from conftest import READ
+
+from kodi_library.connectors.kodi import KodiConnector
 
 
 class FakeCursor:
@@ -19,10 +20,25 @@ class FakeCursor:
 
 
 def test_discover_sorts_exact_video_database_names_only():
-    cursor = FakeCursor(["mysql", "MyVideos99", "MyVideos131", "MyVideos135", "MyVideos33", "MyVideos131_old", "MyMusic82"])
+    cursor = FakeCursor(
+        [
+            "mysql",
+            "MyVideos99",
+            "MyVideos131",
+            "MyVideos135",
+            "MyVideos33",
+            "MyVideos131_old",
+            "MyMusic82",
+        ]
+    )
     connector = KodiConnector({"database": "MyVideos131"})
     discovered = connector._database_discovery(cursor)
-    assert [item["name"] for item in discovered["databases"]] == ["MyVideos135", "MyVideos131", "MyVideos99", "MyVideos33"]
+    assert [item["name"] for item in discovered["databases"]] == [
+        "MyVideos135",
+        "MyVideos131",
+        "MyVideos99",
+        "MyVideos33",
+    ]
     assert discovered["automatic_database"] == "MyVideos135"
     assert discovered["selected_database"] == "MyVideos131"
     assert cursor.sql == ["SHOW DATABASES"]
@@ -37,11 +53,16 @@ def test_discovery_endpoint_is_admin_only_and_does_not_persist_credentials(clien
     body = {"config": {"host": "nas", "username": "reader", "password": "sensitive"}}
     path = "/api/v1/connections/mariadb/databases"
     assert client.post(path, json=body).status_code == 401
-    assert client.post(path, json=body, headers={"Authorization": f"Bearer {READ}"}).status_code == 403
-    with patch.object(KodiConnector, "discover_databases", return_value={
+    assert (
+        client.post(path, json=body, headers={"Authorization": f"Bearer {READ}"}).status_code
+        == 403
+    )
+    response = {
         "databases": [{"name": "MyVideos131", "version": 131}],
-        "automatic_database": "MyVideos131", "selected_database": None,
-    }) as probe:
+        "automatic_database": "MyVideos131",
+        "selected_database": None,
+    }
+    with patch.object(KodiConnector, "discover_databases", return_value=response) as probe:
         result = client.post(path, headers=admin, json=body)
     assert result.status_code == 200
     assert result.json()["databases"][0]["name"] == "MyVideos131"
@@ -52,8 +73,16 @@ def test_discovery_endpoint_is_admin_only_and_does_not_persist_credentials(clien
 
 def test_discovery_uses_saved_secret_on_edit_without_changing_source(client, admin):
     saved = {"config": {"host": "nas", "username": "reader", "password": "protected"}}
-    sid = client.post("/api/v1/sources", headers=admin, json={"name": "Kodi", "type": "kodi", **saved}).json()["id"]
-    payload = {"source_id": sid, "config": {"host": "nas-new", "username": "reader", "password": None}}
+    result = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={"name": "Kodi", "type": "kodi", **saved},
+    )
+    sid = result.json()["id"]
+    payload = {
+        "source_id": sid,
+        "config": {"host": "nas-new", "username": "reader", "password": None},
+    }
     captured = []
 
     def discover(connector):
