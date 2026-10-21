@@ -409,3 +409,15 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .episode-context-menu{position:fixed;z-index:60;min-width:245px;max-width:calc(100vw - 16px);padding:5px;background:var(--raised);border:1px solid var(--border);border-radius:10px;box-shadow:0 12px 34px #0009}
 .episode-context-menu button{display:block;width:100%;font-size:12px;text-align:left;color:var(--text);background:transparent;border:0;padding:11px;min-height:40px;white-space:normal}
 .episode-context-menu button:hover,.episode-context-menu button:focus-visible{background:var(--surface)}
+
+/* Server unreachable: standalone, Home Assistant-style recovery screen. */
+.server-unavailable{min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:24px;background:radial-gradient(ellipse at top right,#29362655,transparent 65%)}
+.server-unavailable-card{max-width:465px;width:100%;text-align:center}
+.server-unavailable-card .brand-mark{width:46px;height:46px;margin:0 auto 21px;display:block}
+.server-unavailable-card .eyebrow{margin-bottom:24px}
+.server-unavailable-card h1{font-size:clamp(26px,5vw,36px);line-height:1.18}
+.server-unavailable-card>p:not(.eyebrow){color:var(--muted);font-size:14px}
+.server-unavailable-card .unavailable-icon{font-size:60px;color:#e9ae76;margin:0 auto 20px;line-height:1}
+.server-unavailable-card .server-unavailable-reason{font-size:12px;color:#f3b3b3;overflow-wrap:anywhere;margin:14px 0 24px}
+.server-unavailable-card #retry-server{width:100%;min-height:46px}
+.server-unavailable-card .retry-server-countdown{margin:18px 0 0;font-size:12px}
