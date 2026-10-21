@@ -214,13 +214,18 @@ function sourceIcon(type) {
   if(type==='kodi') return `<img class="source-icon" src="${esc(url('static/kodi-logo.svg'))}" alt="" width="18" height="18">`;
   return `<svg class="source-icon source-icon-${esc(type)}" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">${shapes[type]||shapes.clz}</svg>`;
 }
+// Use the same directional visual language as iOS: down = Kodi → catalog, up = catalog → Kodi.
+function transferIcon(direction) {
+  const arrow=direction==='up'?'M12 16V8m-4 4 4-4 4 4':'M12 8v8m-4-4 4 4 4-4';
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="${arrow}"/></svg>`;
+}
 function writebackIndicatorMarkup(item) {
   const states=item.writeback_state||[];
   if(!states.length)return '';
   return '<span class="writeback-indicators" aria-label="Synchronisations vers les référentiels">'+
     states.map(entry=>{
-      const mark=entry.status==='updated'?'✓':entry.status==='pending'?'↻':'!';
-      const label=`${entry.source_name} : ${entry.status==='updated'?'synchronisé':entry.status==='pending'?'en attente de rejeu':'échec'}${entry.message?' · '+entry.message:''}`;
+      const mark=entry.status==='updated'?'✓':entry.status==='pending'?transferIcon('up'):'!';
+      const label=`${entry.source_name} : ${entry.status==='updated'?'envoi terminé':entry.status==='pending'?'envoi vers la source en attente de rejeu':'échec de l’envoi'}${entry.message?' · '+entry.message:''}`;
       return `<span class="writeback-chip ${esc(entry.status)}" title="${esc(label)}" aria-label="${esc(label)}">${sourceIcon(entry.source_type)}<span class="writeback-mark" aria-hidden="true">${mark}</span></span>`;
     }).join('')+'</span>';
 }
@@ -253,8 +258,10 @@ function renderPersonalStatus(){
   const node=$('personal-update-indicator'),status=state.personalUpdateState;
   node.hidden=!status||$('app').hidden;
   if(!status)return;
-  const labels={saving:'Enregistrement…',pending:'Synchronisation externe en attente',saved:'Modifications enregistrées',failed:'Échec de l’enregistrement',remoteFailed:'Modifications locales enregistrées · échec externe'};
-  $('personal-update-icon').textContent=['saving','pending'].includes(status)?'↻':status==='saved'?'✓':'!';
+  const labels={saving:'Enregistrement…',pending:'Envoi des modifications vers les sources externes en attente',saved:'Modifications enregistrées',failed:'Échec de l’enregistrement',remoteFailed:'Modifications locales enregistrées · échec externe'};
+  const icon=$('personal-update-icon');
+  if(['saving','pending'].includes(status))icon.innerHTML=transferIcon('up');
+  else icon.textContent=status==='saved'?'✓':'!';
   $('personal-update-label').textContent=labels[status];
   node.className='personal-update-indicator '+status;
   node.title=labels[status];

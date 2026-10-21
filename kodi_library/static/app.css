@@ -110,7 +110,8 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 /* Persistent per-edit status, independent from Kodi imports and scans. */
 .personal-update-indicator{display:inline-flex;align-items:center;gap:7px;border-radius:18px;border:1px solid var(--border);background:var(--raised);color:var(--text);min-height:34px;padding:6px 10px;font-size:12px;max-width:230px}
 .personal-update-indicator[hidden]{display:none!important}
-.personal-update-indicator #personal-update-icon{font-size:17px;font-weight:700}
+.personal-update-indicator #personal-update-icon{font-size:17px;font-weight:700;display:inline-flex;align-items:center;justify-content:center;flex:none;min-width:18px}
+.personal-update-indicator #personal-update-icon svg{display:block;width:18px;height:18px}
 .personal-update-indicator.saving,.personal-update-indicator.pending{color:#e4aa47}
 .personal-update-indicator.saved{color:#65c89c}
 .personal-update-indicator.failed,.personal-update-indicator.remoteFailed{color:#e77e7e}
@@ -207,6 +208,8 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .writeback-indicators { display: inline-flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
 .writeback-chip { display: inline-flex; align-items: center; gap: .22rem; padding: .18rem .35rem; border: 1px solid var(--border, #7776); border-radius: .45rem; vertical-align: middle; }
 .writeback-chip .source-icon { width: 1.05rem; height: 1.05rem; object-fit: contain; }
+.writeback-chip .writeback-mark { display:inline-flex;align-items:center;justify-content:center;min-width:14px;min-height:14px }
+.writeback-chip .writeback-mark svg { width:14px;height:14px;display:block }
 .writeback-chip.updated .writeback-mark { color: #229d70; font-weight: 700; }
 .writeback-chip.pending .writeback-mark { color: #d58e22; font-weight: 700; }
 .writeback-chip.failed .writeback-mark, .writeback-chip.unavailable .writeback-mark { color: #c85050; font-weight: 700; }
