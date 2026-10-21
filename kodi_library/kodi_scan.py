@@ -174,13 +174,6 @@ async def _http_scan(config: dict) -> None:
 async def scan_until_finished(config: dict) -> str:
     """Return 'websocket' or 'http'; never claim an unconfirmed scan finished."""
     try:
-        async with asyncio.timeout(1.0):
-            async with connection(config, timeout=0.9) as rpc:
-                if await rpc("JSONRPC.Ping", {}) != "pong":
-                    raise KodiScanUnavailable("Kodi JSON-RPC did not respond correctly.")
-    except (KodiUnavailable, TimeoutError) as exc:
-        raise KodiScanUnavailable("Kodi est éteint ou injoignable (1 seconde).") from exc
-    try:
         await _websocket_scan(config)
         return "websocket"
     except KodiScanUnavailable:

@@ -94,11 +94,16 @@ class SyncManager:
                     self.store.update_job_progress, job["id"], "kodi_scanning", index, total
                 )
                 try:
+                    # Check offline hosts before starting a potentially long scan.
+                    async with asyncio.timeout(1.0):
+                        async with connection(player["config"], timeout=0.9) as rpc:
+                            if await rpc("JSONRPC.Ping", {}) != "pong":
+                                raise KodiScanUnavailable("Kodi JSON-RPC ping did not respond.")
                     method = await scan_until_finished(player["config"])
                     scanned.append({"name": player["name"], "method": method})
-                except KodiScanUnavailable as exc:
-                    # The scan never started. Reading existing Kodi SQL data
-                    # is safe, but must be labelled as an SQL-only refresh.
+                except (KodiScanUnavailable, KodiUnavailable, TimeoutError) as exc:
+                    # The device was offline, or could not start its scan. The
+                    # subsequent import will attempt JSON-RPC first then SQL.
                     warnings.append(f"{player['name']} : {exc}")
                 await asyncio.to_thread(
                     self.store.update_job_progress, job["id"], "kodi_scanning", index + 1, total

@@ -106,8 +106,11 @@ def test_sql_navigation_removes_residual_movie_even_if_movie_row_is_present(stor
     db.close()
 
 
-def test_sync_uses_mariadb_only_even_when_player_is_configured(store):
-    source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
+def test_sync_falls_back_to_mariadb_when_player_is_offline(store):
+    source_id = store.save_source({
+        "name": "Kodi", "type": "kodi",
+        "config": {"host": "nas", "username": "reader"},
+    })["id"]
     store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi", "port": 8080})
     store.apply_snapshot(
         source_id,
@@ -128,13 +131,23 @@ def test_sync_uses_mariadb_only_even_when_player_is_configured(store):
         await asyncio.gather(*manager.tasks)
         return store.job(job["id"])
 
+    from contextlib import asynccontextmanager
+
+    from kodi_library.players import KodiUnavailable
+
+    @asynccontextmanager
+    async def offline(_config, **_kwargs):
+        raise KodiUnavailable("Kodi is offline")
+        yield  # pragma: no cover
+
     with (
         patch.object(KodiConnector, "fetch", fake_fetch),
-        patch.object(store, "player", side_effect=AssertionError("Should not query Kodi players")),
+        patch("kodi_library.sync.connection", offline),
     ):
         job = asyncio.run(run())
     assert job["status"] == "completed"
     assert job["result"]["library_verified"] is True
+    assert job["result"]["import_method"] == "mariadb"
     assert job["result"]["removed_editions"] == 1
     assert store.media(kind="movie")["total"] == 1
     db.close()
