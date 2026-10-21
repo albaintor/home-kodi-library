@@ -51,6 +51,7 @@ from .models import (
     ListPage,
     ListView,
     MariaDBConnectionInput,
+    MariaDBDatabasesResult,
     MediaDetail,
     MediaPage,
     PairingRedeem,
@@ -1002,6 +1003,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return Response(data, media_type=content_type)
         except ArtworkError as exc:
             raise HTTPException(404, str(exc)) from exc
+
+    @app.post(
+        API + "/connections/mariadb/databases",
+        response_model=MariaDBDatabasesResult,
+        tags=["Connections"],
+        dependencies=[Depends(writable)],
+    )
+    async def discover_mariadb_databases(data: MariaDBConnectionInput):
+        """List only visible Kodi video schemas; never persist entered credentials."""
+        config = unsecret(data)["config"]
+        if data.source_id:
+            existing = await asyncio.to_thread(store.source, data.source_id, private=True)
+            if not existing or existing["type"] != "kodi":
+                raise HTTPException(404, "Unknown Kodi MariaDB source.")
+            if config.get("password") is None:
+                config["password"] = existing["config"].get("password", "")
+        config["password"] = config.get("password") or ""
+        try:
+            return await asyncio.to_thread(KodiConnector(config).discover_databases)
+        except ConnectorError as exc:
+            raise HTTPException(502, str(exc)) from exc
 
     @app.post(
         API + "/connections/mariadb/test",

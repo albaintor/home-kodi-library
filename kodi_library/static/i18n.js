@@ -3,6 +3,11 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Rechercher les bases MyVideos": "Find MyVideos databases",
+  "Bases MyVideos disponibles": "Available MyVideos databases",
+  "Sélectionner une base…": "Select a database…",
+  "Choisir une base MyVideos…": "Choose a MyVideos database…",
+  "Recherche des bases accessibles…": "Searching available databases…",
   "Copier le titre": "Copy title",
   "Titre copié.": "Title copied.",
   "Copiez le titre": "Copy the title",

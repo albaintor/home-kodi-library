@@ -167,6 +167,34 @@ class KodiConnector:
         """Check authentication, the selected schema and view SELECT permissions."""
         return self._read(self._probe)
 
+    def discover_databases(self) -> dict[str, Any]:
+        """List the user's visible MyVideos schemas without choosing or changing one.
+
+        Intentionally bypasses SELECTing the configured database, which might
+        not exist after an upgrade. This also works with a read-only SQL account.
+        """
+        return self._read(self._database_discovery, listing_only=True)
+
+    @staticmethod
+    def _visible_video_databases(cursor: Any) -> list[tuple[int, str]]:
+        cursor.execute("SHOW DATABASES")
+        visible = [str(next(iter(row.values()))) for row in cursor.fetchall()]
+        choices = []
+        for name in visible:
+            match = re.fullmatch(r"MyVideos(\d+)", name, flags=re.IGNORECASE)
+            if match:
+                choices.append((int(match.group(1)), name))
+        return sorted(choices, key=lambda item: (item[0], item[1]), reverse=True)
+
+    def _database_discovery(self, cursor: Any) -> dict[str, Any]:
+        databases = self._visible_video_databases(cursor)
+        selected = self.config.get("database") or None
+        return {
+            "databases": [{"name": name, "version": number} for number, name in databases],
+            "automatic_database": databases[0][1] if databases else None,
+            "selected_database": selected,
+        }
+
     def check_movie_ids(self, movie_ids: list[int]) -> dict[str, Any]:
         """Check a film's IDs in Kodi's real movie table, not its derived view.
 
@@ -296,7 +324,7 @@ class KodiConnector:
 
         return self._read(inspect)
 
-    def _read(self, operation):
+    def _read(self, operation, *, listing_only: bool = False):
         config = self.config
         if not config.get("host") or not config.get("username"):
             raise ConnectorError("Configure the MariaDB hostname and read-only username.")
@@ -323,21 +351,17 @@ class KodiConnector:
                 ssl=ssl,
             ) as conn:
                 with conn.cursor() as cursor:
+                    if listing_only:
+                        return operation(cursor)
                     if requested:
                         database = requested
                     else:
-                        cursor.execute("SHOW DATABASES")
-                        available = [str(next(iter(r.values()))) for r in cursor.fetchall()]
-                        choices = [
-                            (int(m[1]), name)
-                            for name in available
-                            if (m := re.fullmatch(r"MyVideos(\d+)", name))
-                        ]
+                        choices = self._visible_video_databases(cursor)
                         if not choices:
                             raise ConnectorError(
                                 "No accessible MyVideos database. Specify its name or grant SELECT permission."
                             )
-                        database = max(choices)[1]
+                        database = choices[0][1]
                     conn.select_db(database)
                     self.database = database
                     cursor.execute("SET SESSION TRANSACTION READ ONLY")

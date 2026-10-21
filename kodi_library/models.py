@@ -88,6 +88,17 @@ class KodiConnectionInput(StrictModel):
     player_id: str | None = None
 
 
+class MariaDBDatabaseOption(BaseModel):
+    name: str
+    version: int
+
+
+class MariaDBDatabasesResult(BaseModel):
+    databases: list[MariaDBDatabaseOption]
+    automatic_database: str | None = None
+    selected_database: str | None = None
+
+
 class ConnectionResult(BaseModel):
     success: Literal[True] = True
     kind: Literal["mariadb", "kodi", "tmdb"]
