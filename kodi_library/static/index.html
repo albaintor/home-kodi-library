@@ -10,6 +10,18 @@
   <script type="module" src="static/app.js"></script>
 </head>
 <body>
+  <section id="server-unavailable" class="server-unavailable" role="status" aria-live="polite" hidden>
+    <div class="server-unavailable-card">
+      <img class="brand-mark" src="static/cinema.svg" alt="" width="46" height="46">
+      <p class="eyebrow">MEDIA CATALOG</p>
+      <div class="unavailable-icon" aria-hidden="true">⌁</div>
+      <h1>Connexion au serveur impossible</h1>
+      <p>Le serveur Media Catalog est momentanément inaccessible. Votre bibliothèque et vos paramètres sont conservés.</p>
+      <p id="server-unavailable-reason" class="server-unavailable-reason"></p>
+      <button id="retry-server" class="primary" type="button">Réessayer maintenant</button>
+      <p id="retry-server-countdown" class="retry-server-countdown" aria-live="off">Nouvelle tentative dans 10 s…</p>
+    </div>
+  </section>
   <section id="login" hidden class="login-wrap">
     <form id="login-form" class="login-card">
       <img class="brand-mark" src="static/cinema.svg" alt="" width="46" height="46">
