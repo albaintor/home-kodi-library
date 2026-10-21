@@ -69,9 +69,47 @@ def test_new_job_field_is_additive_for_v1_mobile_clients(client, admin):
     assert response.status_code == 200
     data = response.json()
     assert data["operation"] == "kodi_scan"
-    assert {
-        "id", "source_id", "status", "created_at", "finished_at",
-        "result", "error", "progress_phase", "progress_current",
-        "progress_total", "overall_percent",
-    } <= data.keys()
+    old_fields = {
+        "id",
+        "source_id",
+        "status",
+        "created_at",
+        "finished_at",
+        "result",
+        "error",
+        "progress_phase",
+        "progress_current",
+        "progress_total",
+        "overall_percent",
+    }
+    assert old_fields <= data.keys()
     assert mobile_compatibility() == {"min_contract": 1, "max_contract": 1}
+
+
+def test_migration_from_pre_operation_sqlite_schema_preserves_old_jobs(tmp_path):
+    """Opening a previous server's SQLite store adds only the optional job metadata."""
+    from kodi_library.store import Store
+
+    store = Store(tmp_path / "catalog.sqlite3")
+    store.initialize()
+    with store.connect() as conn:
+        conn.execute(
+            "INSERT INTO sources(id,name,type,config) VALUES(?,?,?,?)",
+            ("older-kodi", "Kodi", "kodi", "{}"),
+        )
+        conn.execute(
+            "INSERT INTO jobs(id,source_id,status,created_at) VALUES(?,?,?,?)",
+            ("older-job", "older-kodi", "completed", "2026-10-20T10:00:00Z"),
+        )
+        conn.execute("ALTER TABLE jobs DROP COLUMN operation")
+
+    store.initialize()
+    assert store.job("older-job")["operation"] == "kodi_sync"
+    with store.connect() as conn:
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        # A previous-server insert remains valid because the new field has a default.
+        conn.execute(
+            "INSERT INTO jobs(id,source_id,status,created_at) VALUES(?,?,?,?)",
+            ("legacy-client-job", "older-kodi", "pending", "2026-10-20T10:01:00Z"),
+        )
+    assert store.job("legacy-client-job")["operation"] == "kodi_sync"
