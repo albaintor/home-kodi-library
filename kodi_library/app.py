@@ -210,6 +210,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def index():
         return FileResponse(STATIC / "index.html")
 
+    @app.get("/service-worker.js", include_in_schema=False)
+    def service_worker():
+        # Serve from the site root so it can recover the application shell
+        # after a reload while the server is temporarily offline.
+        return FileResponse(STATIC / "service-worker.js", media_type="text/javascript")
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/docs", include_in_schema=False, dependencies=[Depends(authenticated)])
