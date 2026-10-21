@@ -42,6 +42,7 @@ def main():
                     plot="Une équipe part à la découverte d'une cité oubliée. " * 6,
                     formats=["4K", "1080p", "3D", "Dolby Vision", "HDR10", "HDR10+", "Dolby Atmos"],
                     poster=["https://example.org/demo.jpg"],
+                    fanart=["https://example.org/demo-wide.jpg"],
                     metadata={
                         "kodi_id": index,
                         "file": f"smb://nas/films/film-{index}.mkv",
@@ -226,7 +227,7 @@ def main():
                 background = store.new_job(source["id"])
                 store.start_job(background["id"])
                 expect(page.locator("#activity-indicator")).to_be_visible(timeout=8000)
-                expect(page.locator("#activity-label")).to_contain_text("Kodi")
+                expect(page.locator("#activity-label")).to_contain_text("MariaDB")
                 store.finish_job(
                     background["id"], result={"database": "MyVideos131", "removed_editions": 0}
                 )
@@ -350,6 +351,29 @@ def main():
                 page.locator("#toggle-filters").click()
                 page.locator(".media-card").first.click()
                 expect(page.locator("#detail-dialog")).to_be_visible()
+                # Copying the heading is not a navigation action.
+                title = page.locator("#copy-media-title").inner_text()
+                page.locator("#copy-media-title").click()
+                expect(page.locator("#toast")).to_have_text("Titre copié.")
+                assert page.locator("#copy-media-title").inner_text() == title
+                # The poster opens a modal above the detail; both existing
+                # poster and fanart can be browsed without cropping.
+                page.locator("#open-artwork-gallery").click()
+                expect(page.locator("#artwork-gallery-dialog")).to_be_visible()
+                expect(page.locator("#artwork-gallery-counter")).to_have_text("1 / 2")
+                assert page.locator("#artwork-gallery-image").evaluate(
+                    "image=>getComputedStyle(image).objectFit"
+                ) == "contain"
+                page.locator("#artwork-gallery-next").click()
+                expect(page.locator("#artwork-gallery-counter")).to_have_text("2 / 2")
+                page.keyboard.press("ArrowLeft")
+                expect(page.locator("#artwork-gallery-counter")).to_have_text("1 / 2")
+                page.locator('[data-close="artwork-gallery-dialog"]').click()
+                expect(page.locator("#artwork-gallery-dialog")).to_be_hidden()
+                expect(page.locator("#detail-dialog")).to_be_visible()
+                assert page.locator("html").evaluate(
+                    "e=>e.classList.contains('modal-open')"
+                )
                 expect(page.locator(".cast-member")).to_have_count(13)
                 expect(page.locator(".person-photo img")).to_have_count(13)
                 expect(page.locator(".person-photo img").first).to_have_js_property(
