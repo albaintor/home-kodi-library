@@ -146,9 +146,26 @@ async function api(path, options={}) {
     throw unavailable;
   }
   if([502,503,504].includes(response.status)||(response.status===500&&path==='auth/session')) {
-    const unavailable=unavailableError('Le serveur est momentanément indisponible (HTTP '+response.status+').');
-    showServerUnavailable(unavailable);
-    throw unavailable;
+    // An individual operation (Kodi playback, writeback, etc.) can return
+    // 502/503 while the catalog server itself remains healthy. Distinguish
+    // this from an actual server outage before covering the whole screen.
+    let serverResponding=false;
+    if(path!=='auth/session') {
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),3000);
+      try {
+        const probe=await fetch(url('api/v1/discovery'),{
+          cache:'no-store',credentials:'same-origin',signal:controller.signal
+        });
+        serverResponding=probe.ok;
+      } catch { /* The health probe could not reach the server. */ }
+      finally { clearTimeout(timeout); }
+    }
+    if(!serverResponding) {
+      const unavailable=unavailableError('Le serveur est momentanément indisponible (HTTP '+response.status+').');
+      showServerUnavailable(unavailable);
+      throw unavailable;
+    }
   }
   if (response.status===204) return null;
   const value=await response.json();
