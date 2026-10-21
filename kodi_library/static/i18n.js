@@ -3,6 +3,10 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Connexion au serveur impossible": "Cannot connect to server",
+  "Le serveur Media Catalog est momentanément inaccessible. Votre bibliothèque et vos paramètres sont conservés.": "The Media Catalog server is temporarily unreachable. Your library and settings are preserved.",
+  "Réessayer maintenant": "Retry now",
+  "Nouvelle tentative dans 10 s…": "Retrying in 10 s…",
   "Actualiser les médiathèques distantes": "Refresh remote Kodi libraries",
   "Lance l’analyse de chaque instance Kodi configurée, puis actualise le catalogue MariaDB.": "Scan all configured Kodi instances, then refresh the MariaDB catalog.",
   "Actualisation Kodi": "Kodi library refresh",
