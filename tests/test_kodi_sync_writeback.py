@@ -101,7 +101,18 @@ def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
 
 def test_kodi_scan_finished_triggers_local_sync(client, admin):
     sid, _mid = kodi_fixture(client, admin)
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def reachable(_config, **_kwargs):
+        async def rpc(method, _params):
+            assert method == "JSONRPC.Ping"
+            return "pong"
+
+        yield rpc
+
     with (
+        patch("kodi_library.sync.connection", reachable),
         patch(
             "kodi_library.sync.scan_until_finished",
             new_callable=AsyncMock,
@@ -137,7 +148,18 @@ def test_kodi_scan_finished_triggers_local_sync(client, admin):
 
 def test_kodi_scan_disconnection_never_resynchronizes(client, admin):
     sid, _mid = kodi_fixture(client, admin)
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
+    async def reachable(_config, **_kwargs):
+        async def rpc(method, _params):
+            assert method == "JSONRPC.Ping"
+            return "pong"
+
+        yield rpc
+
     with (
+        patch("kodi_library.sync.connection", reachable),
         patch(
             "kodi_library.sync.scan_until_finished",
             new_callable=AsyncMock,
