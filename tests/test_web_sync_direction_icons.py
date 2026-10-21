@@ -8,7 +8,9 @@ STATIC = Path(__file__).resolve().parents[1] / "kodi_library" / "static"
 def test_incoming_refresh_button_uses_download_arrow():
     html = (STATIC / "index.html").read_text()
     button = html.split('id="scan-all-kodi"', 1)[1].split("</button>", 1)[0]
-    assert 'aria-label="Analyser les vidéothèques Kodi puis synchroniser MariaDB"' in button
+    assert (
+        'aria-label="Analyser les vidéothèques Kodi puis synchroniser MariaDB"' in button
+    )
     assert '<rect x="3" y="3" width="18" height="18" rx="2"/>' in button
     assert 'd="M12 8v8m-4-4 4 4 4-4"' in button
     assert 'M20 7v5h-5' not in button
