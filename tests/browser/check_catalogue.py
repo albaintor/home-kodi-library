@@ -361,9 +361,12 @@ def main():
                 page.locator("#open-artwork-gallery").click()
                 expect(page.locator("#artwork-gallery-dialog")).to_be_visible()
                 expect(page.locator("#artwork-gallery-counter")).to_have_text("1 / 2")
-                assert page.locator("#artwork-gallery-image").evaluate(
-                    "image=>getComputedStyle(image).objectFit"
-                ) == "contain"
+                assert (
+                    page.locator("#artwork-gallery-image").evaluate(
+                        "image=>getComputedStyle(image).objectFit"
+                    )
+                    == "contain"
+                )
                 page.locator("#artwork-gallery-next").click()
                 expect(page.locator("#artwork-gallery-counter")).to_have_text("2 / 2")
                 page.keyboard.press("ArrowLeft")
@@ -371,9 +374,7 @@ def main():
                 page.locator('[data-close="artwork-gallery-dialog"]').click()
                 expect(page.locator("#artwork-gallery-dialog")).to_be_hidden()
                 expect(page.locator("#detail-dialog")).to_be_visible()
-                assert page.locator("html").evaluate(
-                    "e=>e.classList.contains('modal-open')"
-                )
+                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
                 expect(page.locator(".cast-member")).to_have_count(13)
                 expect(page.locator(".person-photo img")).to_have_count(13)
                 expect(page.locator(".person-photo img").first).to_have_js_property(
