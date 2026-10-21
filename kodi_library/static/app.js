@@ -942,12 +942,73 @@ function resumeProgress(item) {
     <progress value="${percent}" max="100" aria-label="Progression de lecture"></progress>
   </div>`;
 }
+// A media currently exposes a poster and, optionally, fanart. Keep unique available images.
+function mediaArtworkImages(item) {
+  const images=[{path:item.artwork?.poster,label:tr('Affiche')},{path:item.artwork?.fanart,label:tr('Fond d’écran')}];
+  return images.filter((image,index)=>typeof image.path==='string'&&image.path.trim()&&
+    images.findIndex(candidate=>candidate.path===image.path)===index);
+}
+let artworkGalleryImages=[],artworkGalleryIndex=0,artworkGalleryTitle='';
+function renderArtworkGallery() {
+  if(!artworkGalleryImages.length)return;
+  const asset=artworkGalleryImages[artworkGalleryIndex];
+  const image=$('artwork-gallery-image');
+  const fullURL=url(asset.path);
+  image.hidden=false;
+  image.onerror=()=>{if(image.src===fullURL){image.hidden=true;$('artwork-gallery-caption').textContent=tr('Image indisponible.');}};
+  image.alt=`${asset.label} · ${artworkGalleryTitle}`;
+  image.src=fullURL;
+  $('artwork-gallery-caption').textContent=asset.label;
+  $('artwork-gallery-title').textContent=artworkGalleryTitle;
+  $('artwork-gallery-counter').textContent=`${artworkGalleryIndex+1} / ${artworkGalleryImages.length}`;
+  const multiple=artworkGalleryImages.length>1;
+  $('artwork-gallery-prev').hidden=!multiple;
+  $('artwork-gallery-next').hidden=!multiple;
+  $('artwork-gallery-counter').hidden=!multiple;
+}
+function openArtworkGallery() {
+  const item=state.detail;if(!item)return;
+  artworkGalleryImages=mediaArtworkImages(item);
+  if(!artworkGalleryImages.length)return;
+  artworkGalleryIndex=0;
+  artworkGalleryTitle=item.title;
+  renderArtworkGallery();
+  showDialog('artwork-gallery-dialog');
+}
+function stepArtworkGallery(offset) {
+  if(!artworkGalleryImages.length||!$('artwork-gallery-dialog').open)return;
+  artworkGalleryIndex=(artworkGalleryIndex+offset+artworkGalleryImages.length)%artworkGalleryImages.length;
+  renderArtworkGallery();
+}
+async function copyMediaTitle() {
+  const title=state.detail?.title;
+  if(!title)return;
+  if(navigator.clipboard?.writeText&&window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(title);
+      toast('Titre copié.');
+      return;
+    }catch { /* Older browsers may deny clipboard access. */ }
+  }
+  // Keep the fallback inside the open modal; elements outside it are inert.
+  const field=document.createElement('textarea');
+  field.value=title;
+  field.setAttribute('readonly','');
+  field.style.cssText='position:fixed;opacity:0;pointer-events:none';
+  $('detail-dialog').appendChild(field);
+  field.select();
+  let copied=false;
+  try {copied=document.execCommand('copy');}catch { /* Show manual fallback below. */ }
+  field.remove();
+  if(copied)toast('Titre copié.');
+  else localizedPrompt('Copiez le titre',title);
+}
 function renderDetail(item) {
   closeEpisodeContextMenu();
   const previousScroll=state.detail?.id===item.id?$('detail-dialog').scrollTop:0;
   hideRatingPopover();
   state.detail=item;
-  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster">${poster(item,true)}</div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2>${esc(item.title)}</h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}${seriesProgressMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}${castMarkup(item.people||item.cast)}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
+  $('detail-content').innerHTML=`${metadataAction(item)}<div class="detail-layout"><div class="detail-poster"><button type="button" id="open-artwork-gallery" class="detail-poster-trigger" title="${esc(tr('Agrandir les images du média'))}" aria-label="${esc(tr('Agrandir les images du média'))}" ${mediaArtworkImages(item).length?'':'disabled'}>${poster(item,true)}</button></div><div class="detail-intro"><p class="eyebrow">${esc(kindLabels[item.kind])}</p><div class="detail-heading"><h2><button type="button" id="copy-media-title" class="detail-copy-title" title="${esc(tr('Copier le titre'))}" aria-label="${esc(tr('Copier le titre'))}">${esc(item.title)}</button></h2>${item.original_title&&item.original_title!==item.title?`<p class="original-title">${esc(item.original_title)}</p>`:''}</div><div class="detail-info">${item.year?`<span>${item.year}</span>`:''}${item.runtime_minutes?`<span>${item.runtime_minutes} min</span>`:''}${item.rating?`<span class="score" title="Note publique : ${Number(item.rating).toFixed(1)}/10">★ ${Number(item.rating).toFixed(1)}</span>`:''}</div>${detailActions(item)}<div class="format-badges" aria-label="Formats disponibles selon les éditions">${detailFormatBadges(item)}</div> ${resumeProgress(item)}<div class="detail-meta-row">${watchMarkup(item)}${seriesProgressMarkup(item)}<div class="card-meta">${badges(item)}</div></div>${!item.source_types.includes('kodi')?'<p class="hint">Cette fiche provient uniquement de collections importées. Aucun fichier Kodi ne lui est actuellement associé dans le catalogue.</p>':''}<button id="add-to-list" class="secondary" ${state.role==='admin'?'':'disabled title="Un accès administrateur est nécessaire pour modifier les listes."'}>+ Ajouter à une liste</button>${item.lists?.length?`<p class="hint">Listes : ${item.lists.map(l=>`<button class="text-button" data-open-list="${esc(l.id)}">${esc(l.name)} ↗</button>`).join(' · ')}</p>`:''}</div><div class="detail-body">${item.kind==='episode'&&item.parent_id?`<button class="text-button" type="button" data-return-to-series="${esc(item.parent_id)}" data-return-season="${item.season??0}">← Série · Saison ${item.season??0} · Épisode ${item.episode??0}</button>`:''}<div class="genre-chips">${item.genres.map(g=>`<button data-genre="${esc(g)}">${esc(g)}</button>`).join('')}</div><p class="synopsis">${esc(item.plot||'Synopsis non renseigné.')}</p>${detailDatesMarkup(item)}${item.kind==='tvshow'?'<section class="detail-section"><p class="section-label">SAISONS</p><div id="season-list" class="season-links">Chargement…</div><div id="episode-list" class="episode-links"></div></section>':''}${castMarkup(item.people||item.cast)}<section class="detail-section"><p class="section-label">FICHIERS & ÉDITIONS · ${item.editions.length}</p>${item.editions.map(editionMarkup).join('')}${state.role==='admin'&&item.kind==='movie'?'<button id="diagnose-kodi" class="secondary" type="button">Vérifier la présence dans la vidéothèque</button><div id="kodi-diagnostic" class="metadata-status" role="status" aria-live="polite" hidden></div>':''}</section>${tmdbAttribution(item)}</div></div>`;
   attachImageFallbacks($('detail-content'));syncPersonalControls();$('detail-dialog').scrollTop=previousScroll;
 }
 async function openDetail(id) {
@@ -1291,6 +1352,9 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
+  if(button.id==='copy-media-title'){await copyMediaTitle();return;}
+  if(button.id==='open-artwork-gallery'){openArtworkGallery();return;}
+  if(button.hasAttribute('data-artwork-step')){stepArtworkGallery(Number(button.dataset.artworkStep));return;}
   if(button.dataset.searchPerson){searchLocalPerson(button.dataset.searchPerson,button.dataset.personTmdb,button.dataset.personImdb);return;}
   if(button.hasAttribute('data-watch-through-episode')){
     const season=Number(button.dataset.watchThroughSeason),episode=Number(button.dataset.watchThroughEpisode);
@@ -1663,7 +1727,29 @@ document.addEventListener('click',event=>{
 document.addEventListener('input',event=>{if(event.target.id==='rating-slider')previewRating(Number(event.target.value));});
 document.addEventListener('change',event=>{if(event.target.id==='rating-slider')savePersonal({user_rating:Number(event.target.value)});});
 $('detail-dialog').addEventListener('scroll',hideRatingPopover);
-$('detail-dialog').addEventListener('close',()=>{hideRatingPopover();if($('play-dialog').open)$('play-dialog').close();if($('trailers-dialog').open)$('trailers-dialog').close();});
+$('detail-dialog').addEventListener('close',()=>{hideRatingPopover();if($('play-dialog').open)$('play-dialog').close();if($('trailers-dialog').open)$('trailers-dialog').close();if($('artwork-gallery-dialog').open)$('artwork-gallery-dialog').close();});
+// Mobile swipes and desktop drags. Vertical scrolling does not change images.
+let artworkSwipeStart=null;
+$('artwork-gallery-image').addEventListener('pointerdown',event=>{
+  if(event.button!==0)return;
+  artworkSwipeStart={x:event.clientX,y:event.clientY,id:event.pointerId};
+  event.currentTarget.setPointerCapture(event.pointerId);
+});
+$('artwork-gallery-image').addEventListener('pointerup',event=>{
+  if(!artworkSwipeStart||artworkSwipeStart.id!==event.pointerId)return;
+  const dx=event.clientX-artworkSwipeStart.x,dy=event.clientY-artworkSwipeStart.y;
+  artworkSwipeStart=null;
+  if(Math.abs(dx)>45&&Math.abs(dx)>Math.abs(dy)*1.25)stepArtworkGallery(dx<0?1:-1);
+});
+$('artwork-gallery-image').addEventListener('pointercancel',()=>{artworkSwipeStart=null;});
+document.addEventListener('keydown',event=>{
+  if(!$('artwork-gallery-dialog').open)return;
+  if(event.key==='ArrowRight'||event.key==='ArrowLeft'){
+    event.preventDefault();
+    stepArtworkGallery(event.key==='ArrowRight'?1:-1);
+  }
+});
+$('artwork-gallery-dialog').addEventListener('close',()=>{artworkSwipeStart=null;});
 $('play-dialog').addEventListener('close',savePlaybackDraft);
 window.addEventListener('resize',positionRatingPopover);
 

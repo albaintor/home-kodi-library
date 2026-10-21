@@ -3,6 +3,17 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Copier le titre": "Copy title",
+  "Titre copié.": "Title copied.",
+  "Copiez le titre": "Copy the title",
+  "Agrandir les images du média": "View media images",
+  "Galerie d’images du média": "Media image gallery",
+  "Fermer la galerie": "Close gallery",
+  "Image précédente": "Previous image",
+  "Image suivante": "Next image",
+  "Image indisponible.": "Image unavailable.",
+  "Affiche": "Poster",
+  "Fond d’écran": "Backdrop",
   "Connexion au serveur impossible": "Cannot connect to server",
   "Le serveur Media Catalog est momentanément inaccessible. Votre bibliothèque et vos paramètres sont conservés.": "The Media Catalog server is temporarily unreachable. Your library and settings are preserved.",
   "Réessayer maintenant": "Retry now",
