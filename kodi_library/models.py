@@ -338,6 +338,7 @@ class JobView(BaseModel):
     id: str
     source_id: str
     status: Literal["pending", "running", "completed", "failed"]
+    operation: Literal["kodi_sync", "kodi_scan", "collection_import"] = "kodi_sync"
     created_at: str
     finished_at: str | None = None
     result: dict[str, Any] | None = None

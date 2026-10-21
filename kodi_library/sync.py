@@ -44,7 +44,10 @@ class SyncManager:
             raise BusyError("A synchronization is already running for this source.")
         self.active.add(source_id)
         try:
-            job = await asyncio.to_thread(self.store.new_job, source_id)
+            job = await asyncio.to_thread(
+                self.store.new_job, source_id,
+                "collection_import" if xml is not None else "kodi_sync",
+            )
         except Exception:
             self.active.remove(source_id)
             raise
@@ -67,7 +70,7 @@ class SyncManager:
             raise ValueError("Aucune instance Kodi valide pour cette source.")
         self.active.add(source_id)
         try:
-            job = await asyncio.to_thread(self.store.new_job, source_id)
+            job = await asyncio.to_thread(self.store.new_job, source_id, "kodi_scan")
         except Exception:
             self.active.discard(source_id)
             raise

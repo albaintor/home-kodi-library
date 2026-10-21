@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS players (
 CREATE TABLE IF NOT EXISTS jobs (
  id TEXT PRIMARY KEY, source_id TEXT NOT NULL REFERENCES sources(id) ON DELETE CASCADE,
  status TEXT NOT NULL, created_at TEXT NOT NULL, finished_at TEXT, result TEXT, error TEXT,
+ operation TEXT NOT NULL DEFAULT 'kodi_sync',
  progress_phase TEXT, progress_current INTEGER NOT NULL DEFAULT 0,
  progress_total INTEGER NOT NULL DEFAULT 0
 );
@@ -267,9 +268,15 @@ class Store:
                 ("progress_phase", "TEXT"),
                 ("progress_current", "INTEGER NOT NULL DEFAULT 0"),
                 ("progress_total", "INTEGER NOT NULL DEFAULT 0"),
+                ("operation", "TEXT NOT NULL DEFAULT 'kodi_sync'"),
             ):
                 if column not in job_columns:
                     conn.execute(f"ALTER TABLE jobs ADD COLUMN {column} {definition}")
+            # Label pre-migration collection jobs correctly, without changing their history.
+            conn.execute(
+                "UPDATE jobs SET operation='collection_import' WHERE operation='kodi_sync' "
+                "AND source_id IN (SELECT id FROM sources WHERE type!='kodi')"
+            )
             conn.execute(
                 "UPDATE jobs SET status='failed',finished_at=?,error='Application restarted before the job completed' WHERE status IN ('pending','running')",
                 (now(),),
@@ -1683,12 +1690,14 @@ class Store:
             "sources": self.sources(),
         }
 
-    def new_job(self, source_id: str) -> dict[str, Any]:
+    def new_job(self, source_id: str, operation: str = "kodi_sync") -> dict[str, Any]:
+        if operation not in {"kodi_sync", "kodi_scan", "collection_import"}:
+            raise ValueError("Unsupported job operation.")
         job_id = str(uuid4())
         with self.connect() as conn:
             conn.execute(
-                "INSERT INTO jobs(id,source_id,status,created_at) VALUES(?,?,'pending',?)",
-                (job_id, source_id, now()),
+                "INSERT INTO jobs(id,source_id,status,created_at,operation) VALUES(?,?,'pending',?,?)",
+                (job_id, source_id, now(), operation),
             )
         return self.job(job_id)
 
@@ -1782,7 +1791,10 @@ class Store:
     def start_job(self, job_id: str) -> None:
         with self.connect() as conn:
             conn.execute(
-                "UPDATE jobs SET status='running',progress_phase='connecting',"
+                "UPDATE jobs SET status='running',"
+                "progress_phase=CASE WHEN operation='kodi_scan' THEN 'kodi_scanning' "
+                "WHEN operation='collection_import' THEN 'reading_collection' "
+                "ELSE 'connecting' END,"
                 "progress_current=0,progress_total=0 WHERE id=?",
                 (job_id,),
             )
