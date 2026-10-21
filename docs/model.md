@@ -1,92 +1,91 @@
-# Modèle et persistance
+# Data Model and Persistence
 
-## Catalogue et connecteurs
+## Catalog and Connectors
 
-- **Source** : base Kodi MariaDB ou collection XML CLZ, paramètres, dernier import et erreur éventuelle.
-- **Œuvre** : film, série ou épisode, identifié par UUID ; métadonnées consolidées pour recherche et affichage.
-- **Édition/enregistrement** : une entrée stable d'une source. Plusieurs disques CLZ ou fichiers/versions Kodi peuvent appartenir à la même œuvre.
-- **Identifiants** : IMDb/TMDB/TVDB normalisés, associés au type de média. Les codes-barres et identifiants CLZ restent dans les métadonnées d'édition.
-- **Cible de lecture** : instance Kodi HTTP, liée explicitement à une source Kodi.
-- **Tâche** : import/synchronisation asynchrone, état et compteurs.
+- **Source**: Kodi MariaDB database or CLZ XML collection, configuration, last import, and any error.
+- **Work**: movie, TV show, or episode, identified by UUID; consolidated metadata for search and display.
+- **Edition/record**: a stable entry from a source. Several CLZ discs or Kodi files/versions can belong to the same work.
+- **Identifiers**: normalized IMDb/TMDB/TVDB identifiers, associated with the media type. Barcodes and CLZ identifiers remain in the edition metadata.
+- **Playback target**: Kodi HTTP instance explicitly linked to a Kodi source.
+- **Job**: asynchronous import/synchronization, status, and counters.
 
-Les connecteurs produisent le même `Record` interne. Un futur connecteur transforme son export/API dans ce format et réutilise la logique d'instantané et de rapprochement. Le modèle réserve les métadonnées propres à chaque source.
+Connectors produce the same internal `Record` structure. A future connector converts its export/API into this format and reuses the snapshot and matching logic. The model reserves space for source-specific metadata.
 
-Les rapprochements nécessitent un identifiant IMDb, TMDB ou TVDB commun, un type identique et l'absence de contradiction avec les identifiants connus. Un titre similaire ne fusionne jamais un remake avec son original. Les cas ambigus restent séparés et sont comptés dans `matching_conflicts`. Il n'existe pas encore d'écran de résolution manuelle.
+Matching requires a shared IMDb, TMDB, or TVDB identifier, an identical media type, and no contradiction with known identifiers. A similar title never merges a remake with its original. Ambiguous cases remain separate and are counted in `matching_conflicts`. There is not yet a manual conflict-resolution screen.
 
-Une synchronisation Kodi traite l'instantané complet des entrées encore présentes dans la base MyVideos. Les éditions Kodi devenues absentes sont supprimées de SQLite ; une œuvre sans aucune autre source est retirée du catalogue et de ses listes. Si une œuvre possède aussi des éditions CLZ (rapprochées par identifiant commun), elle reste présente : les métadonnées sont reconstruites depuis CLZ, les fichiers Kodi disparus ne sont plus proposés à la lecture, et les notes/listes personnelles sont conservées. Le résultat du traitement distingue les éditions retirées, les œuvres supprimées et les œuvres conservées via CLZ. Le bilan affiche la base MyVideos réellement consultée, les titres retirés (jusqu'à 20, avec nombre total) et signale explicitement lorsqu'aucune suppression n'a été détectée dans cet instantané. Les suppressions sur le disque ne sont observables qu'après nettoyage effectif de la médiathèque et de la base Kodi ; la connexion MariaDB ne vérifie pas l'existence des fichiers sur les partages.
+A Kodi synchronization processes a complete snapshot of entries still present in the MyVideos database. Kodi editions that are no longer present are deleted from SQLite; a work with no remaining source is removed from the catalog and its lists. If a work also has CLZ editions (matched by a shared identifier), it remains in the catalog: its metadata is rebuilt from CLZ, missing Kodi files are no longer offered for playback, and personal ratings/lists are preserved. The job result distinguishes removed editions, deleted works, and works retained through CLZ. The report shows the actual MyVideos database queried, removed titles (up to 20, plus the total count), and explicitly indicates when no deletion was detected in that snapshot. File deletions are observable only after the Kodi library and database have actually been cleaned up; the MariaDB connection does not check file existence on network shares.
 
-Les métadonnées Kodi ont priorité, avec CLZ comme complément si le champ manque. Les formats, genres et collections sont réunis. La date d'ajout privilégie Kodi puis CLZ. La recherche SQLite FTS5 est accent-insensible et consulte le catalogue local même si MariaDB ou Kodi sont arrêtés.
+Kodi metadata takes precedence, with CLZ filling in missing fields. Formats, genres, and collections are combined. The date added favors Kodi, then CLZ. SQLite FTS5 search is accent-insensitive and queries the local catalog even when MariaDB or Kodi is offline.
 
-## État de visionnage
+## Watch Status
 
-L'API distingue `watched`, `unwatched`, `in_progress` et `unknown`.
+The API distinguishes `watched`, `unwatched`, `in_progress`, and `unknown`.
 
-- Kodi : compteur de lecture et point de reprise ; pour les séries, comptes d'épisodes vus/total.
-- CLZ : `<seenhistory><seendate><date><year>…</year><month>…</month><day>…</day></date></seendate></seenhistory>`. Au moins un `seendate` signifie vu ; chaque entrée compte un visionnage. Les dates valides sont conservées dans `metadata.seen_dates`, et la plus récente dans `last_played`.
-- Un `seenhistory` explicitement vide signifie non vu. Une balise absente signifie inconnu, car l'export peut ne pas inclure ce champ. Une date mal formée n'efface pas le fait qu'un visionnage a été enregistré.
+- Kodi: play count and resume point; for TV shows, watched/total episode counts.
+- CLZ: `<seenhistory><seendate><date><year>…</year><month>…</month><day>…</day></date></seendate></seenhistory>`. At least one `seendate` means watched; each entry counts as one viewing. Valid dates are stored in `metadata.seen_dates`, and the latest one in `last_played`.
+- An explicitly empty `seenhistory` means unwatched. A missing element means unknown, since the export may omit this field. An invalid date does not erase the fact that a viewing was recorded.
 
-Une œuvre est **vue si au moins une édition/source la signale vue**, même si le fichier Kodi est non lu. Sinon elle est en cours si Kodi indique une reprise ou une série partiellement vue ; sinon non vue si une source fournit explicitement cet état ; sinon inconnue. Les états par édition restent disponibles pour distinguer « disque vu » et « fichier Kodi non lu ». Aucun état n'est écrit dans Kodi ou CLZ.
+A work is **watched if at least one edition/source reports it as watched**, even if the Kodi file is unwatched. Otherwise, it is in progress if Kodi reports a resume point or a partially watched TV show; otherwise, it is unwatched if a source explicitly reports that state; otherwise, it is unknown. Per-edition statuses remain available to distinguish a "watched disc" from an "unwatched Kodi file". No status is written to Kodi or CLZ.
 
-Les nombres de lectures sont le maximum connu entre sources/éditions, pas leur somme : un même visionnage peut être enregistré plusieurs fois. La dernière date est la plus récente connue. Les dates CLZ sans heure sont `YYYY-MM-DD` ; les horodatages Kodi conservent leur heure sans inventer un fuseau, et les timestamps CLZ sont convertis en UTC.
+Play counts use the maximum known value across sources/editions rather than their sum: the same viewing may be recorded more than once. The last-played date is the most recent known. CLZ dates without a time use `YYYY-MM-DD`; Kodi timestamps retain their time without inventing a timezone, and CLZ timestamps are converted to UTC.
 
-## SQLite et sauvegardes
+## SQLite and Backups
 
-Le volume `/data` contient `catalogue.db` (SQLite WAL) et le cache `artwork/`. Un seul processus serveur, accès indexés, FTS5, transactions atomiques, délai d'attente des verrous. Le numéro de schéma est versionné avec `PRAGMA user_version` (v2, migration automatique depuis v1) ; un schéma plus récent provoque un refus de démarrage.
+The `/data` volume contains `catalogue.db` (SQLite WAL) and the `artwork/` cache. A single server process is used, with indexed access, FTS5, atomic transactions, and a lock timeout. The schema version is tracked using `PRAGMA user_version` (v2, automatic migration from v1); a newer schema prevents startup.
 
-Les mots de passe des sources/cibles sont stockés dans la base locale, en clair au repos, protégés par les permissions du volume et expurgés des réponses. Le dossier est privé et le fichier SQLite utilise le mode 0600. Protéger et sauvegarder ce volume comme un fichier de configuration contenant des secrets.
+Source/target passwords are stored in the local database in plaintext at rest, protected by volume permissions and redacted from responses. The directory is private and the SQLite file uses mode 0600. Protect and back up this volume as you would a configuration file containing secrets.
 
-Une sauvegarde fiable consiste à arrêter le conteneur puis copier **tout le dossier `data`**, ou à utiliser l'API de sauvegarde SQLite. Ne pas copier seulement `catalogue.db` pendant une écriture WAL. Conserver aussi `.env` dans un emplacement protégé. Les tâches interrompues sont marquées échouées au prochain démarrage ; le dernier instantané validé reste disponible.
+For a reliable backup, stop the container and copy **the entire `data` directory**, or use the SQLite backup API. Do not copy only `catalogue.db` while a WAL write is in progress. Also keep `.env` in a protected location. Interrupted jobs are marked as failed on the next startup; the last committed snapshot remains available.
 
-Le cache d'affiches conserve les fichiers 30 jours et évince les plus anciens au-delà de 512 MiB lors des écritures. Un fichier image est limité à 8 MiB ; seules des images raster reconnues sont acceptées. Les URL d'image privées, redirections et URL avec identifiants sont refusées afin que les métadonnées importées ne permettent pas de requêtes arbitraires vers le réseau local.
+The poster cache retains files for 30 days and evicts the oldest files beyond 512 MiB during writes. Image files are limited to 8 MiB; only recognized raster images are accepted. Private image URLs, redirects, and URLs containing credentials are rejected to prevent imported metadata from triggering arbitrary requests to the local network.
 
-## Affiches stockées sur le NAS
+## Artwork Stored on the NAS
 
-Si Kodi ou CLZ contient `smb://nas/media/posters/film.jpg`, monter le répertoire correspondant :
+If Kodi or CLZ contains `smb://nas/media/posters/film.jpg`, mount the corresponding directory:
 
 ```yaml
-# compose.yaml, sous volumes
+# compose.yaml, under volumes
 - /volume1/media/posters:/artwork:ro
 ```
 
 ```dotenv
-# .env : objet JSON, préfixe terminé par un slash
+# .env: JSON object, prefix ending with a slash
 ARTWORK_MOUNTS='{"smb://nas/media/posters/":"/artwork/"}'
 ```
 
-Un préfixe local tel que `/home/user/covers/` ou `file:///covers/` peut être mappé de la même façon. Le suffixe est résolu sous le montage ; les traversées `../` et liens symboliques vers l'extérieur sont refusés. Les URL `image://` de Kodi sont décodées par le connecteur. Une image HTTP privée exige également un mapping explicite vers un fichier monté, ou une URL publique accessible.
+A local prefix such as `/home/user/covers/` or `file:///covers/` can be mapped the same way. The suffix is resolved beneath the mount; `../` path traversal and symlinks pointing outside it are rejected. Kodi `image://` URLs are decoded by the connector. A private HTTP image also requires an explicit mapping to a mounted file, or an accessible public URL.
 
-## Limites de cette version
+## Limitations of This Version
 
-Le connecteur s'appuie sur `movie_view`, `tvshow_view`, `episode_view`, `art` et `uniqueid`, avec colonnes facultatives selon la version. Les requêtes sont en lecture seule et l'absence de vues optionnelles n'empêche pas les films. Une validation sur la version réelle MyVideos est nécessaire avant de déclarer la compatibilité de toutes les métadonnées, en particulier celles des versions alternatives.
+The connector relies on `movie_view`, `tvshow_view`, `episode_view`, `art`, and `uniqueid`, with optional columns depending on the version. Queries are read-only, and missing optional views do not prevent movies from being imported. Validation against the actual MyVideos version is required before claiming support for all metadata, particularly alternative versions.
 
-Les schémas avec versions de films n'utilisent pas tous le même type numérique : `VERSION=0` dans [Kodi 21](https://github.com/xbmc/xbmc/blob/21.0-Omega/xbmc/video/VideoManagerTypes.h), `VERSION=1` dans le [code actuel de Kodi](https://github.com/xbmc/xbmc/blob/master/xbmc/video/VideoManagerTypes.h). Le connecteur détecte ce type à partir des fichiers de film par défaut, conserve les versions alternatives et exclut les bonus. Les anciens schémas sans cette colonne restent pris en charge.
+Schemas supporting movie versions do not all use the same numeric type: `VERSION=0` in [Kodi 21](https://github.com/xbmc/xbmc/blob/21.0-Omega/xbmc/video/VideoManagerTypes.h), `VERSION=1` in the [current Kodi source](https://github.com/xbmc/xbmc/blob/master/xbmc/video/VideoManagerTypes.h). The connector detects the type from default movie files, retains alternative versions, and excludes extras. Older schemas without this column remain supported.
 
-`actor` et `actor_link` fournissent les interprètes, rôles et ordre du casting. `streamdetails` fournit définition vidéo, codecs, type HDR, stéréoscopie, pistes audio et langues par fichier. Les champs HDR facultatifs restent inconnus lorsqu'ils sont absents. Le codec TrueHD seul ne prouve pas Atmos ; CLZ peut compléter l'œuvre avec ses pistes explicitement intitulées Dolby Atmos. L'export CLZ initial fourni ne contient pas de casting renseigné. Aucune base supplémentaire ni migration SQLite n'est nécessaire pour ces métadonnées, enregistrées dans les éditions.
+`actor` and `actor_link` provide cast members, roles, and cast order. `streamdetails` provides video resolution, codecs, HDR type, stereoscopy, and audio tracks and languages per file. Optional HDR fields remain unknown when absent. The TrueHD codec alone does not prove Atmos; CLZ can supplement the work with explicitly labeled Dolby Atmos tracks. The initial CLZ export provided does not contain cast data. No additional database or SQLite migration is required for this metadata, which is stored in editions.
 
-Les séries CLZ sont des éditions de collection ; leurs listes d'épisodes éventuelles ne sont pas importées comme épisodes Kodi. La lecture concerne les fichiers Kodi, pas la lecture automatique d'un disque physique. Le réveil de machine et les profils utilisateur distincts ne sont pas encore implémentés.
+CLZ TV shows are collection editions; any episode lists they contain are not imported as Kodi episodes. Playback targets Kodi files, not automatic playback of a physical disc. Wake-on-LAN and separate user profiles are not yet implemented.
 
-## Données propres à cette installation
+## Installation-Specific Data
 
-`personal` conserve les notes et statuts vus personnels par UUID d’œuvre ; `null` signifie reprendre la donnée importée. La consolidation dans `works` applique ces choix à chaque synchronisation. Ils ne sont pas écrits dans les sources Kodi/CLZ.
+`personal` stores personal ratings and watched statuses by work UUID; `null` means reverting to imported data. Consolidation into `works` applies these choices during each synchronization. They are not written to Kodi/CLZ sources.
 
-`lists` et `list_items` conservent les sélections, positions manuelles et révisions. Les tris d’affichage sont indépendants des positions enregistrées. L’effacement d’une œuvre sans source restante supprime ses associations et incrémente les révisions des listes concernées.
+`lists` and `list_items` store selections, manual positions, and revisions. Display sorting is independent of saved positions. Deleting a work with no remaining source removes its associations and increments the revisions of affected lists.
 
-`enrichment` conserve les crédits et liens TMDB, avec horodatage, séparément des éditions. Les identifiants exacts IMDb/TMDB évitent la recherche approximative par titre. Les données importées ont priorité pour les rôles ; TMDB complète les portraits et identifiants par nom dans les crédits du même média. Les personnes et fonctions sont incluses dans la recherche FTS. Les liens et les URL de portrait exposées par la fiche sont construits par le serveur. Les images utilisent le proxy/cache commun et ses règles contre les URL privées.
+`enrichment` stores TMDB credits and links, with timestamps, separately from editions. Exact IMDb/TMDB identifiers avoid approximate title-based searches. Imported data takes precedence for roles; TMDB supplements portraits and identifiers by name among the credits for the same media. People and roles are included in FTS search. Links and portrait URLs exposed in the detail view are constructed by the server. Images use the shared proxy/cache and its protections against private URLs.
 
+## Server Versions, Schema, and Clients
 
-## Versions serveur, schéma et clients
-
-`/api/v1/status` expose `version` et `data_model_version`. La
-découverte iOS (`/api/v1/discovery`) expose `server_version` et le même
+`/api/v1/status` exposes `version` and `data_model_version`.
+iOS discovery (`/api/v1/discovery`) exposes `server_version` and the same
 `data_model_version`.
 
-L'identifiant du serveur contient un suffixe `+model.N` dérivé de
-`DATA_MODEL_VERSION` dans `kodi_library/compatibility.py`. **Toute évolution
-du schéma SQLite ou d'un modèle de données REST doit faire augmenter cette
-constante.** Le suffixe de version serveur évolue alors automatiquement.
-La version de release dans `pyproject.toml` et `kodi_library/__init__.py`
-est mise à jour pour chaque release.
+The server identifier contains a `+model.N` suffix derived from
+`DATA_MODEL_VERSION` in `kodi_library/compatibility.py`. **Any change
+to the SQLite schema or a REST data model must increment this
+constant.** The server version suffix then changes automatically.
+The release version in `pyproject.toml` and `kodi_library/__init__.py`
+is updated for each release.
 
-Le `PRAGMA user_version` SQLite et les bornes du contrat mobile
-`MIN_MOBILE_CONTRACT` / `MAX_MOBILE_CONTRACT` sont indépendants : une
-évolution additive ne doit pas rendre les anciens clients iOS incompatibles.
+SQLite `PRAGMA user_version` and the mobile contract bounds
+`MIN_MOBILE_CONTRACT` / `MAX_MOBILE_CONTRACT` are independent: an
+additive change must not make older iOS clients incompatible.
