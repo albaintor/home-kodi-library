@@ -1115,10 +1115,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # The primary source can be Kodi JSON-RPC only. MariaDB is optional.
         if data.type == "kodi" and bool(data.config.host) != bool(data.config.username):
             raise HTTPException(422, "MariaDB fallback requires both host and username.")
-        if data.type == "kodi" and data.config.mariadb_write_enabled and (
-            not data.config.host or not data.config.database
+        if (
+            data.type == "kodi"
+            and data.config.mariadb_write_enabled
+            and (not data.config.host or not data.config.database)
         ):
-            raise HTTPException(422, "MariaDB write fallback requires a host and explicit MyVideos database.")
+            raise HTTPException(
+                422, "MariaDB write fallback requires a host and explicit MyVideos database."
+            )
         return store.save_source(unsecret(data))
 
     @app.put(
@@ -1134,10 +1138,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown source.")
         if data.type == "kodi" and bool(data.config.host) != bool(data.config.username):
             raise HTTPException(422, "MariaDB fallback requires both host and username.")
-        if data.type == "kodi" and data.config.mariadb_write_enabled and (
-            not data.config.host or not data.config.database
+        if (
+            data.type == "kodi"
+            and data.config.mariadb_write_enabled
+            and (not data.config.host or not data.config.database)
         ):
-            raise HTTPException(422, "MariaDB write fallback requires a host and explicit MyVideos database.")
+            raise HTTPException(
+                422, "MariaDB write fallback requires a host and explicit MyVideos database."
+            )
         try:
             return store.save_source(unsecret(data), source_id)
         except ValueError as exc:

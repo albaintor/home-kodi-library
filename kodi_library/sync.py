@@ -140,8 +140,14 @@ class SyncManager:
             self.active.discard(source["id"])
 
     async def _run(
-        self, job, source, xml, *, scan_triggered: bool = False,
-        scan_info: dict | None = None, offline_player_ids: set[str] | None = None
+        self,
+        job,
+        source,
+        xml,
+        *,
+        scan_triggered: bool = False,
+        scan_info: dict | None = None,
+        offline_player_ids: set[str] | None = None,
     ):
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])

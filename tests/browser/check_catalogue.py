@@ -579,8 +579,7 @@ def main():
                 page.locator("#connections-button").click()
                 # Kodi source details should never be squeezed by five action buttons.
                 # Check actual geometry in both the mobile and desktop settings dialogs.
-                for viewport in ({"width": 390, "height": 844},
-                                 {"width": 1280, "height": 850}):
+                for viewport in ({"width": 390, "height": 844}, {"width": 1280, "height": 850}):
                     page.set_viewport_size(viewport)
                     layout = page.locator(".kodi-source-card").first.evaluate("""
                         card => {
