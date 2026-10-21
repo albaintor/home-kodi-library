@@ -1,59 +1,59 @@
-# API REST v1
+# REST API v1
 
-Préfixe `/api/v1`. JSON UTF-8, import CLZ en multipart et images binaires. Les opérations de catalogue et de lecture restent disponibles sans front ni Home Assistant.
+Prefix: `/api/v1`. UTF-8 JSON, multipart CLZ imports, and binary images. Catalog and playback operations remain available independently of the web frontend and Home Assistant.
 
-## Authentification
+## Authentication
 
-Un client natif utilise `Authorization: Bearer <API_TOKEN>`. `API_READ_TOKEN` donne accès aux lectures du catalogue, images, sources expurgées, cibles et tâches, sans modification, import ni lancement de lecture. Les jetons sont configurés au démarrage et doivent être aléatoires et distincts (minimum 24 caractères). Il n'existe pas encore d'utilisateurs multiples ni d'OAuth.
+A native client uses `Authorization: Bearer <API_TOKEN>`. `API_READ_TOKEN` allows read-only access to the catalog, images, redacted sources, playback targets, and jobs, without modification, import, or playback initiation. Tokens are configured at startup and must be random and distinct (at least 24 characters). Multiple users and OAuth are not yet supported.
 
-Le navigateur échange le jeton via `POST /auth/session` contre un cookie opaque HttpOnly, SameSite=Lax, valable 12 h. `GET /auth/session` retourne le rôle et le jeton CSRF ; les écritures avec cookie requièrent `X-CSRF-Token`. `DELETE /auth/session` ferme la session. Les jetons Bearer ne requièrent ni cookie ni CSRF. Les sessions ne survivent pas au redémarrage ; les jetons Bearer restent valables.
+The browser exchanges the token via `POST /auth/session` for an opaque HttpOnly, SameSite=Lax cookie valid for 12 hours. `GET /auth/session` returns the role and CSRF token; cookie-authenticated writes require `X-CSRF-Token`. `DELETE /auth/session` ends the session. Bearer tokens require neither cookies nor CSRF. Sessions do not survive a restart; Bearer tokens remain valid.
 
-Ingress transmet un secret distinct dans `X-Kodi-Library-Ingress-Token`. Un simple `X-Ingress-Path` ne donne aucun accès. CORS est désactivé par défaut et inutile pour `URLSession` ; `CORS_ORIGINS` accepte une liste JSON d'origines web explicites.
+Ingress forwards a separate secret in `X-Kodi-Library-Ingress-Token`. `X-Ingress-Path` alone does not grant access. CORS is disabled by default and is unnecessary for `URLSession`; `CORS_ORIGINS` accepts a JSON list of explicitly allowed web origins.
 
 ## Routes
 
-| Méthode | Route après `/api/v1` | Résultat |
+| Method | Route after `/api/v1` | Result |
 |---|---|---|
-| GET | `/status` | Compteurs, versions, état des sources |
-| GET | `/media` | Page du catalogue et total |
-| GET | `/media/{id}` | Fiche, identifiants, éditions, métadonnées par source |
-| GET | `/media/{id}/artwork/{poster\|fanart}` | Image protégée et mise en cache |
-| GET | `/facets` | Genres, formats, collections, années, sources |
-| POST | `/connections/mariadb/test` | Test en lecture seule d'une configuration MariaDB sans enregistrement |
-| POST | `/connections/kodi/test` | Test HTTP/JSON-RPC, version Kodi et autorisation de lecture sans enregistrement |
-| POST | `/connections/tmdb/test` | Test de la clé TMDB configurée sur le serveur, sans corps ni secret côté client |
-| GET/POST | `/sources` | Liste / création d'une source |
-| PUT/DELETE | `/sources/{id}` | Modification / retrait de la source et de ses éditions |
-| POST | `/sources/{id}/sync` | Synchronisation Kodi, tâche retournée avec HTTP 202 |
-| POST | `/imports/clz` | XML multipart, champs `source_id` et `file`, HTTP 202 |
-| GET | `/jobs/{id}` | `pending`, `running`, `completed` ou `failed` |
-| GET | `/jobs` | 30 dernières tâches, y compris celles démarrées automatiquement ; suivi d'activité web/iOS |
-| GET/POST | `/players` | Liste / création d'une cible Kodi |
-| PUT/DELETE | `/players/{id}` | Modification / retrait d'une cible |
-| POST | `/players/{id}/play` | Lecture d'un média, édition facultative et reprise |
-| GET | `/openapi.json` | Contrat OpenAPI typé, authentification requise |
+| GET | `/status` | Counts, versions, source status |
+| GET | `/media` | Catalog page and total |
+| GET | `/media/{id}` | Media details, identifiers, editions, per-source metadata |
+| GET | `/media/{id}/artwork/{poster\|fanart}` | Protected and cached image |
+| GET | `/facets` | Genres, formats, collections, years, sources |
+| POST | `/connections/mariadb/test` | Read-only MariaDB configuration test without saving |
+| POST | `/connections/kodi/test` | HTTP/JSON-RPC test, Kodi version, and playback permission without saving |
+| POST | `/connections/tmdb/test` | Test the server-configured TMDB key without a request body or client-side secret |
+| GET/POST | `/sources` | List/create a source |
+| PUT/DELETE | `/sources/{id}` | Update/remove a source and its editions |
+| POST | `/sources/{id}/sync` | Kodi synchronization; returns a job with HTTP 202 |
+| POST | `/imports/clz` | Multipart XML, `source_id` and `file` fields, HTTP 202 |
+| GET | `/jobs/{id}` | `pending`, `running`, `completed`, or `failed` |
+| GET | `/jobs` | Last 30 jobs, including automatically started ones; web/iOS activity tracking |
+| GET/POST | `/players` | List/create a Kodi playback target |
+| PUT/DELETE | `/players/{id}` | Update/remove a target |
+| POST | `/players/{id}/play` | Play media, with optional edition and resume |
+| GET | `/openapi.json` | Typed OpenAPI contract; authentication required |
 
-`/healthz` expose seulement l'état du processus sans authentification. `/docs` est protégé et expose Swagger UI ; ses fichiers Swagger proviennent du CDN par défaut de FastAPI.
+`/healthz` exposes only process health without authentication. `/docs` is protected and exposes Swagger UI; its Swagger assets are served from FastAPI's default CDN.
 
-## Recherche, filtres et pagination
+## Search, Filters, and Pagination
 
-`GET /media` accepte : `q`, `kind` (`movie`, `tvshow`, `episode`), `watch_status` (`watched`, `unwatched`, `in_progress`, `unknown`), `genre`, `format`, `collection`, `source_type` (`kodi`, `clz`), `source_id`, `parent_id`, `year`, `recent_days` (1–3650).
+`GET /media` accepts: `q`, `kind` (`movie`, `tvshow`, `episode`), `watch_status` (`watched`, `unwatched`, `in_progress`, `unknown`), `genre`, `format`, `collection`, `source_type` (`kodi`, `clz`), `source_id`, `parent_id`, `year`, and `recent_days` (1–3650).
 
-Les filtres sont combinés avec **ET**. `q` recherche tous les mots saisis par préfixe, en ignorant la casse et les accents ; ce n'est pas une recherche par sous-chaîne arbitraire ni une correction orthographique. Les facettes sont globales au catalogue.
+Filters are combined with **AND**. `q` searches all entered words by prefix, ignoring case and accents; it is neither an arbitrary substring search nor spelling correction. Facets apply to the entire catalog.
 
-Les noms et rôles du casting Kodi participent à la recherche. La fiche `/media/{id}` expose `cast: [{name, role, order}]`. `formats` contient les formats physiques et les labels techniques connus (par exemple `4K`, `1080p`, `3D`, `Dolby Vision`, `HDR10+`, `Dolby Atmos`). Les métadonnées de chaque édition contiennent `cast`, `video_streams`, `audio_streams` et les sous-titres lorsque Kodi les fournit. Ces flux sont propres au fichier, y compris aux versions alternatives ; les formats de l'œuvre réunissent ceux de ses éditions.
+Kodi cast names and roles are searchable. The `/media/{id}` detail exposes `cast: [{name, role, order}]`. `formats` includes physical formats and known technical labels (for example `4K`, `1080p`, `3D`, `Dolby Vision`, `HDR10+`, `Dolby Atmos`). Each edition's metadata includes `cast`, `video_streams`, `audio_streams`, and subtitles when Kodi provides them. These streams belong to each individual file, including alternative versions; a work's formats aggregate those of its editions.
 
-Le défilement automatique de l'interface utilise ces mêmes routes paginées : première requête avec `offset=0&limit=60`, puis offsets 60, 120, etc., en conservant les filtres et le tri. Un client mobile peut utiliser la même pagination et `has_more`.
+The interface's infinite scrolling uses the same paginated routes: the first request uses `offset=0&limit=60`, followed by offsets 60, 120, etc., retaining filters and sorting. A mobile client can use the same pagination and `has_more`.
 
-Tri : `sort=title|date_added|year|rating|last_played`, `order=asc|desc`. Défaut : `date_added`, `desc`. Les valeurs inconnues sont toujours à la fin ; l'identifiant départage les égalités. `limit` vaut 60 par défaut, maximum 200 ; `offset` vaut 0. Résultat : `{items, total, limit, offset, has_more}`. Un nouvel import entre deux requêtes peut déplacer les résultats paginés.
+Sorting: `sort=title|date_added|year|rating|last_played`, `order=asc|desc`. Default: `date_added`, `desc`. Unknown values always sort last; IDs break ties. `limit` defaults to 60, with a maximum of 200; `offset` defaults to 0. Response: `{items, total, limit, offset, has_more}`. A new import between requests may shift paginated results.
 
-Les liens d'image renvoyés commencent par `/api/v1/…` et sont relatifs à la racine du service. Un client utilisant un préfixe de proxy doit les résoudre **sous sa base du service**, comme le fait le client Swift, sans effacer le préfixe Ingress.
+Returned artwork links begin with `/api/v1/…` and are relative to the service root. Clients using a proxy prefix must resolve them **under their service base URL**, as the Swift client does, without stripping the Ingress prefix.
 
-## Exemples indépendants du front
+## Examples Without the Web Frontend
 
 ```bash
 export KODI_LIBRARY_URL='https://catalogue.example.net'
-# Définir KODI_LIBRARY_TOKEN dans votre environnement sans le publier.
+# Set KODI_LIBRARY_TOKEN in your environment without exposing it.
 curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
   --get "$KODI_LIBRARY_URL/api/v1/media" \
   --data-urlencode 'q=blade runner' \
@@ -62,297 +62,215 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
   --data-urlencode 'sort=date_added' --data-urlencode 'order=desc'
 ```
 
-Créer une collection CLZ, puis utiliser son `id` dans l'import :
+Create a CLZ collection, then use its `id` for the import:
 
 ```bash
 curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Mes Blu-ray","type":"clz"}' \
+  -d '{"name":"My Blu-rays","type":"clz"}' \
   "$KODI_LIBRARY_URL/api/v1/sources"
 curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
-  -F 'source_id=ID_RETOURNE' -F 'file=@export-clz.xml' \
+  -F 'source_id=RETURNED_ID' -F 'file=@export-clz.xml' \
   "$KODI_LIBRARY_URL/api/v1/imports/clz"
 ```
 
-Suivre `/jobs/ID_TACHE` avant de rafraîchir le catalogue. Chaque import applique un instantané atomique : les éditions disparues de l'export sont retirées uniquement de cette source. Un échec conserve l'ancien catalogue. Une seule tâche active par source ; import maximum 20 MiB.
+Poll `/jobs/JOB_ID` before refreshing the catalog. Each import applies an atomic snapshot: editions missing from the export are removed from that source only. On failure, the previous catalog is preserved. Only one active job per source; maximum import size is 20 MiB.
 
-Une source Kodi est créée avec `{"name":"NAS","type":"kodi","config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"MyVideos131","tls":false}}`. `database` peut être vide pour la détection automatique. Un mot de passe absent ou `null` lors d'un PUT conserve le précédent ; une chaîne vide le supprime. Les réponses remplacent le mot de passe par `has_password`.
+Create a Kodi source with `{"name":"NAS","type":"kodi","config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"MyVideos131","tls":false}}`. `database` may be empty for automatic discovery. During PUT, a missing or `null` password preserves the previous value; an empty string clears it. Responses replace the password with `has_password`.
 
-Avant de créer une source, `POST /connections/mariadb/test` accepte `{"config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"","tls":false}}`. Le test vérifie l'accès aux vues et tables utilisées sans importer le catalogue. La réponse contient `success`, `kind`, `message`, `database` et `available_media`.
+Before creating a source, `POST /connections/mariadb/test` accepts `{"config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"","tls":false}}`. The test checks access to the views and tables used without importing the catalog. The response includes `success`, `kind`, `message`, `database`, and `available_media`.
 
-Pour une cible, `POST /connections/kodi/test` accepte `{"host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`. Il appelle `JSONRPC.Ping`, `JSONRPC.Permission` et `Application.GetProperties`, sans lancer de média. La réponse contient notamment `version` et `playback_allowed`. Kodi doit être démarré et autoriser le contrôle HTTP. Ce test ne garantit pas que l'instance utilise la même base MyVideos ; cette association reste à configurer.
+For a playback target, `POST /connections/kodi/test` accepts `{"host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`. It calls `JSONRPC.Ping`, `JSONRPC.Permission`, and `Application.GetProperties` without playing media. The response includes `version` and `playback_allowed`, among other fields. Kodi must be running with HTTP remote control enabled. This test does not guarantee that the instance uses the same MyVideos database; that association still needs to be configured.
 
-Ces routes requièrent le jeton administrateur et ne créent ni source, ni cible, ni tâche. Les échecs de connexion renvoient HTTP 502 avec une cause réseau, authentification ou permissions, sans mot de passe. Pour tester une modification, ajouter `source_id` ou `player_id` : un mot de passe absent ou `null` réutilise celui enregistré ; une chaîne vide teste sans mot de passe. L'interface teste automatiquement avant tout nouvel ajout ; les routes de création restent utilisables directement pour préparer une configuration hors ligne.
+These routes require the administrator token and create no source, target, or job. Connection failures return HTTP 502 with a network, authentication, or permission cause, without disclosing passwords. To test an update, add `source_id` or `player_id`: a missing or `null` password reuses the saved one; an empty string tests without a password. The interface automatically runs tests before adding new entries; creation routes remain directly usable to prepare an offline configuration.
 
-Créer une cible Kodi avec `{"name":"Salon","source_id":"ID_SOURCE_KODI","host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`, puis :
+Create a Kodi target with `{"name":"Living Room","source_id":"KODI_SOURCE_ID","host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`, then:
 
 ```bash
 curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"media_id":"ID_MEDIA","resume":true}' \
-  "$KODI_LIBRARY_URL/api/v1/players/ID_CIBLE/play"
+  -d '{"media_id":"MEDIA_ID","resume":true}' \
+  "$KODI_LIBRARY_URL/api/v1/players/TARGET_ID/play"
 ```
 
-`edition_id` sélectionne un fichier/version Kodi précis. Le serveur vérifie que la cible est associée à la bonne source et refuse les identifiants distants contradictoires avant `Player.Open`. Une série nécessite de choisir un épisode via `GET /media?kind=episode&parent_id=ID_SERIE`. Le serveur ne réveille pas Kodi.
+`edition_id` selects a specific Kodi file/version. Before `Player.Open`, the server verifies that the target is linked to the correct source and rejects conflicting remote identifiers. Playing a TV show requires selecting an episode via `GET /media?kind=episode&parent_id=SHOW_ID`. The server does not wake Kodi.
 
-## Écriture des notes et états de visionnage
+## Writing Ratings and Watch Status
 
-`PATCH /media/{id}/personal` accepte les modifications partielles `{"user_rating":7.5}` et `{"watched":true}`, ou `{"watched":false}`. La valeur `null` efface uniquement la préférence locale, sans modifier les données source. Les changements sont enregistrés dans SQLite et diffusés aux connecteurs disposant d'une capacité d'écriture.
+`PATCH /media/{id}/personal` accepts partial updates such as `{"user_rating":7.5}`, `{"watched":true}`, or `{"watched":false}`. A `null` value clears only the local preference without modifying source data. Changes are stored in SQLite and propagated to connectors with write capabilities.
 
-Pour Kodi, l'application utilise les instances HTTP/JSON-RPC déjà associées à chaque source MariaDB. Elle vérifie la permission `UpdateData`, l'identité du média et son identifiant Kodi avant d'appeler `VideoLibrary.SetMovieDetails`, `SetEpisodeDetails` ou `SetTVShowDetails`. Une série marquée vue/non vue est propagée à ses épisodes par Kodi. Les différentes versions d'un film partagent un même `movieid` et ne provoquent donc qu'une mise à jour. Les notes Kodi sont entières : 7,5 est transmis sous la forme 8, tandis que la note locale reste 7,5.
+For Kodi, the application uses the HTTP/JSON-RPC instances already associated with each MariaDB source. It checks the `UpdateData` permission, media identity, and Kodi identifier before calling `VideoLibrary.SetMovieDetails`, `SetEpisodeDetails`, or `SetTVShowDetails`. Marking a TV show watched/unwatched is propagated to its episodes by Kodi. Different versions of a movie share one `movieid` and therefore result in a single update. Kodi ratings are integers: 7.5 is sent as 8, while the local rating remains 7.5.
 
-La réponse `MediaDetail` contient `writeback: [{source_id,source_name,source_type,status,message}]`. `status` vaut `updated`, `unavailable` (aucune instance ou source désactivée) ou `failed` (connexion, permissions ou identité divergente). Ce retour ne concerne que les sources qui autorisent l'écriture ; les imports XML CLZ/MyMovies/Filmotech ne sont jamais modifiés. Les sources My Movies dotées d'un serveur Remote Data API sous licence peuvent recevoir uniquement les changements vu/non vu (`ElementWatched` et `ClearElementWatched`), jamais les notes ; les sources CLZ et Filmotech restent strictement en lecture seule. Pour l'activer, modifier la configuration de la source My Movies : `config.remote_enabled=true`, `remote_host`, `remote_port` (défaut 51414), `remote_api_key` (clé masquée dans les réponses et conservée si non fournie sur PUT). Le service Remote Data API exige une licence/professionnel autorisé et la documentation est réservée aux intégrations prévues par l'éditeur ; aucun accès direct à sa base, aucun reverse engineering et aucune modification des exports. La commande `GetTitle` vérifie l'identifiant et le titre avant écriture. Seuls les exports contenant un ID numérique peuvent servir de base au rapprochement. API HTTP historique : réserver à un réseau local de confiance. Le changement local reste enregistré si Kodi est hors ligne, mais l'échec est signalé au client. Les tentatives échouées sont conservées dans une file SQLite durable. Leur rejeu est exclusivement manuel, depuis les paramètres du Web ou l'API. Les droits MariaDB pour les imports restent limités à SELECT, sauf si l'option de repli SQL est activée (UPDATE requis pour le même compte).
+The `MediaDetail` response includes `writeback: [{source_id,source_name,source_type,status,message}]`. `status` is `updated`, `unavailable` (no instance or a disabled source), or `failed` (connection, permissions, or mismatched identity). This feedback applies only to writable sources; imported CLZ/MyMovies/Filmotech XML files are never modified. My Movies sources with a licensed Remote Data API server can receive watched/unwatched changes only (`ElementWatched` and `ClearElementWatched`), never ratings; CLZ and Filmotech sources remain strictly read-only. To enable it, update the My Movies source configuration: `config.remote_enabled=true`, `remote_host`, `remote_port` (default 51414), and `remote_api_key` (redacted in responses and preserved when omitted in PUT). The Remote Data API service requires an authorized professional/license, and its documentation is restricted to integrations supported by the publisher; no direct database access, reverse engineering, or modification of exports is performed. `GetTitle` verifies the identifier and title before writing. Only exports containing a numeric ID can be used for matching. This is a legacy HTTP API: restrict it to a trusted local network. The local change is retained when Kodi is offline, but the failure is reported to the client. Failed attempts are stored in a durable SQLite queue. Retries are strictly manual, through the web settings or API. MariaDB import permissions remain limited to SELECT unless SQL write fallback is enabled (requiring UPDATE for the same account).
 
-### Repli d'écriture Kodi (MariaDB)
+### Kodi Write Fallback (MariaDB)
 
-Kodi JSON-RPC reste prioritaire pour les modifications de notes et états vu/non vu. Si **toutes** les instances JSON-RPC associées à la source sont injoignables (réseau/timeout), un **repli SQL optionnel**, désactivé par défaut, peut mettre à jour `movie.userrating`, `tvshow.userrating`, `episode.userrating` et `files.playCount` / `files.lastPlayed` (pour une série, les fichiers de ses épisodes). Ce mode ne se déclenche **pas** si Kodi répond mais refuse la commande ou la permission `UpdateData`.
+Kodi JSON-RPC remains the preferred method for rating and watched/unwatched changes. If **all** JSON-RPC instances associated with a source are unreachable (network/timeout), an **optional SQL fallback**, disabled by default, can update `movie.userrating`, `tvshow.userrating`, `episode.userrating`, and `files.playCount` / `files.lastPlayed` (for a TV show, its episode files). This fallback is **not** triggered if Kodi responds but rejects the command or the `UpdateData` permission.
 
-Configurer explicitement `config.database="MyVideos…"`, `config.mariadb_write_enabled=true`, les identifiants `config.username` et `config.password` de la source sur la source Kodi. Utiliser le compte MariaDB déjà configuré pour la source, avec `SELECT` sur les tables d'identification et `UPDATE` limité à `movie.userrating`, `tvshow.userrating`, `episode.userrating` et `files.playCount`, `files.lastPlayed`. Le repli exige une correspondance d'identifiant externe et de titre ; il s'exécute dans une transaction SQL et refuse les données divergentes. Aucun événement Kodi n'est produit par une mise à jour SQL : l'interface Kodi peut nécessiter un rafraîchissement manuel.
+Explicitly configure `config.database="MyVideos…"`, `config.mariadb_write_enabled=true`, and the source credentials `config.username` and `config.password` on the Kodi source. Use the MariaDB account already configured for the source, granting `SELECT` on identification tables and `UPDATE` limited to `movie.userrating`, `tvshow.userrating`, `episode.userrating`, and `files.playCount`, `files.lastPlayed`. The fallback requires matching external identifiers and title; it runs in an SQL transaction and rejects inconsistent data. SQL updates do not generate Kodi events: the Kodi interface may require a manual refresh.
 
-Chaque PATCH expose dans `writeback[]` les champs `method` et `attempts`, par exemple `["jsonrpc:unavailable","mariadb:updated"]`. Une trace persistante sans secret est consultable par `GET /media/{id}/writeback` et `GET /sources/{id}/writeback` (max. 200 entrées).
+Each PATCH exposes `method` and `attempts` in `writeback[]`, for example `["jsonrpc:unavailable","mariadb:updated"]`. A persistent log without secrets is available through `GET /media/{id}/writeback` and `GET /sources/{id}/writeback` (maximum 200 entries).
 
-### État des synchronisations et rejeu manuel (Web et iOS)
+### Synchronization Status and Manual Retries (Web and iOS)
 
-Un **PATCH explicite** sur `/media/{id}/personal` est le seul événement qui crée une intention d'écriture vers Kodi ou My Movies (si l'API My Movies est activée). La synchronisation MariaDB → catalogue local, le scan Kodi et les imports XML **ne déclenchent jamais de propagation**. Les changements `null` effacent uniquement une préférence locale et invalident l'écriture en attente pour le champ concerné.
+An **explicit PATCH** to `/media/{id}/personal` is the only event that creates a writeback request to Kodi or My Movies (when the My Movies API is enabled). MariaDB-to-local-catalog synchronization, Kodi scans, and XML imports **never trigger propagation**. `null` updates clear only a local preference and invalidate the pending writeback for that field.
 
-Les requêtes réussies affichent un indicateur auprès de la fiche film avec l'icône de la source. `GET /media/{id}` ainsi que le `PATCH` renvoient `writeback_state[]` : `media_id`, `source_id`, `source_name`, `source_type`, `icon` (nom SF Symbol exploitable en iOS, par exemple `play.rectangle.on.rectangle` pour Kodi et `film.stack` pour My Movies), `status` (`updated`, `pending`, `failed`, `unavailable`), `method`, `updated_at`, `pending_fields`, `message`.
+Successful requests display a source-icon indicator alongside the movie detail. Both `GET /media/{id}` and PATCH return `writeback_state[]`: `media_id`, `source_id`, `source_name`, `source_type`, `icon` (an SF Symbol name usable on iOS, for example `play.rectangle.on.rectangle` for Kodi and `film.stack` for My Movies), `status` (`updated`, `pending`, `failed`, `unavailable`), `method`, `updated_at`, `pending_fields`, and `message`.
 
-Une écriture non confirmée reste dans la table SQLite `writeback_pending` (aucun mot de passe ni jeton externe enregistré). La file conserve la dernière valeur **par média/source/champ** ; un nouvel enregistrement d'un champ remplace la valeur précédente, sans perdre les autres champs en attente. Toute tentative est historisée sans secrets dans `writeback_audit`. Aucune reprise automatique n'est exécutée, pour éviter d'écraser une modification extérieure plus récente. Lors d'un rejeu, le serveur vérifie que la source correspond toujours à la fiche et que la valeur locale n'a pas changé ; si elle est périmée, le rejeu est bloqué (HTTP 409).
+An unconfirmed write remains in the SQLite `writeback_pending` table (no password or external token is stored). The queue retains the latest value **per media/source/field**; a new update to one field replaces the previous value without discarding other pending fields. Every attempt is logged without secrets in `writeback_audit`. No automatic retry takes place, to avoid overwriting newer external changes. On retry, the server verifies that the source still matches the media and that the local value has not changed; stale retries are blocked (HTTP 409).
 
-API commune à l'interface Web et aux clients iOS :
+Shared API for the web interface and iOS clients:
 
-| Méthode | Route | Rôle | Usage |
+| Method | Route | Role | Purpose |
 |---|---|---|---|
-| GET | `/writebacks/status` | lecture | `pending_count`, `pending[]` et `recent[]` (états avec icônes) |
-| GET | `/writebacks/pending` | lecture | Intégralité des écritures restant à rejouer (dans la limite de 200 réponses) |
-| POST | `/writebacks/pending/{pending_id}/retry` | admin | Rejouer une écriture précise |
-| POST | `/writebacks/retry` | admin | Rejouer manuellement toutes les écritures en attente et recevoir les résultats |
-| GET | `/media/{id}/writeback` | lecture | Historique des tentatives du film |
-| GET | `/sources/{id}/writeback` | lecture | Historique des tentatives d'une source |
+| GET | `/writebacks/status` | read | `pending_count`, `pending[]`, and `recent[]` (statuses with icons) |
+| GET | `/writebacks/pending` | read | All pending writebacks awaiting retry (up to 200 returned) |
+| POST | `/writebacks/pending/{pending_id}/retry` | admin | Retry a specific writeback |
+| POST | `/writebacks/retry` | admin | Manually retry all pending writebacks and return the results |
+| GET | `/media/{id}/writeback` | read | History of writeback attempts for a movie |
+| GET | `/sources/{id}/writeback` | read | History of writeback attempts for a source |
 
-Les réponses de rejeu contiennent `results[]` (avec `pending_id`, `media_id`, `result` de type `WritebackResult`) et `pending_count`. Un échec reste dans le cache, y compris si la source est indisponible. Le cache est conservé entre redémarrages tant que la base SQLite locale n'est pas supprimée. La suppression de la fiche ou de sa source supprime les écritures orphelines liées, par intégrité référentielle.
+Retry responses include `results[]` (with `pending_id`, `media_id`, and `result` of type `WritebackResult`) and `pending_count`. Failed writes remain in the queue, including when the source is unavailable. The queue persists across restarts unless the local SQLite database is deleted. Deleting media or its source removes the associated orphaned writes through referential integrity.
 
-### Actualiser Kodi puis synchroniser le catalogue local
+### Refresh Kodi and Then Synchronize the Local Catalog
 
-`POST /sources/{id}/scan` (option `player_id`) démarre une tâche `JobView` via un lecteur Kodi JSON-RPC. Le service se connecte d'abord au WebSocket Kodi `ws://HOST:9090/jsonrpc` (port modifiable sur le lecteur via `websocket_port`), contrôle `UpdateData`, puis envoie `VideoLibrary.Scan`. Une fois `VideoLibrary.OnScanStarted` et `VideoLibrary.OnScanFinished` observés sur cette même connexion, la tâche enchaîne automatiquement avec la lecture MariaDB et la publication atomique du catalogue SQLite. Suivre `GET /jobs/{id}` ; le résultat final contient `kodi_scan="finished"`.
+`POST /sources/{id}/scan` (optional `player_id`) starts a `JobView` job through a Kodi JSON-RPC player. The service first connects to Kodi WebSocket at `ws://HOST:9090/jsonrpc` (port configurable on the player through `websocket_port`), checks `UpdateData`, then sends `VideoLibrary.Scan`. Once `VideoLibrary.OnScanStarted` and `VideoLibrary.OnScanFinished` have been observed on the same connection, the job automatically proceeds to reading MariaDB and atomically publishing the SQLite catalog. Poll `GET /jobs/{id}`; the final result contains `kodi_scan="finished"`.
 
-En cas de perte du WebSocket ou d'absence de confirmation de fin, la tâche échoue **sans** marquer le scan comme terminé ni lancer l'import local. L'API WebSocket/TCP doit être activée dans Kodi ; le service HTTP JSON-RPC seul ne fournit pas les notifications de fin d'analyse. Une seule tâche de synchronisation ou de scan est acceptée par source simultanément.
+If the WebSocket connection is lost or completion cannot be confirmed, the job fails **without** marking the scan as completed or starting the local import. Kodi's WebSocket/TCP API must be enabled; the HTTP JSON-RPC service alone does not provide scan-completion notifications. Only one synchronization or scan job per source is accepted at a time.
 
 
-## Diagnostic des suppressions Kodi
+## Diagnosing Kodi Deletions
 
-Une synchronisation interroge **movie** et **movie_view** : la table `movie`
-constitue la source d'autorité pour les identifiants de films. Même si une
-ligne obsolète subsiste dans `movie_view`, elle ne sera pas importée si
-son `idMovie` est absent de `movie`. Le rapport de tâche contient
-`movie_table_count`, `orphaned_movie_view_rows` et un échantillon
-`orphaned_movie_view_examples` (limité à 10 lignes).
+Synchronization queries both **movie** and **movie_view**: the `movie` table is the authoritative source of movie IDs. Even if a stale row remains in `movie_view`, it is not imported when its `idMovie` is absent from `movie`. The job report includes `movie_table_count`, `orphaned_movie_view_rows`, and an `orphaned_movie_view_examples` sample (limited to 10 rows).
 
-La fiche film expose, en mode administrateur, le bouton
-**Vérifier la présence dans la vidéothèque** :
-`GET /api/v1/media/{id}/diagnostics` interroge uniquement la base
-MariaDB MyVideos et vérifie si la ligne `movie_view` possède une version
-par défaut (`isDefaultVersion = 1`). Il distingue un film encore présent
-dans `movie` d'un film absent du parcours Kodi. Les liens
-`movie`/`files`/`path`/`videoversion` restent disponibles en diagnostic
-secondaire, sans aucun contrôle du stockage ni appel HTTP à Kodi.
+In administrator mode, the movie detail displays a **Check presence in video library** button: `GET /api/v1/media/{id}/diagnostics` queries only the MariaDB MyVideos database and checks whether the `movie_view` row has a default version (`isDefaultVersion = 1`). It distinguishes a movie still present in `movie` from one absent from Kodi's library listing. The `movie`/`files`/`path`/`videoversion` relationships remain available as secondary diagnostic information, without checking storage or making HTTP requests to Kodi.
 
-Ce critère reproduit `CVideoDatabase::GetFilter` puis
-`GetMoviesByWhere` pour `videodb://movies/titles/`, en affichage
-standard (versions non aplaties). Le mode *versions aplaties* de Kodi
-emploie un autre prédicat (`videoVersionTypeItemType`) dépendant d'un
-réglage local qui n'est pas stocké dans MariaDB. Les éditions non par
-défaut d'un film listé sont conservées, mais les films sans version
-par défaut valide sont exclus, même si une ligne existe encore dans
-`movie`. Les extras ne sont pas importés. Pour les schémas anciens
-sans `isDefaultVersion`, le connecteur retombe sur le comportement
-historique et le rapport indique `library_verified=false` ; aucune
-suppression n'est déduite artificiellement d'un fichier manquant.
+This criterion reproduces `CVideoDatabase::GetFilter` followed by `GetMoviesByWhere` for `videodb://movies/titles/` in standard display mode (versions not flattened). Kodi's *flattened versions* mode uses another predicate (`videoVersionTypeItemType`) dependent on a local setting that is not stored in MariaDB. Non-default editions of a listed movie are retained, but movies without a valid default version are excluded, even if a row still exists in `movie`. Extras are not imported. For older schemas lacking `isDefaultVersion`, the connector falls back to legacy behavior and the report indicates `library_verified=false`; no deletion is inferred solely from a missing file.
 
-**Aucune instance Kodi n'est nécessaire**, y compris lorsqu'un lecteur
-est configuré pour la lecture. Le résultat de synchronisation expose
-`library_verified`, `library_rule`, `library_movie_count`,
-`library_excluded_editions` et `library_excluded_examples`.
+**No Kodi instance is required**, even when a playback target has been configured. Synchronization results expose `library_verified`, `library_rule`, `library_movie_count`, `library_excluded_editions`, and `library_excluded_examples`.
 
-Une synchronisation récupère un instantané **complet** des entrées de la base
-`MyVideos` effectivement sélectionnée. Les éditions absentes sont supprimées
-de SQLite dans la même transaction, puis les fiches sans aucune édition sont
-retirées (y compris des listes et des notes). Une œuvre qui possède encore une
-édition CLZ **reste** dans le catalogue mais perd ses éditions et métadonnées Kodi.
+Synchronization retrieves a **complete** snapshot from the `MyVideos` database actually selected. Missing editions are deleted from SQLite in the same transaction, then media entries with no remaining editions are removed (including from lists and ratings). A work that still has a CLZ edition **remains** in the catalog but loses its Kodi editions and metadata.
 
-Le résultat `GET /jobs/{id}` contient `database` (nom MyVideos interrogé),
-`source_records_before`, `source_records_after`, `removed_editions`,
-`removed_works`, `kept_clz_works`, `removed_titles` et
-`removed_titles_total`. Le serveur vérifie que les clés Kodi persistées
-correspondent exactement aux clés reçues ; une incohérence annule la transaction.
+The `GET /jobs/{id}` result contains `database` (the MyVideos database queried), `source_records_before`, `source_records_after`, `removed_editions`, `removed_works`, `kept_clz_works`, `removed_titles`, and `removed_titles_total`. The server checks that persisted Kodi keys match the received keys exactly; an inconsistency rolls back the transaction.
 
-Si `removed_editions=0` malgré une suppression dans Kodi, vérifiez d'abord
-la base `database` du résultat de la tâche : plusieurs bases `MyVideos…`
-peuvent cohabiter sur MariaDB ; une source configurée sans nom explicite
-utilise la version numérique la plus élevée **accessible** (pas nécessairement
-celle de l'instance Kodi consultée). Dans **Paramètres → source Kodi → Modifier**,
-renseignez alors explicitement la bonne base, puis synchronisez. Vérifiez aussi
-les autres sources Kodi et éditions CLZ de la fiche. Les fichiers simplement
-supprimés du NAS sans nettoyage de la médiathèque Kodi restent référencés dans
-la base et ne peuvent pas être distingués par ce connecteur en lecture seule.
+If `removed_editions=0` despite a deletion in Kodi, first check the `database` field in the job result: multiple `MyVideos…` databases can coexist on MariaDB; a source configured without an explicit database name uses the highest-numbered **accessible** version (not necessarily the one used by the queried Kodi instance). Under **Settings → Kodi source → Edit**, explicitly select the correct database and synchronize again. Also check other Kodi sources and CLZ editions associated with that media. Files merely deleted from the NAS without cleaning up Kodi's video library remain referenced in the database and cannot be distinguished by this read-only connector.
 
-Les réponses `GET /jobs` et `GET /jobs/{id}` exposent
-`progress_phase`, `progress_current` et `progress_total` (lignes de
-l'étape courante), ainsi que `overall_percent` (estimation monotone de 0 à
-100 % pour toute la tâche, sans retour à zéro entre films, séries et épisodes).
-La lecture MariaDB et la publication SQLite ayant des durées variables, ce
-pourcentage **global est une estimation**, pas une mesure du temps restant.
-Les étapes sans total connu affichent une animation indéterminée et conservent
-une progression globale estimée cohérente.
+`GET /jobs` and `GET /jobs/{id}` responses expose `progress_phase`, `progress_current`, and `progress_total` (rows in the current stage), along with `overall_percent` (a monotonic estimate from 0 to 100% for the whole job, without resetting between movies, TV shows, and episodes). Because MariaDB reads and SQLite publication take variable amounts of time, this **overall percentage is an estimate**, not a measurement of remaining time. Stages without a known total display an indeterminate animation while retaining a consistent estimated overall progression.
 
-Une nouvelle synchronisation ignore désormais les éditions dont la charge
-utile est identique à la précédente. Les rapports retournent
-`unchanged_editions`, `rebuilt_works` et, pour le diagnostic de lenteur,
-`mariadb_read_ms`, `sql_view_fetch_ms` et `sqlite_publish_ms`.
-Le serveur limite les mises à jour SQLite du compteur d'avancement à deux
-fois par seconde (plus les changements d'étape). Les extractions de casting
-évitent les tris globaux coûteux dans MariaDB et préservent l'ordre des acteurs
-par œuvre côté application.
+A new synchronization now skips editions whose payload is identical to the previous one. Reports return `unchanged_editions`, `rebuilt_works`, and, for diagnosing slowdowns, `mariadb_read_ms`, `sql_view_fetch_ms`, and `sqlite_publish_ms`. The server limits SQLite progress-counter updates to twice per second (plus stage changes). Cast extraction avoids expensive global sorting in MariaDB and preserves cast order per work in the application.
 
-`GET /jobs` sert au voyant d'activité : les tâches planifiées et manuelles
-sont visibles au rechargement et leur état reste consultable même si le navigateur
-ou l'application iOS a été fermé pendant le traitement.
+`GET /jobs` powers the activity indicator: scheduled and manual jobs are visible after reload, and their status remains available even if the browser or iOS app was closed during processing.
 
-## Erreurs et évolution
+## Errors and API Evolution
 
-Les erreurs applicatives ont la forme `{"error":{"code":"invalid_request","message":"…","details":[…]}}` ; `details` est facultatif et n'inclut pas les données soumises. Statuts principaux : 401, 403, 404, 409, 413, 422, 429, 502. Les erreurs inattendues sont journalisées côté serveur ; aucun secret n'est destiné à la réponse.
+Application errors have the form `{"error":{"code":"invalid_request","message":"…","details":[…]}}`; `details` is optional and does not include submitted data. Main HTTP statuses: 401, 403, 404, 409, 413, 422, 429, 502. Unexpected errors are logged on the server; secrets must not appear in responses.
 
-L'API expose des UUID de catalogue stables lors des réimports tant que les clés de source sont conservées. Une suppression/recréation d'une source peut changer ces UUID. Les évolutions compatibles ajoutent des champs/routes à v1 ; une rupture de contrat devra utiliser v2. Consulter le schéma OpenAPI pour les champs, types et contraintes exacts.
+The API exposes stable catalog UUIDs across reimports as long as source keys are preserved. Deleting and recreating a source may change these UUIDs. Backward-compatible changes add fields/routes to v1; breaking changes must use v2. Refer to the OpenAPI schema for exact fields, types, and constraints.
 
-## Données personnelles et listes
+## Personal Data and Lists
 
-Toutes ces écritures exigent les droits administrateur ; Bearer externe, session avec CSRF, accès local avec CSRF ou secret Ingress. Les lectures sont aussi accessibles avec le jeton de lecture.
+All writes require administrator permissions: external Bearer, CSRF-protected session, CSRF-protected local access, or Ingress secret. Reads are also available with the read-only token.
 
-| Méthode | Route `/api/v1` | Corps / résultat |
+| Method | Route under `/api/v1` | Body / result |
 |---|---|---|
-| PATCH | `/media/{id}/personal` | `{ "user_rating": 8.5, "watched": true }` → fiche mise à jour |
-| GET | `/lists` | Listes, descriptions, compteurs, révisions |
-| POST | `/lists` | `{ "name": "Films à voir", "description": "Priorités" }` → liste créée (201) |
-| PUT | `/lists/{id}` | Nom et description |
-| DELETE | `/lists/{id}` | Supprime uniquement la liste (204) |
-| GET | `/lists/{id}/items` | Page `items,total,limit,offset,has_more,revision` |
-| POST | `/lists/{id}/items` | `{ "media_id": "UUID" }` ; ajout idempotent en fin de liste (204) |
-| DELETE | `/lists/{id}/items/{media_id}` | Retire le média de la liste (204) |
-| PUT | `/lists/{id}/order` | `{ "media_ids": ["UUID2","UUID1"], "revision": 3 }` ; permutation complète (204) |
+| PATCH | `/media/{id}/personal` | `{ "user_rating": 8.5, "watched": true }` → updated details |
+| GET | `/lists` | Lists, descriptions, counts, revisions |
+| POST | `/lists` | `{ "name": "Movies to Watch", "description": "Priorities" }` → created list (201) |
+| PUT | `/lists/{id}` | Name and description |
+| DELETE | `/lists/{id}` | Deletes only the list (204) |
+| GET | `/lists/{id}/items` | Page with `items,total,limit,offset,has_more,revision` |
+| POST | `/lists/{id}/items` | `{ "media_id": "UUID" }`; idempotent append to the end of the list (204) |
+| DELETE | `/lists/{id}/items/{media_id}` | Removes media from the list (204) |
+| PUT | `/lists/{id}/order` | `{ "media_ids": ["UUID2","UUID1"], "revision": 3 }`; full reorder (204) |
 
-`PATCH personal` laisse inchangés les champs omis ; `null` retire l'édition personnelle du champ et reprend sa valeur importée. `user_rating` accepte 0 à 10. `watched` accepte true/false/null. Les valeurs effectives apparaissent dans les pages, fiches et filtres ; le tri `user_rating` est disponible dans le catalogue. Les éditions conservent leurs métadonnées d'origine. Ces valeurs sont communes à l'installation, sans profils utilisateur.
+`PATCH personal` leaves omitted fields unchanged; `null` removes the personal override for that field and restores its imported value. `user_rating` accepts values from 0 to 10. `watched` accepts true/false/null. Effective values appear in pages, details, and filters; `user_rating` sorting is available in the catalog. Editions retain their original metadata. These values are shared across the installation, without per-user profiles.
 
-Les items de liste acceptent `sort=position|title|year|date_added|rating|user_rating`, `order=asc|desc`, `limit=1..200` et `offset>=0`. Un tri automatique ne réécrit pas `position`. Pour réordonner une liste paginée, lire tous les UUID dans une même révision puis envoyer chacun exactement une fois (maximum 10 000). Un changement concurrent donne 409 ; une permutation incomplète ou dupliquée donne 422. Les mutations, y compris la disparition d'un média de toutes les sources, changent la révision. La fiche comporte `personal` et `lists`.
+List items accept `sort=position|title|year|date_added|rating|user_rating`, `order=asc|desc`, `limit=1..200`, and `offset>=0`. Automatic sorting does not rewrite `position`. To reorder a paginated list, read all UUIDs at the same revision, then send each exactly once (maximum 10,000). A concurrent change returns 409; an incomplete or duplicate reorder returns 422. Mutations, including media disappearing from all sources, change the revision. The detail view includes `personal` and `lists`.
 
-## Personnes et cache TMDB
+## People and TMDB Cache
 
-`MediaDetail.people` regroupe `name,role,order,category,imdb_id,tmdb_id,links,thumbnail`. `category` vaut `cast`, `director`, `writer`, `producer`, `composer`, `photography` ou `crew`. `cast` reste disponible pour les anciens clients. `links` contient les URL directes avec identifiants ou une `imdb_search` explicitement distincte. Les portraits sont exposés par une route relative authentifiée `GET /media/{id}/people/{index}/artwork` ; conserver le préfixe d'un éventuel Ingress.
+`MediaDetail.people` groups `name,role,order,category,imdb_id,tmdb_id,links,thumbnail`. `category` is `cast`, `director`, `writer`, `producer`, `composer`, `photography`, or `crew`. `cast` remains available to older clients. `links` contains direct URLs with identifiers or a clearly distinguished `imdb_search`. Portraits are exposed by an authenticated relative route, `GET /media/{id}/people/{index}/artwork`; retain any Ingress prefix.
 
-`trailers` contient des liens HTTPS YouTube validés (les liens plugin Kodi sont convertis). `tmdb_available` indique si le serveur dispose de son jeton TMDB. `enriched_at` donne la date du cache persistant. `POST /media/{id}/enrich` récupère les personnes/portraits/bandes-annonces de TMDB pour un film ou une série identifiés par IMDb/TMDB ; réutilise le cache pendant 30 jours. `POST /media/{id}/enrich?refresh=true` force le renouvellement et invalide les portraits concernés. Une erreur conserve le cache précédent. Aucune clé TMDB n'est fournie par le client ou révélée dans la réponse. Les épisodes ne sont pas encore enrichis individuellement.
+`trailers` contains validated YouTube HTTPS links (Kodi plugin links are converted). `tmdb_available` indicates whether the server has a TMDB token. `enriched_at` provides the persistent cache timestamp. `POST /media/{id}/enrich` retrieves people/portraits/trailers from TMDB for a movie or TV show identified by IMDb/TMDB, reusing the cache for 30 days. `POST /media/{id}/enrich?refresh=true` forces a refresh and invalidates the relevant portraits. Errors preserve the previous cache. No TMDB key is provided by clients or exposed in responses. Episodes are not yet enriched individually.
 
-`GET /status` expose également `tmdb_available`. `POST /connections/tmdb/test` exige les droits d'écriture ; `422` signifie que la clé n'est pas configurée, `502` une erreur TMDB/réseau, `200` un accès vérifié. `TMDB_API_TOKEN` accepte le jeton de lecture Bearer ou la clé v3. Avec un `edition_id` explicite, `/players/{id}/play` transmet à Kodi le chemin de ce fichier lorsqu'il est disponible ; la vérification des identifiants de bibliothèque reste préalable.
+`GET /status` also exposes `tmdb_available`. `POST /connections/tmdb/test` requires write permissions; `422` indicates a missing key, `502` a TMDB/network error, and `200` verified access. `TMDB_API_TOKEN` accepts either the Bearer read token or a v3 key. With an explicit `edition_id`, `/players/{id}/play` sends Kodi that file's path when available; library-identifier validation still takes place first.
 
-Les `GET` ne déclenchent pas de requêtes TMDB. Le front administrateur appelle automatiquement `POST enrich` à l'ouverture si nécessaire ; une application iOS peut utiliser les mêmes routes. Les clients de lecture consultent les informations importées ou déjà enrichies. Le champ `editions[].metadata.file` expose le chemin Kodi ; le lancement d'une version utilise `edition_id` dans `/players/{id}/play`.
+GET requests do not trigger TMDB requests. The administrator frontend automatically calls `POST enrich` on opening media details when necessary; an iOS app can use the same routes. Read-only clients see imported or previously enriched information. `editions[].metadata.file` exposes the Kodi path; playback of a specific version uses `edition_id` in `/players/{id}/play`.
 
+## Refresh Remote Kodi Libraries
 
-## Actualiser les médiathèques Kodi distantes
+`POST /api/v1/sources/{source_id}/scan?player_id=...` triggers a scan on the specified instance, then refreshes the SQLite database from MariaDB **only after Kodi's scan completion has been confirmed**.
 
-`POST /api/v1/sources/{source_id}/scan?player_id=...` déclenche l'analyse
-sur l'instance indiquée, puis actualise la base SQLite depuis MariaDB
-**seulement après vérification de la fin de l'analyse Kodi**.
+`POST /api/v1/sources/scan-all` (administrator, HTTP 202) triggers scanning of **all configured Kodi instances**. Instances sharing the same MariaDB source are scanned sequentially within a single job; SQL import runs once per source. The response is a list of `JobView` entries, tracked via `GET /api/v1/jobs` or `GET /api/v1/jobs/{id}`.
 
-`POST /api/v1/sources/scan-all` (administrateur, HTTP 202) déclenche
-l'analyse de **toutes les instances Kodi configurées**. Les instances
-partageant la même source MariaDB sont analysées successivement dans un
-même job ; l'import SQL est lancé une fois par source. La réponse est
-une liste de `JobView`, suivie via `GET /api/v1/jobs` ou
-`GET /api/v1/jobs/{id}`.
+The server first attempts Kodi WebSocket notifications (`ws://host:9090/jsonrpc`, with a connection timeout of approximately 4 seconds). If this service is unavailable, it uses the **HTTP JSON-RPC endpoint already tested in Kodi settings** (`http://host:8080/jsonrpc`, configurable and using the instance's authentication) to execute `VideoLibrary.Scan`. Completion is monitored through `XBMC.GetInfoBooleans(Library.IsScanningVideo)`. A scan that was started but whose completion cannot be confirmed **does not** trigger an automatic SQL update.
 
-Le serveur tente d'abord les notifications WebSocket de Kodi
-(`ws://hôte:9090/jsonrpc`, connexion limitée à environ 4 s). Lorsque
-ce service est indisponible, il utilise l'endpoint **HTTP JSON-RPC déjà
-testé dans les paramètres Kodi** (`http://hôte:8080/jsonrpc`,
-personnalisable, avec l'authentification de l'instance) pour exécuter
-`VideoLibrary.Scan`. La fin est suivie via
-`XBMC.GetInfoBooleans(Library.IsScanningVideo)`. Un scan déclenché
-mais dont la fin ne peut pas être confirmée **ne** déclenche **pas** de
-mise à jour SQL automatique.
+If no connection can **even start** a scan, synchronization of the existing MariaDB database is still possible, but is explicitly reported as `result.kodi_scan="sql_only"`, with `kodi_scan_warnings`. This does not replace scanning the remote library. The web interface hides the estimated percentage during remote scanning (there is no reliable progress measurement), then displays MariaDB/SQLite import progress.
 
-Si aucune connexion ne permet **même de démarrer** l'analyse, la
-synchronisation de la base MariaDB existante est possible, mais elle
-est clairement signalée comme `result.kodi_scan="sql_only"`, avec
-`kodi_scan_warnings`. Elle ne remplace pas le scan de la médiathèque
-distante. L'interface Web masque le pourcentage estimé durant le scan
-distant (aucun taux de progression fiable) et affiche ensuite la
-progression de l'import MariaDB/SQLite.
+## Persistent List Thumbnails
 
-## Mosaïques persistantes des listes
+Each list exposes an authenticated `thumbnail` URL:
+`/api/v1/lists/{id}/thumbnails/{revision}.jpg`. The server stores
+the 360 × 216 px JPEG in `DATA_DIR/list-thumbnails/`. Subsequent reads
+do not regenerate the image, and the client can cache the versioned URL.
+The mosaic shows the **first four items in manual order**: a 2×2 layout (4),
+one large tile plus two smaller ones (3), two columns (2), full frame (1),
+or a neutral placeholder (0).
 
-Chaque liste expose une URL `thumbnail` authentifiée :
-`/api/v1/lists/{id}/thumbnails/{revision}.jpg`. Le serveur enregistre
-le JPEG 360 × 216 px dans `DATA_DIR/list-thumbnails/`. Les lectures suivantes
-ne recomposent pas l'image, et le client peut mettre en cache cette URL
-versionnée. La mosaïque représente les **quatre premiers éléments dans
-l'ordre manuel** : disposition 2×2 (4), grande tuile + deux petites (3),
-deux colonnes (2), plein cadre (1), ou un visuel neutre (0).
+Creating, editing, deleting, inserting into, removing from, or reordering
+a list triggers generation of its new thumbnail in the background after
+the API response. The old revision becomes inaccessible and its files
+are deleted. Existing lists are initialized when first displayed.
+Missing artwork is replaced with neutral placeholders. Posters are
+downloaded through the same secure image-fetching layer used by the catalog,
+never via an internal HTTP call to the API.
 
-Toute création, modification, suppression, insertion, retrait ou permutation
-d'une liste déclenche la préparation de sa nouvelle vignette en arrière-plan
-après la réponse API. L'ancienne révision devient inaccessible et ses
-fichiers sont supprimés. Les listes préexistantes sont initialisées lors du
-premier affichage. Les illustrations manquantes sont remplacées par des
-emplacements neutres. Les affiches sont téléchargées via la couche sécurisée
-de récupération d'images déjà utilisée par le catalogue, jamais via un
-appel HTTP interne à l'API.
+## Partially Watched TV Show Indicators
 
-## Indicateurs de visionnage partiel des séries
+TV show details and summaries (catalog, search, lists, and detail views)
+expose two additional optional fields:
+`episode_count` and `watched_episode_count`. They are calculated from
+episodes actually imported, including personal watched/unwatched status
+overrides. The total includes specials (season 0) and does not claim to
+represent episodes that were not imported.
 
-Les fiches et résumés de séries (catalogue, recherche, listes et détail)
-exposent deux champs facultatifs supplémentaires :
-`episode_count` et `watched_episode_count`. Ils sont calculés à partir des
-épisodes effectivement importés, avec prise en compte des modifications
-personnelles du statut vu/non vu. Le total inclut les épisodes spéciaux
-(saison 0) et ne prétend pas représenter les épisodes non importés.
+**Partially watched** means `0 < watched_episode_count < episode_count`.
+A show with all its imported episodes watched is marked as **watched**.
+The existing `watch_status` is preserved for compatibility:
+episode progress remains separate from the playback resume status of a video.
+Seasons are already described by `watched_count` and `episode_count` in
+`GET /api/v1/media/{show_id}/seasons`.
 
-**Partiellement vu** correspond à `0 < watched_episode_count < episode_count`.
-Une série ayant tous ses épisodes importés vus est signalée comme **vue**.
-Le statut `watch_status` existant est conservé pour compatibilité :
-l'indicateur de progression des épisodes reste distinct de l'état de reprise
-de lecture d'une vidéo. Les saisons sont déjà décrites par
-`watched_count` et `episode_count` dans
-`GET /api/v1/media/{id_serie}/seasons`.
+## TV Show, Season, and Episode Hierarchy
 
-## Hiérarchie des séries TV, saisons et épisodes
+The main catalog (`GET /api/v1/media` without `kind` or `parent_id`)
+and its text search list **only movies and TV shows**;
+episodes are no longer displayed at the same level. Seasons are
+not standalone media entries. For compatibility with older clients,
+`GET /api/v1/media?kind=episode&parent_id=<show_id>` remains available
+to explicitly retrieve episodes.
 
-Le catalogue principal (`GET /api/v1/media` sans `kind` ni `parent_id`)
-et sa recherche textuelle listent **uniquement les films et les séries** ;
-les épisodes ne sont plus affichés au même niveau. Les saisons ne sont
-pas des fiches autonomes. Pour conserver la compatibilité des anciens
-clients, `GET /api/v1/media?kind=episode&parent_id=<id_serie>` reste disponible
-et permet de retrouver explicitement les épisodes.
+A TV show detail has two additional authenticated endpoints:
 
-La fiche d'une série est complétée par deux endpoints authentifiés :
+- `GET /api/v1/media/{show_id}/seasons`: ordered seasons, including
+  season 0 (specials), with `season`, `episode_count`,
+  and `watched_count`. Returns `[]` if no episodes were imported.
+- `GET /api/v1/media/{show_id}/seasons/{number}/episodes?limit=100&offset=0`:
+  standard `MediaPage` sorted by episode number, with pagination up to
+  200 entries. Each item contains `id`, `episode`, `season`,
+  `plot`, `runtime_minutes`, `watch_status`, and available artwork.
+  `GET /api/v1/media/{episode_id}` returns the full details.
 
-- `GET /api/v1/media/{id_serie}/seasons` : liste des saisons ordonnées,
-  y compris la saison 0 (spéciaux), avec `season`, `episode_count`,
-  `watched_count`. Renvoie `[]` si aucun épisode n'a été importé.
-- `GET /api/v1/media/{id_serie}/seasons/{numero}/episodes?limit=100&offset=0` :
-  `MediaPage` standard triée par numéro d'épisode, avec pagination jusqu'à
-  200 éléments. Chaque élément contient `id`, `episode`, `season`,
-  `plot`, `runtime_minutes`, `watch_status` et les illustrations
-  disponibles. `GET /api/v1/media/{id_episode}` fournit la fiche complète.
+An unknown ID or one that does not refer to a TV show returns 404.
+A nonexistent season of a valid TV show returns an empty page. These
+GET requests do not reimport data or trigger a remote update.
 
-Un id inconnu ou qui ne correspond pas à une série renvoie 404. Une
-saison inexistante d'une série valide renvoie une page vide. Les données
-ne sont pas réimportées et aucune mise à jour distante n'est déclenchée
-par ces GET.
+## Mobile Application Compatibility Contract
 
-## Contrat de compatibilité des applications mobiles
-
-Le numéro de version du serveur (`version`), l'URL REST (`api_version: v1`) et
-la compatibilité des modèles de données mobiles sont **trois notions distinctes**.
-Le serveur annonce une plage de contrats prise en charge, sans imposer une mise
-à jour iOS à chaque livraison technique :
+The server version number (`version`), REST API version (`api_version: v1`),
+and mobile data model compatibility are **three distinct concepts**.
+The server advertises a range of supported contracts without requiring an
+iOS update for every technical release:
 
 ```json
 {
@@ -362,39 +280,46 @@ Le serveur annonce une plage de contrats prise en charge, sans imposer une mise
 }
 ```
 
-Ces champs supplémentaires figurent dans `GET /api/v1/status` (authentifié) et
-`GET /api/v1/discovery` (public, sans données privées). Les versions précédentes
-de l'application ignorent les nouveaux champs et continuent de fonctionner tant
-que le modèle reste compatible ; **il est impossible de forcer l'affichage d'un
-message dans une version iOS déjà publiée qui ne possède pas ce mécanisme**.
+These additional fields are provided by `GET /api/v1/status` (authenticated)
+and `GET /api/v1/discovery` (public, with no private data). Older
+app versions ignore the new fields and continue to work as long as
+the model remains compatible; **it is impossible to force a message
+to appear in an already released iOS version that lacks this mechanism**.
 
-Le client iOS connaît sa propre version de contrat et doit vérifier que
-`min_contract <= version_client <= max_contract` avant de lire le catalogue.
-Si le contrat est trop ancien, il affiche un écran invitant à mettre à jour
-l'application ; s'il est trop récent, il invite à mettre à jour le serveur.
-Si un ancien serveur ne renvoie pas `mobile_compatibility`, l'application
-considère par rétrocompatibilité qu'il prend en charge le contrat **1**.
+The iOS client knows its own contract version and must check
+`min_contract <= client_version <= max_contract` before reading the catalog.
+If its contract is too old, it displays a screen prompting an app update;
+if it is too new, it prompts an update of the server.
+If an older server does not return `mobile_compatibility`, the app
+assumes contract **1** is supported for backward compatibility.
 
-Règles de maintenance :
-- Un ajout facultatif de champ ou d'endpoint **ne** nécessite **pas** de
-  nouveau contrat : la valeur reste 1.
-- Lorsqu'un modèle devient incompatible, ajouter la gestion du contrat N+1
-  au serveur et à l'application, puis augmenter `max_contract`. Garder
-  `min_contract` sur N pendant une période transitoire **uniquement** si le
-  serveur continue à servir réellement l'ancien modèle.
-- Lorsque l'ancien contrat n'est plus servi, augmenter `min_contract` ;
-  garder **`/api/v1/status` et `/api/v1/discovery` disponibles**, même si le
-  reste de l'API a migré vers une nouvelle version.
-- Ne jamais déduire une compatibilité des numéros de version du serveur ou
-  d'iOS : ils évoluent indépendamment. Les anciens clients déjà publiés
-  doivent être traités comme tels pendant le déploiement.
+Maintenance rules:
+- Adding an optional field or endpoint **does not** require a new contract:
+  the value stays at 1.
+- When a model becomes incompatible, implement contract N+1 in both
+  server and app, then increase `max_contract`. Keep `min_contract` at N
+  during a transition period **only if** the server still actually supports
+  the older model.
+- When the old contract is no longer served, increase `min_contract`;
+  keep **`/api/v1/status` and `/api/v1/discovery` available**, even if
+  the rest of the API has moved to a newer version.
+- Never infer compatibility from server or iOS version numbers:
+  they evolve independently. Older published clients must be
+  accounted for during deployment.
 
-## Plages locales sans jeton d'accès
+## Local Networks Without Access Tokens
 
-Configurer `LOCAL_AUTH_NETWORKS` (JSON de CIDR) et, si nécessaire, `TRUSTED_PROXY_NETWORKS` dans l'environnement. Aucune plage n'est autorisée par défaut. `GET /auth/session` renvoie `access_method=local` et un CSRF pour les clients autorisés sans Bearer ; envoyer ce CSRF dans `X-CSRF-Token` pour les écritures. Le front le fait automatiquement. Le contrôle Bearer reste disponible indépendamment de l'interface et prioritaire sur l'autorisation locale. Consulter le README pour la configuration du proxy ; ne pas activer le traitement automatique des proxy headers dans Uvicorn.
+Configure `LOCAL_AUTH_NETWORKS` (JSON array of CIDRs) and, if necessary,
+`TRUSTED_PROXY_NETWORKS` in the environment. No network is allowed
+by default. `GET /auth/session` returns `access_method=local` and a CSRF
+token for clients permitted without Bearer; send that token in
+`X-CSRF-Token` for writes. The frontend handles this automatically.
+Bearer authentication remains available independently of the interface
+and takes precedence over local access. Consult the README for proxy
+configuration; do not enable automatic proxy-header handling in Uvicorn.
 
-Les affiches de saison fournies par TMDB sont accessibles dans la réponse
-`GET /api/v1/media/{id_serie}/seasons` via le champ facultatif
-`poster` (`/api/v1/media/{id_serie}/seasons/{saison}/poster`,
-authentifié, image servie depuis le cache serveur). Une absence d'affiche
-laisse au client le choix de réutiliser l'affiche principale de la série.
+Season posters provided by TMDB are available in the
+`GET /api/v1/media/{show_id}/seasons` response through the optional
+`poster` field (`/api/v1/media/{show_id}/seasons/{season}/poster`,
+authenticated, image served from the server cache). If no poster is
+available, clients may reuse the TV show's main poster.
