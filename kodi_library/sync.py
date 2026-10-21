@@ -45,7 +45,8 @@ class SyncManager:
         self.active.add(source_id)
         try:
             job = await asyncio.to_thread(
-                self.store.new_job, source_id,
+                self.store.new_job,
+                source_id,
                 "collection_import" if xml is not None else "kodi_sync",
             )
         except Exception:

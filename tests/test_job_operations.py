@@ -37,7 +37,11 @@ def test_sql_only_job_and_invalid_operation(client, admin):
     response = client.post(
         "/api/v1/sources",
         headers=admin,
-        json={"name": "Kodi", "type": "kodi", "config": {"host": "nas", "username": "reader"}},
+        json={
+            "name": "Kodi",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader"},
+        },
     )
     sid = response.json()["id"]
     store = client.app.state.store
@@ -45,3 +49,29 @@ def test_sql_only_job_and_invalid_operation(client, admin):
     assert sync["operation"] == "kodi_sync"
     store.start_job(sync["id"])
     assert store.job(sync["id"])["progress_phase"] == "connecting"
+
+
+def test_new_job_field_is_additive_for_v1_mobile_clients(client, admin):
+    """Do not change any pre-existing job fields or the mobile contract."""
+    from kodi_library.compatibility import mobile_compatibility
+
+    source = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={
+            "name": "Kodi",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader"},
+        },
+    )
+    job = client.app.state.store.new_job(source.json()["id"], "kodi_scan")
+    response = client.get(f"/api/v1/jobs/{job['id']}", headers=admin)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["operation"] == "kodi_scan"
+    assert {
+        "id", "source_id", "status", "created_at", "finished_at",
+        "result", "error", "progress_phase", "progress_current",
+        "progress_total", "overall_percent",
+    } <= data.keys()
+    assert mobile_compatibility() == {"min_contract": 1, "max_contract": 1}
