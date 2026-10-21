@@ -11,8 +11,8 @@ from .connectors.clz import parse_clz
 from .connectors.collection_xml import COLLECTION_TYPES, parse_collection
 from .connectors.kodi import KodiConnector
 from .connectors.kodi_jsonrpc import fetch_kodi_snapshot
-from .players import KodiUnavailable, connection
 from .kodi_scan import KodiScanUnavailable, scan_until_finished
+from .players import KodiUnavailable, connection
 
 LOGGER = logging.getLogger(__name__)
 
@@ -153,14 +153,18 @@ class SyncManager:
                 players = await asyncio.to_thread(self.store.players)
                 candidates = [p for p in players if p["source_id"] == source["id"]]
                 offline = bool(candidates)
+                deadline = monotonic() + 1.0
                 for player in candidates:
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        break
                     private = await asyncio.to_thread(self.store.player, player["id"])
                     try:
                         # One fast probe for offline Kodi. Connection timeout is
                         # also capped in total; an unreachable device must not
                         # delay SQL fallback for a full HTTP timeout.
-                        async with asyncio.timeout(1.0):
-                            async with connection(private["config"], timeout=0.9) as rpc:
+                        async with asyncio.timeout(max(0.01, deadline - monotonic())):
+                            async with connection(private["config"], timeout=min(0.9, remaining)) as rpc:
                                 if await rpc("JSONRPC.Ping", {}) != "pong":
                                     raise ConnectorError("Kodi returned an invalid JSON-RPC ping.")
                         offline = False

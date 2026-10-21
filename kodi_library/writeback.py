@@ -285,9 +285,17 @@ async def propagate_personal(
         errors = []
         attempts = []
         offline = True
+        deadline = asyncio.get_running_loop().time() + 1.0
         for player in candidates:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                attempts.append("jsonrpc:unavailable")
+                errors.append("Kodi est injoignable après une seconde.")
+                break
             try:
-                warning = await _write_kodi(player, detail, editions, changes)
+                warning = await asyncio.wait_for(
+                    _write_kodi(player, detail, editions, changes), timeout=remaining
+                )
                 attempts.append("jsonrpc:updated")
                 results.append(
                     {
@@ -299,6 +307,9 @@ async def propagate_personal(
                     }
                 )
                 break
+            except asyncio.TimeoutError:
+                attempts.append("jsonrpc:unavailable")
+                errors.append("Kodi est injoignable après une seconde.")
             except KodiUnavailable as exc:
                 attempts.append("jsonrpc:unavailable")
                 errors.append(str(exc))

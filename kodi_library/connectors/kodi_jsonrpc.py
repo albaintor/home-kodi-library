@@ -4,12 +4,10 @@ A full, paginated snapshot is published only once every method succeeds.
 No access to Kodi's on-disk database or externally hosted MariaDB is required.
 """
 
-from datetime import datetime
-
+from ..players import connection
+from ..utils import date_value, identifiers, plain_text, positive
 from .base import ConnectorError, Record
 from .kodi import artwork_candidates
-from ..utils import date_value, identifiers, positive, plain_text
-from ..players import connection
 
 PAGE_SIZE = 200
 FIELDS = {
