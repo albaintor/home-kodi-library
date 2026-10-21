@@ -88,6 +88,7 @@ class SyncManager:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
             scanned, warnings = [], []
+            offline_player_ids = set()
             total = len(players)
             for index, player in enumerate(players):
                 await asyncio.to_thread(
@@ -101,9 +102,10 @@ class SyncManager:
                                 raise KodiScanUnavailable("Kodi JSON-RPC ping did not respond.")
                     method = await scan_until_finished(player["config"])
                     scanned.append({"name": player["name"], "method": method})
-                except (KodiScanUnavailable, KodiUnavailable, TimeoutError) as exc:
-                    # The device was offline, or could not start its scan. The
-                    # subsequent import will attempt JSON-RPC first then SQL.
+                except (KodiUnavailable, TimeoutError) as exc:
+                    offline_player_ids.add(player["id"])
+                    warnings.append(f"{player['name']} : {exc}")
+                except KodiScanUnavailable as exc:
                     warnings.append(f"{player['name']} : {exc}")
                 await asyncio.to_thread(
                     self.store.update_job_progress, job["id"], "kodi_scanning", index + 1, total
@@ -116,6 +118,7 @@ class SyncManager:
                 None,
                 scan_triggered=bool(scanned),
                 scan_info={"kodi_scanned_players": scanned, "kodi_scan_warnings": warnings},
+                offline_player_ids=offline_player_ids,
             )
         except ConnectorError as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
@@ -137,7 +140,8 @@ class SyncManager:
             self.active.discard(source["id"])
 
     async def _run(
-        self, job, source, xml, *, scan_triggered: bool = False, scan_info: dict | None = None
+        self, job, source, xml, *, scan_triggered: bool = False,
+        scan_info: dict | None = None, offline_player_ids: set[str] | None = None
     ):
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
@@ -160,6 +164,8 @@ class SyncManager:
                 offline = bool(candidates)
                 deadline = monotonic() + 1.0
                 for player in candidates:
+                    if player["id"] in (offline_player_ids or set()):
+                        continue
                     remaining = deadline - monotonic()
                     if remaining <= 0:
                         break
