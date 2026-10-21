@@ -376,10 +376,13 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 /* Respect the HTML hidden attribute despite the flex layout rules above. */
 .kodi-header-button[hidden], .remote-indicator[hidden]{display:none!important}
 
-/* Kodi instances are owned by a MariaDB catalogue source, not a second list. */
-.kodi-source-card{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start}
-.kodi-source-card>div:first-child{min-width:0}
-.kodi-source-card>.connection-actions{min-width:0}
+/* Kodi library: full-width details first, wrapping actions second, instances third.
+   The former 1fr/auto layout let five action buttons squeeze the source name
+   into a few pixels even in a wide settings dialog. */
+.kodi-source-card{display:grid;grid-template-columns:minmax(0,1fr);align-items:start;row-gap:10px}
+.kodi-source-card>div:first-child{min-width:0;max-width:100%}
+.kodi-source-card>.connection-actions{grid-column:1;min-width:0;max-width:none;width:100%;justify-content:flex-start;gap:7px}
+.kodi-source-card>.connection-actions button{flex:0 0 auto}
 .source-kodi-instances{grid-column:1/-1;width:100%;border-top:1px solid var(--border);margin-top:12px;padding-top:11px;min-width:0}
 .source-kodi-instances-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:9px}
 .source-kodi-instances-heading strong{font-size:12px}

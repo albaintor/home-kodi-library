@@ -577,6 +577,33 @@ def main():
                 assert len(enriched_calls) == initial_calls + 2
                 page.locator('[data-close="detail-dialog"]').click()
                 page.locator("#connections-button").click()
+                # Kodi source details should never be squeezed by five action buttons.
+                # Check actual geometry in both the mobile and desktop settings dialogs.
+                for viewport in ({"width": 390, "height": 844},
+                                 {"width": 1280, "height": 850}):
+                    page.set_viewport_size(viewport)
+                    layout = page.locator(".kodi-source-card").first.evaluate("""
+                        card => {
+                            const summary = card.querySelector(':scope > div:first-child');
+                            const actions = card.querySelector(':scope > .connection-actions');
+                            const outer = card.getBoundingClientRect();
+                            const info = summary.getBoundingClientRect();
+                            const toolbar = actions.getBoundingClientRect();
+                            return {
+                                summaryWidth: info.width,
+                                cardWidth: outer.width,
+                                summaryBottom: info.bottom,
+                                toolbarTop: toolbar.top,
+                                toolbarWidth: toolbar.width,
+                                horizontalOverflow: card.scrollWidth > card.clientWidth
+                            };
+                        }
+                    """)
+                    assert layout["summaryWidth"] >= layout["cardWidth"] * 0.8, layout
+                    assert layout["toolbarTop"] >= layout["summaryBottom"] - 1, layout
+                    assert layout["toolbarWidth"] >= layout["cardWidth"] * 0.8, layout
+                    assert not layout["horizontalOverflow"], layout
+                page.set_viewport_size({"width": 390, "height": 844})
                 expect(page.locator("#settings-preferences-title")).to_have_count(0)
                 expect(page.locator("#settings-language")).to_have_count(0)
                 expect(page.locator("#header-language")).to_have_value("fr")
