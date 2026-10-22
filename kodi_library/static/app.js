@@ -754,7 +754,10 @@ document.addEventListener('click',async event=>{
   }
 });
 window.addEventListener('resize',()=>positionMediaActions(mediaActionsTrigger));
-document.addEventListener('scroll',()=>{if($('media-actions-popover').matches(':popover-open'))closeMediaActions();},{passive:true,capture:true});
+document.addEventListener('scroll',event=>{
+  const menu=$('media-actions-popover');
+  if(menu.matches(':popover-open')&&event.target!==menu&&!menu.contains(event.target))closeMediaActions();
+},{passive:true,capture:true});
 
 function attachImageFallbacks(root) { root.querySelectorAll('img').forEach(img=>{img.addEventListener('error',()=>img.classList.add('failed'),{once:true});}); }
 function currentParams(offset=0) {
