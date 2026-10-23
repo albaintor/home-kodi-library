@@ -1,7 +1,6 @@
 """OpenAI connectivity tests: both models, admin-only, and secret-safe errors."""
 
 import httpx
-
 from conftest import READ
 
 from kodi_library.ai import AISearchPlan
