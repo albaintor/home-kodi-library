@@ -482,3 +482,6 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .episode-links .season-episode-entry>.season-episode{flex:1;min-width:0}
 .episode-links .season-episode-actions{flex:0 0 40px;min-width:40px;min-height:56px;padding:0;display:grid;place-items:center;background:var(--surface);font-size:24px;color:var(--text);border:1px solid var(--border);border-radius:9px}
 .episode-links .season-episode-actions:hover,.episode-links .season-episode-actions:focus-visible{background:var(--raised)}
+
+/* Optional AI search; normal catalogue remains usable without a provider. */
+.ai-search-area{margin:12px 0;padding:14px}.ai-prompt-row{display:flex;gap:8px;flex-wrap:wrap}.ai-prompt-row input{flex:1;min-width:220px}.ai-result-card{display:block;width:100%;text-align:left;padding:10px;margin:4px 0;border-radius:9px;border:1px solid var(--line, #7775);background:transparent;color:inherit;cursor:pointer}.ai-result-card:hover{background:var(--surface-hover,#8882)}

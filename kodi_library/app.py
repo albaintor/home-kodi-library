@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
+from .ai import AIConfiguration, AISettingsInput, AISearchInput, interpret_prompt
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
@@ -100,6 +101,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     store = Store(settings.data_dir / "catalogue.db")
     sync = SyncManager(store, settings)
     auth = Auth(settings, store)
+    ai_config = AIConfiguration(settings.data_dir)
+    ai_limit = asyncio.Semaphore(3)
     personal_edit_lock = asyncio.Lock()
 
     @asynccontextmanager
@@ -322,6 +325,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             **store.status(),
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
+
+
+    @app.get(API + "/ai/status", tags=["AI"], dependencies=[Depends(authenticated)])
+    def ai_status():
+        return ai_config.status()
+
+    @app.get(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
+    def ai_settings():
+        return ai_config.status()  # API token deliberately never returned.
+
+    @app.put(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
+    def update_ai_settings(value: AISettingsInput):
+        try:
+            return ai_config.update(value)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    @app.post(API + "/ai/search", tags=["AI"], dependencies=[Depends(authenticated)])
+    async def search_with_ai(value: AISearchInput):
+        credentials = ai_config.credentials()
+        if not credentials:
+            raise HTTPException(503, "AI search is not configured. Use the standard catalogue search.")
+        # Limit expensive upstream requests; authentication applies to read-only clients too.
+        if ai_limit.locked():
+            raise HTTPException(429, "Too many AI searches in progress.")
+        async with ai_limit:
+            try:
+                plan = await interpret_prompt(value.prompt, *credentials, store.facets())
+            except (httpx.HTTPError, ValueError) as exc:
+                _LOG.warning("AI search unavailable: %s", type(exc).__name__)
+                raise HTTPException(502, "AI provider unavailable or model configuration invalid.") from None
+        page = await asyncio.to_thread(
+            store.media, q=plan.keywords, deep_search=bool(plan.keywords), kind=plan.kind,
+            watch_status=plan.watch_status, genre=plan.genre, format=plan.format,
+            year_min=plan.year_min, year_max=plan.year_max, rating_min=plan.rating_min,
+            sort="rating", order="desc", limit=60, offset=0,
+        )
+        return {**page, "plan": plan.model_dump(), "mode": "filters"}
 
     @app.get(
         API + "/media",

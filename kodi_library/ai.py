@@ -1,0 +1,158 @@
+"""Opt-in OpenAI prompt-to-filters search. API secrets never leave the server."""
+import json
+import os
+import re
+import tempfile
+from pathlib import Path
+from threading import RLock
+
+import httpx
+from pydantic import BaseModel, ConfigDict, Field
+
+SCHEMA = {
+    "type": "object",
+    "properties": {
+        "kind": {"type": ["string", "null"], "enum": ["movie", "tvshow", None]},
+        "watch_status": {"type": ["string", "null"], "enum": ["watched", "unwatched", "in_progress", "unknown", None]},
+        "genre": {"type": ["string", "null"]},
+        "format": {"type": ["string", "null"]},
+        "year_min": {"type": ["integer", "null"]},
+        "year_max": {"type": ["integer", "null"]},
+        "rating_min": {"type": ["number", "null"]},
+        "keywords": {"type": "string"},
+    },
+    "required": ["kind", "watch_status", "genre", "format", "year_min", "year_max", "rating_min", "keywords"],
+    "additionalProperties": False,
+}
+
+
+class AISettingsInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    model: str = Field(default="gpt-4o-mini", min_length=1, max_length=100)
+    api_key: str | None = Field(default=None, max_length=300)
+    clear_api_key: bool = False
+
+
+class AISearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    prompt: str = Field(min_length=3, max_length=500)
+
+
+class AISearchPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    kind: str | None
+    watch_status: str | None
+    genre: str | None
+    format: str | None
+    year_min: int | None
+    year_max: int | None
+    rating_min: float | None
+    keywords: str = ""
+
+
+class AIConfiguration:
+    """Dedicated 0600 JSON config in /data, outside catalogue backups and HTTP."""
+    def __init__(self, data_dir: Path):
+        self.path = data_dir / "ai-settings.json"
+        self.lock = RLock()
+
+    def _read(self) -> dict:
+        try:
+            data = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                return data
+        except (FileNotFoundError, ValueError):
+            pass
+        return {}
+
+    def status(self) -> dict:
+        with self.lock:
+            value = self._read()
+            return {"provider": "openai", "model": value.get("model") or "gpt-4o-mini",
+                    "configured": bool(value.get("api_key")), "has_api_key": bool(value.get("api_key"))}
+
+    def credentials(self) -> tuple[str, str] | None:
+        with self.lock:
+            data = self._read()
+            key = data.get("api_key", "")
+            return (data.get("model") or "gpt-4o-mini", key) if key else None
+
+    def update(self, request: AISettingsInput) -> dict:
+        if not re.fullmatch(r"[a-zA-Z0-9_.:/-]{1,100}", request.model):
+            raise ValueError("Invalid model identifier.")
+        if request.api_key is not None and request.api_key and not request.api_key.strip():
+            raise ValueError("The access key must not be whitespace.")
+        with self.lock:
+            value = self._read()
+            key = "" if request.clear_api_key else value.get("api_key", "")
+            if request.api_key:
+                key = request.api_key.strip()
+            contents = json.dumps({"model": request.model, "api_key": key})
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                    handle.write(contents)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.chmod(name, 0o600)
+                os.replace(name, self.path)
+            finally:
+                if os.path.exists(name):
+                    os.unlink(name)
+            return self.status()
+
+
+def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
+    """Drop invented facets; all predicates are applied locally to SQLite."""
+    values = plan.model_dump()
+    for field, available in (("genre", facets.get("genres", [])),
+                             ("format", facets.get("formats", []))):
+        selected = values[field]
+        values[field] = next((v for v in available if selected and v.casefold() == selected.casefold()), None)
+    if values["kind"] not in (None, "movie", "tvshow"):
+        values["kind"] = None
+    if values["watch_status"] not in (None, "watched", "unwatched", "in_progress", "unknown"):
+        values["watch_status"] = None
+    for field in ("year_min", "year_max"):
+        if values[field] is not None and not 1800 <= values[field] <= 2200:
+            values[field] = None
+    if values["rating_min"] is not None and not 0 <= values["rating_min"] <= 10:
+        values["rating_min"] = None
+    values["keywords"] = values["keywords"].strip()[:120]
+    return AISearchPlan(**values)
+
+
+async def interpret_prompt(prompt: str, model: str, key: str, facets: dict) -> AISearchPlan:
+    instructions = (
+        "You translate film library searches into strictly factual filters. "
+        "Set a field to null when not explicitly requested. "
+        "Use a genre and format only if exactly present in the provided available values; "
+        "do not invent a format such as HDR unless provided. "
+        "Rating is on a 0-10 scale. "
+        "Set keywords ONLY for an explicitly named title, person, or unique quoted phrase "
+        "that can be matched lexically in title/synopsis/cast; not for broad plots, moods or concepts. "
+        "Never invent film titles. Respond in JSON per schema."
+    )
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        response = await client.post(
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": "Bearer " + key},
+            json={
+                "model": model,
+                "instructions": instructions,
+                "input": "Available genres: " + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
+                         + "\nAvailable formats: " + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
+                         + "\nUser search: " + prompt,
+                "text": {"format": {"type": "json_schema", "name": "catalogue_filter",
+                                    "strict": True, "schema": SCHEMA}},
+                "store": False,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+    chunks = [part.get("text", "") for output in data.get("output", [])
+              for part in output.get("content", []) if part.get("type") == "output_text"]
+    if not chunks:
+        raise ValueError("The AI provider returned no structured search.")
+    return normalize_plan(AISearchPlan.model_validate_json("".join(chunks)), facets)

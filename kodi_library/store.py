@@ -1145,6 +1145,9 @@ class Store:
         parent_id: str | None = None,
         season: int | None = None,
         year: int | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
+        rating_min: float | None = None,
         recent_days: int | None = None,
         sort: str = "date_added",
         order: str = "desc",
@@ -1212,6 +1215,15 @@ class Store:
                     f"EXISTS(SELECT 1 FROM json_each(w.{name}) WHERE value=? COLLATE NOCASE)"
                 )
                 params.append(value)
+        if year_min is not None:
+            clauses.append("w.year>=?")
+            params.append(year_min)
+        if year_max is not None:
+            clauses.append("w.year<=?")
+            params.append(year_max)
+        if rating_min is not None:
+            clauses.append("w.rating>=?")
+            params.append(rating_min)
         requested_formats = [format] if isinstance(format, str) else (format or [])
         if len(requested_formats) > 20 or any(
             not isinstance(label, str) or not 1 <= len(label.strip()) <= 120
