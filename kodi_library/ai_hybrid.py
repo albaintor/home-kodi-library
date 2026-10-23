@@ -3,7 +3,6 @@
 from collections import defaultdict
 
 from .ai_rerank import rerank_candidates
-
 from .ai_vectors import SemanticIndex, embed
 
 
