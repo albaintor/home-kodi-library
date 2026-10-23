@@ -144,31 +144,30 @@ A missing or broken provider is surfaced to the user: the server never silently
 pretends that a semantic result was computed. FTS5 and the standard catalogue
 remain available without an AI API key.
 
-## iOS entry point
+## iOS entry point (Media Catalog 1.2 build 7)
 
-Media Catalog 1.2 (build 4) uses Apple's **WWDC25 Mail-style toolbar**
-in its ordinary Search tab on iOS 26. The leading button is a native search
-mode menu, the centre is the real `DefaultToolbarItem(kind: .search,
-placement: .bottomBar)`, and the trailing sparkle button switches between
-**Classic** (titles/FTS) and **AI** (natural language). Native `ToolbarSpacer`
-items place these controls. No private API or fake search field is involved.
-On iOS 17–25 the app uses conventional, supported toolbar buttons. A regular
-search tab is necessary: Apple's specialized `role: .search` tab is a different
-design that replaces the entire tab bar and cannot place Mail-style actions
-on either side of the field.
+Ordinary title and metadata search uses Apple's native SwiftUI `searchable`
+modifier **on the existing catalogue grid/list**, not an independent Search
+tab. Its query updates the catalogue's standard filters; the same results
+are displayed in the main catalogue. On iOS 26 the system chooses its
+standard bottom-aligned search presentation on iPhone.
 
-Choose AI, enter a prompt in the system search field and submit with the
-keyboard Search action. The prompt is sent to the configured language model,
-then matched using exact metadata filters and semantic similarity over episode
-and film summaries. Results, filters and conversational turns belong to
-the search tab's observable state, surviving normal navigation into a media
-detail and back. Switch to Classic without erasing the AI results, or use
-New search to explicitly start a fresh conversation.
+The **sparkles** button in the catalogue's **top toolbar** opens a dedicated
+AI search page with a standard SwiftUI `NavigationLink` (no popup).
+That page owns its native multiline prompt and Search action. Prompts are
+interpreted, matched with metadata filters and semantic similarity, and
+optionally refined in subsequent turns. The AI session is owned by the
+connected catalogue tab and is preserved when navigating to media details
+and back. Matched episodes open by their exact ID.
 
-To verify server credentials on either client, save the key/models first,
-then choose **Test OpenAI connection** in the AI settings. Each of the two
-configured models is validated independently. A valid API key alone is not
-enough if a selected model is unavailable or the project has exhausted quota.
+A media detail now first retrieves the local server resource directly with
+`GET /api/v1/media/{mediaID}`; the former automatic TMDB enrichment could
+delay the first display for seconds. Users can still explicitly refresh
+TMDB metadata from the detail view.
+
+To verify credentials on Web or iOS, save both model choices and the key,
+then select **Test OpenAI connection**. Each model is validated
+independently; a valid key alone does not guarantee quota or model access.
 
 ## Search precision and verified relevance
 
