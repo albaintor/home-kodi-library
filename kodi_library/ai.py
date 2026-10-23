@@ -118,7 +118,13 @@ class AIConfiguration:
             if request.api_key:
                 key = request.api_key.strip()
             contents = json.dumps(
-                {"model": request.model, "api_key": key, "embedding_model": request.embedding_model or value.get("embedding_model") or "text-embedding-3-small"}
+                {
+                    "model": request.model,
+                    "api_key": key,
+                    "embedding_model": request.embedding_model
+                    or value.get("embedding_model")
+                    or "text-embedding-3-small",
+                }
             )
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
