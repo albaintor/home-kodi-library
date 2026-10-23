@@ -448,3 +448,50 @@ def test_empty_catalogue_bootstrap_is_one_time_not_periodic(client, admin):
         # Opening the UI after the 24h threshold triggers exactly one import.
         assert len(asyncio.run(manager.sync_stale_on_open())) == 1
         assert started == [source, source]
+
+
+def test_bulk_add_ai_results_to_new_and_existing_lists(client, admin):
+    source = client.app.state.store.save_source({"name": "Batch", "type": "clz"})
+    client.app.state.store.apply_snapshot(
+        source["id"],
+        [Record(str(i), "movie", f"AI match {i}") for i in range(4)],
+    )
+    all_media = client.get("/api/v1/media", headers=admin).json()["items"]
+    ids = [item["id"] for item in all_media]
+    new_list = client.post(
+        "/api/v1/lists", json={"name": "AI picks"}, headers=admin
+    ).json()
+    url = f"/api/v1/lists/{new_list['id']}/items/bulk"
+    first = client.post(url, headers=admin, json={"media_ids": ids + [ids[0]]})
+    assert first.status_code == 200, first.text
+    assert first.json() == {
+        "added": 4, "already_present": 0, "total_requested": 4
+    }
+    page = client.get(
+        f"/api/v1/lists/{new_list['id']}/items", headers=admin
+    ).json()
+    assert [item["id"] for item in page["items"]] == ids
+    second = client.post(url, headers=admin, json={"media_ids": ids[:3]})
+    assert second.status_code == 200
+    assert second.json() == {
+        "added": 0, "already_present": 3, "total_requested": 3
+    }
+    after = client.get("/api/v1/lists", headers=admin).json()
+    assert next(item for item in after if item["id"] == new_list["id"])["item_count"] == 4
+
+    # Invalid media IDs must not partially add preceding valid IDs.
+    other = client.post(
+        "/api/v1/lists", json={"name": "Other"}, headers=admin
+    ).json()
+    invalid = client.post(
+        f"/api/v1/lists/{other['id']}/items/bulk",
+        headers=admin, json={"media_ids": [ids[0], "nonexistent"]}
+    )
+    assert invalid.status_code == 404
+    assert client.get(
+        f"/api/v1/lists/{other['id']}/items", headers=admin
+    ).json()["total"] == 0
+
+    read = {"Authorization": "Bearer " + READ}
+    assert client.post(url, headers=read, json={"media_ids": ids}).status_code == 403
+    assert client.post(url, headers=admin, json={"media_ids": []}).status_code == 422
