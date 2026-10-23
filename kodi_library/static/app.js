@@ -2069,7 +2069,7 @@ document.addEventListener('submit',async event=>{
             ).join('')+
             '</button>'
           ).join('')+'</div>'
-        : '<p class="hint">Aucun média correspondant. Les recherches d’intrigue nécessitent une future indexation sémantique.</p>';
+        : '<p class="hint">Aucun résultat sémantique disponible. Si l’indexation démarre, relancez la recherche lorsqu’elle est terminée.</p>';
       attachImageFallbacks(target);
     }catch(e){$('ai-search-feedback').textContent=e.message;}
     finally{button.disabled=false;}
