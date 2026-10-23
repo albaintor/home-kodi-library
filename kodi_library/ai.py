@@ -10,6 +10,8 @@ from threading import RLock
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
+from .ai_usage import tracked_post
+
 SCHEMA = {
     "type": "object",
     "properties": {
@@ -49,6 +51,7 @@ class AISettingsInput(BaseModel):
     api_key: str | None = Field(default=None, max_length=300)
     clear_api_key: bool = False
     embedding_model: str | None = Field(default=None, min_length=1, max_length=100)
+    monthly_budget_usd: float | None = Field(default=None, ge=0, le=10000)
 
 
 class AISearchInput(BaseModel):
@@ -96,6 +99,7 @@ class AIConfiguration:
                 "configured": bool(value.get("api_key")),
                 "has_api_key": bool(value.get("api_key")),
                 "embedding_model": value.get("embedding_model") or "text-embedding-3-small",
+                "monthly_budget_usd": value.get("monthly_budget_usd", 5.0),
             }
 
     def credentials(self) -> tuple[str, str] | None:
@@ -121,6 +125,7 @@ class AIConfiguration:
                 {
                     "model": request.model,
                     "api_key": key,
+                    "monthly_budget_usd": (request.monthly_budget_usd if request.monthly_budget_usd is not None else value.get("monthly_budget_usd", 5.0)),
                     "embedding_model": request.embedding_model
                     or value.get("embedding_model")
                     or "text-embedding-3-small",
@@ -194,7 +199,8 @@ async def interpret_prompt(
         "request changes or removes them; output the complete merged plan. Respond in JSON per schema."
     )
     async with httpx.AsyncClient(timeout=25.0) as client:
-        response = await client.post(
+        response = await tracked_post(
+            client,
             "https://api.openai.com/v1/responses",
             headers={"Authorization": "Bearer " + key},
             json={
@@ -217,6 +223,7 @@ async def interpret_prompt(
                     }
                 },
                 "store": False,
+                "max_output_tokens": 1800,
             },
         )
         response.raise_for_status()
