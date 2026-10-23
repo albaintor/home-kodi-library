@@ -1269,9 +1269,7 @@ class Store:
                         is not None
                     )
             if matching_credit:
-                clauses.append(
-                    "w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)"
-                )
+                clauses.append("w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)")
                 params.append(full_name)
                 person_name = q.strip().strip('"')
             else:
