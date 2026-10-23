@@ -69,8 +69,12 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
         page["items"] = page["items"][:60]
         page["has_more"] = page["total"] > 60
     else:
-        page = store.media(**params, q=plan.keywords if not plan.semantic_query else "",
-                           deep_search=bool(plan.keywords), limit=60)
+        page = store.media(
+            **params,
+            q=plan.keywords if not plan.semantic_query else "",
+            deep_search=bool(plan.keywords),
+            limit=60,
+        )
         if plan.semantic_query and not indexed["indexed"]:
             note = "Semantic index is building; showing structured filters only."
         elif plan.semantic_query and not relevance:
@@ -84,14 +88,16 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
             if doc["id"] in seen:
                 continue
             seen.add(doc["id"])
-            selected.append({
-                "id": doc["id"],
-                "title": doc["title"],
-                "season": doc["season"],
-                "episode": doc["episode"],
-                "plot": doc["plot"][:260],
-                "score": round(score, 3),
-            })
+            selected.append(
+                {
+                    "id": doc["id"],
+                    "title": doc["title"],
+                    "season": doc["season"],
+                    "episode": doc["episode"],
+                    "plot": doc["plot"][:260],
+                    "score": round(score, 3),
+                }
+            )
             if len(selected) == 3:
                 break
         if selected:
