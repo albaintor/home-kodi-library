@@ -40,10 +40,7 @@ def test_episode_plot_is_indexed_and_returned_on_parent_series(store, monkeypatc
     index = SemanticIndex(tmp_path)
 
     async def fake_embed(texts, model, key):
-        return [
-            [1.0, 0.0] if "boucle temporelle" in text else [0.0, 1.0]
-            for text in texts
-        ]
+        return [[1.0, 0.0] if "boucle temporelle" in text else [0.0, 1.0] for text in texts]
 
     async def query_embed(texts, model, key):
         return [[1.0, 0.0] for _ in texts]
