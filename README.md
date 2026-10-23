@@ -13,6 +13,7 @@ Media Catalog is a self-hosted catalog with a responsive **web interface** and a
 - **Organize** your collection using custom lists, personal ratings and watched status.
 - **Play** selected titles on an existing Kodi player, including playback resume.
 - **Access** the same catalog on the web, iOS/iPadOS or through Home Assistant.
+- **Search with AI (optional)** using natural language, hybrid semantic/keyword matching over film, series and individual episode synopses, and conversational refinements.
 
 The server uses its own **SQLite database**. Importing Kodi content requires an existing external Kodi MyVideos MariaDB/MySQL database, but browsing does not require a Kodi player to be running. Collection-only catalogs do not require Kodi.
 
@@ -34,6 +35,26 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 
 
 
+## What's new — iOS 1.2 and AI search
+
+**Media Catalog for iOS/iPadOS 1.2** adds an optional OpenAI-powered search
+experience without replacing the standard native search interface. Apple's
+supported SwiftUI **search scopes** let people switch between **Classic**
+(title and metadata search) and **AI** (natural-language search) while using
+the same system search field. AI results are displayed directly in the search
+tab, rather than in a modal. Opening a movie or matching episode and returning
+preserves the conversation, search filters and result list.
+
+On the Web and iOS, an administrator can select a language model and embeddings
+model, securely save the OpenAI key on the server, and **test both connections**
+independently. Indexed film, series and episode synopses power incremental
+semantic retrieval, including matched episode season/number and plot excerpts.
+AI is entirely optional; no key or indexing is needed for ordinary browsing.
+
+OpenAI receives the query and, during indexing, title/plot metadata to produce
+embeddings; the index and credentials remain on the self-hosted server. See
+[AI search setup, data privacy and API endpoints](docs/ai-search.md).
+
 ## Get started
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
@@ -43,7 +64,7 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 ## Documentation
 
 - [Server installation, configuration, updates and troubleshooting](docs/installation.md)
-- [Features and usage](docs/features.md)
+- [Features and usage](docs/features.md) · [AI search and model setup](docs/ai-search.md)
 - [Home Assistant access](docs/home-assistant.md)
 - [REST API](docs/api.md) · [OpenAPI schema](docs/openapi-v1.json)
 - [Data model and backups](docs/model.md) · [Development and testing](docs/development.md)
