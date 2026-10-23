@@ -337,7 +337,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
 
-
     def ai_index_status():
         docs = store.ai_documents()
         model = ai_config.status()["embedding_model"]
