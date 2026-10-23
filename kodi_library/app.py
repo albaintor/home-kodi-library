@@ -474,7 +474,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         value.prompt, *credentials, facets, value.previous_plan
                     )
                 output = await hybrid_page(
-                    store, plan, ai_index, ai_config.status()["embedding_model"], credentials[1]
+                    store,
+                    plan,
+                    ai_index,
+                    ai_config.status()["embedding_model"],
+                    credentials[1],
+                    prompt=value.prompt,
+                    language_model=credentials[0],
                 )
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("AI search failed: %s", type(exc).__name__)
