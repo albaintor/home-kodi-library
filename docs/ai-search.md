@@ -1,27 +1,84 @@
-# AI search (opt-in)
+# AI catalogue search — structured filters, semantic retrieval and conversational refinement
 
-The server supports prompt-to-filter search using OpenAI. No API key is required to
-run the application; standard SQLite FTS5 search continues unchanged.
+Home Kodi Library works without an AI provider. Normal SQLite FTS5/title search
+is never disabled, and configuration and index files are not part of JSON backups.
 
-An administrator configures **Settings → AI** (web or iOS), entering an OpenAI
-model ID and API key. The key is stored only in `DATA_DIR/ai-settings.json`,
-with mode 0600. It is never returned by the API and is deliberately excluded
-from catalogue backups. Back up this file separately if needed. Protect the
-NAS backup and use HTTPS for remote clients.
+## Server setup
 
-* `GET /api/v1/ai/status` (authenticated): provider, model, configured.
-* `GET /api/v1/ai/settings` (admin): same metadata, and has_api_key.
-* `PUT /api/v1/ai/settings` (admin): `{"model":"gpt-4o-mini","api_key":"…"}`;
-  omit/null/empty API key to retain, `clear_api_key: true` to deactivate.
-* `POST /api/v1/ai/search` (authenticated): `{"prompt":"unseen science fiction after 2015"}`.
-  The response includes the first 60 matching media and the parsed `plan`.
+An administrator opens **Settings → Recherche intelligente · IA** (web) or
+**Settings → AI search** (iOS), enters:
 
-Requests send the prompt and available genre/format labels to OpenAI, **not
-the entire catalogue**. The model returns structured filter parameters, which
-the server validates and executes with parameterized SQLite queries. The model
-cannot generate SQL, change the catalogue, or invent matching titles.
+- The OpenAI text model (default `gpt-4o-mini`), for extracting validated filters
+  and carrying out follow-up refinements.
+- The OpenAI embeddings model (default `text-embedding-3-small`), for semantic
+  similarity between prompts and media descriptions.
+- An OpenAI API key, only if AI search is wanted.
 
-**Scope of V1:** Exact structured filters (type, watch state, genre, format,
-year range, minimum editorial rating) and optional lexical FTS. Subjective
-plot-level similarity is not implemented yet; that requires local embeddings
-(V2). Provider failures return an error while standard search still works. To bound API cost, searches are limited to 10 per minute per client IP and three concurrent upstream requests.
+Both clients use the same server settings. The key is saved in
+`DATA_DIR/ai-settings.json` (permissions 0600) and never returned to clients.
+The vector index is stored in `DATA_DIR/ai-vectors.db`. These files can contain
+sensitive data (including descriptions); back them up securely, separately from
+the catalogue JSON export. Remote access should use HTTPS.
+
+**Privacy**: A search transmits the user's prompt, context filters, and the
+catalogue's available genre/format values to OpenAI. Vector indexing explicitly
+sends **titles, genres, film/series summaries and each imported episode synopsis**
+to the configured OpenAI embeddings API, in batches. Vectors are stored locally
+on the server. Do not enable this feature if transferring those descriptions
+to a third party is unacceptable. No Kodi database password or API token is
+sent as part of those requests.
+
+## Indexing
+
+Use the administrator-only **Indexer / actualiser** button in web settings,
+or **Index or refresh summaries** in iOS. The server builds an incremental
+semantic index, including individual episode plots and their parent series titles.
+It reuses unchanged vectors and deletes stale records when a full pass completes.
+A semantic search can also start index refresh automatically if the corpus is
+missing or has changed since the previous scan. After importing or synchronizing
+Kodi, triggering a new semantic search checks for changed episodes.
+
+The index progress appears as `indexed / total`; the first indexing pass can
+be longer and consumes embedding API tokens. Changing the embeddings model
+causes an index to be built for that model. The UI exposes errors such as
+a missing provider or an invalid embedding model. When the provider is absent,
+ordinary searches are unaffected.
+
+## API (authenticated)
+
+- `GET /api/v1/ai/status`: configured state, model IDs, index status.
+- `GET /api/v1/ai/settings`: same fields, administrator only.
+- `PUT /api/v1/ai/settings`: administrator only. Payload example
+  `{"model":"gpt-4o-mini","embedding_model":"text-embedding-3-small","api_key":"…"}`.
+  Omit the key to preserve it or use `clear_api_key:true` to disable AI.
+- `POST /api/v1/ai/index/refresh`: administrator-only incremental full scan.
+- `POST /api/v1/ai/search`: `{"prompt":"unwatched sci-fi involving a time loop"}`.
+  The response includes catalogue media, structured `plan`, ranked mode,
+  matched episodes (`episode_matches`), index progress, and optional note.
+
+V3: for conversational refinement, send the **complete previously returned**
+`plan` as `previous_plan` with the new prompt:
+`{"prompt":"plutôt des années 90","previous_plan":{...}}`.
+The server asks the model to preserve unaffected constraints. The client displays
+the conversation, and "New search" clears the prior plan. Conversations are
+client-held; no history database is needed.
+
+## Ranking and episode results
+
+A structured plan is validated server-side; the model never supplies executable
+SQL. Semantic cosine similarity and SQLite FTS5 title/plot matches are blended,
+then exact year, genre, format, rating and watch constraints are applied through
+the existing catalogue database. Only titles already imported into the server
+can be returned. A matching episode is shown as a result under its parent show,
+with season/episode number and a synopsis excerpt; the original episode ID is
+retained for navigation.
+
+The semantic score is approximate and reflects the quality of imported
+synopses. A lexical title/name request uses FTS5; plot/theme queries require an
+indexed embedding. Initial results show at most 60 works; the index is refreshed
+incrementally. The server limits AI requests to 10/minute per client IP and
+3 concurrent upstream searches.
+
+A missing or broken provider is surfaced to the user: the server never silently
+pretends that a semantic result was computed. FTS5 and the standard catalogue
+remain available without an AI API key.
