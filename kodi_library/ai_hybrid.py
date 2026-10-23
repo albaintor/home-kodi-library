@@ -73,9 +73,7 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
         if plan.semantic_query:
             page = {"items": [], "total": 0, "limit": 60, "offset": 0, "has_more": False}
         else:
-            page = store.media(
-                **params, q=plan.keywords, deep_search=bool(plan.keywords), limit=60
-            )
+            page = store.media(**params, q=plan.keywords, deep_search=bool(plan.keywords), limit=60)
         if plan.semantic_query and not indexed["indexed"]:
             note = "Semantic index is building; showing structured filters only."
         elif plan.semantic_query and not relevance:
