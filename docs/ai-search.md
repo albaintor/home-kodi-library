@@ -28,6 +28,28 @@ on the server. Do not enable this feature if transferring those descriptions
 to a third party is unacceptable. No Kodi database password or API token is
 sent as part of those requests.
 
+## Choosing the AI models
+
+The web and iOS settings use guided selectors, with a custom-model option to
+support future OpenAI releases and preserve existing configurations.
+
+- **Language model**: translates the user's request into structured filters,
+  explains them and preserves previous constraints in multi-turn searches.
+  `gpt-6-luna` is the recommended economical option; `gpt-6.1-sol` is an
+  advanced, more expensive choice. Existing `gpt-4o-mini` configurations
+  remain selectable for compatibility.
+- **Embedding model**: encodes the titles and synopses of individual films,
+  series and episodes into vectors for similarity matching. Prefer
+  `text-embedding-3-small` (USD 0.02 per million input tokens at the time of
+  writing). `text-embedding-3-large` can improve similarity quality but costs
+  USD 0.13 per million input tokens. These are separate API calls from the
+  language model.
+
+Changing **only** the language model needs no reindexing. Changing the embedding
+model uses a different vector space, so the semantic index must be built for
+that model. If an existing configuration uses a custom model ID, clients
+preserve it rather than silently substituting a preset.
+
 ## Indexing
 
 Use the administrator-only **Indexer / actualiser** button in web settings,
