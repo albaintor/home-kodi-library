@@ -57,6 +57,8 @@ from .models import (
     JobView,
     Kind,
     KodiConnectionInput,
+    ListBulkAddInput,
+    ListBulkAddResult,
     ListInput,
     ListItemInput,
     ListOrderInput,
@@ -1181,6 +1183,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def add_list_item(list_id: str, data: ListItemInput, background_tasks: BackgroundTasks):
         list_error(lambda: store.change_list_item(list_id, data.media_id))
         background_tasks.add_task(thumbnails.warm, list_id)
+
+    @app.post(
+        API + "/lists/{list_id}/items/bulk",
+        response_model=ListBulkAddResult,
+        tags=["Lists"],
+        dependencies=[Depends(writable)],
+    )
+    def add_list_items_bulk(
+        list_id: str, data: ListBulkAddInput, background_tasks: BackgroundTasks
+    ):
+        result = list_error(lambda: store.add_list_items(list_id, data.media_ids))
+        if result["added"]:
+            background_tasks.add_task(thumbnails.warm, list_id)
+        return result
 
     @app.delete(
         API + "/lists/{list_id}/items/{media_id}",
