@@ -2098,6 +2098,8 @@ document.addEventListener('submit',async event=>{
             '<button class="ai-result-card" type="button" data-ai-media="'+esc(item.id)+'">'+
             poster(item)+'<strong class="card-title">'+esc(item.title)+'</strong>'+
             '<small>'+esc([item.year,item.kind==='tvshow'?'Série':'Film'].filter(Boolean).join(' · '))+'</small>'+
+            (result.relevance_reasons?.[item.id]
+              ? '<span class="ai-relevance-reason">'+esc(result.relevance_reasons[item.id])+'</span>' : '')+
             (result.episode_matches?.[item.id]||[]).map(hit=>
               '<span class="ai-episode-hit" data-ai-media="'+esc(hit.id)+'">'+
               '<b>S'+String(hit.season??0).padStart(2,'0')+'E'+String(hit.episode??0).padStart(2,'0')+'</b> '+esc(hit.title)+
