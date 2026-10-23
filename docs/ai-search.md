@@ -66,6 +66,39 @@ causes an index to be built for that model. The UI exposes errors such as
 a missing provider or an invalid embedding model. When the provider is absent,
 ordinary searches are unaffected.
 
+## Incremental indexing, token consumption, and spending limits
+
+After every successful Kodi synchronization or XML collection import that
+changes catalogue records, the server schedules a **debounced asynchronous**
+vector refresh. Metadata enrichment and source deletion also request a refresh.
+Kodi/import publication does not wait for embeddings; several close-together
+changes are coalesced. The existing `ai-vectors.db` hashes prevent charges for
+unchanged synopses. Watched-state or rating changes are not part of indexed
+texts, so they do not trigger unnecessary embedding calls.
+
+An administrator can set **Monthly OpenAI spending cap (USD)** in the Web or
+iOS AI settings (default **$5.00/month**; **$0** blocks all paid calls).
+The cap is enforced before outbound OpenAI requests — including automatic
+indexing, natural-language interpretation, embedding queries, relevance
+reranking, and connection tests. Requests reserve a conservative estimated
+cost before transmission; when OpenAI returns usage counters, the ledger
+reconciles actual input/output/cached tokens and estimated USD cost.
+For network failures where OpenAI might still have billed a request, the
+reservation remains an estimate instead of being silently discarded.
+Concurrent calls reserve against a single SQLite month ledger.
+
+The dashboard, via admin-only `GET /api/v1/ai/usage`, displays the current
+UTC calendar month, cost estimate, budget remaining, and request/token totals
+for indexing, searching, and connection tests. The `monthly_budget_usd`
+field is saved with the other settings in `PUT /api/v1/ai/settings` and
+is preserved when older clients omit it. A cap is an **application-side
+safety control, not a substitute for the provider's billing limits**:
+pricing is based on public standard API rates, and the estimate excludes
+taxes, different service tiers and external account activity. Custom
+model identifiers without known prices are rejected before billable calls
+rather than bypassing the cap. The ledger is held locally in
+`DATA_DIR/ai-usage.db` (mode 0600) without storing access keys or prompts.
+
 ## API (authenticated)
 
 - `GET /api/v1/ai/status`: configured state, model IDs, index status.
