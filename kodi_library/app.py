@@ -464,9 +464,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
                     await interpret_prompt(
-                    "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
-                )
+                        "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
+                    )
                 results["language"] = {"ok": True, "model": model}
+            except (AIBudgetExceeded, AIPriceUnavailable):
+                raise HTTPException(429, "OpenAI budget limit reached or model pricing unknown.") from None
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("OpenAI language model connection test failed: %s", type(exc).__name__)
                 results["language"] = {
@@ -475,10 +477,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "reason": ai_probe_failure(exc),
                 }
             try:
-                vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
+                with usage_session(
+                    ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
+                ):
+                    vectors = await embed(
+                        ["Test de recherche sémantique."], embedding_model, key
+                    )
                 if not vectors or not vectors[0]:
                     raise ValueError("Empty embedding vector")
                 results["embedding"] = {"ok": True, "model": embedding_model}
+            except (AIBudgetExceeded, AIPriceUnavailable):
+                raise HTTPException(429, "OpenAI budget limit reached or model pricing unknown.") from None
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
                 results["embedding"] = {
@@ -513,22 +522,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(429, "Too many AI searches in progress.")
         async with ai_limit:
             try:
-                facets = await asyncio.to_thread(store.facets)
-                if value.previous_plan is None:
-                    plan = await interpret_prompt(value.prompt, *credentials, facets)
-                else:
-                    plan = await interpret_prompt(
-                        value.prompt, *credentials, facets, value.previous_plan
+                with usage_session(
+                    ai_usage, ai_config.status()["monthly_budget_usd"], "search"
+                ):
+                    facets = await asyncio.to_thread(store.facets)
+                    if value.previous_plan is None:
+                        plan = await interpret_prompt(value.prompt, *credentials, facets)
+                    else:
+                        plan = await interpret_prompt(
+                            value.prompt, *credentials, facets, value.previous_plan
+                        )
+                    output = await hybrid_page(
+                        store,
+                        plan,
+                        ai_index,
+                        ai_config.status()["embedding_model"],
+                        credentials[1],
+                        prompt=value.prompt,
+                        language_model=credentials[0],
                     )
-                output = await hybrid_page(
-                    store,
-                    plan,
-                    ai_index,
-                    ai_config.status()["embedding_model"],
-                    credentials[1],
-                    prompt=value.prompt,
-                    language_model=credentials[0],
-                )
+            except AIBudgetExceeded as exc:
+                raise HTTPException(429, str(exc)) from None
+            except AIPriceUnavailable as exc:
+                raise HTTPException(422, str(exc)) from None
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("AI search failed: %s", type(exc).__name__)
                 raise HTTPException(502, "AI provider unavailable or invalid model.") from None
