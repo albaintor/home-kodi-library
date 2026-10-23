@@ -58,6 +58,7 @@ class AISearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=3, max_length=500)
     previous_plan: "AISearchPlan | None" = None
+    previous_ids: list[str] = Field(default_factory=list, max_length=60)
 
 
 class AISearchPlan(BaseModel):
@@ -241,3 +242,77 @@ async def interpret_prompt(
     if not chunks:
         raise ValueError("The AI provider returned no structured search.")
     return normalize_plan(AISearchPlan.model_validate_json("".join(chunks)), facets)
+
+
+REFINEMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "operation": {"type": "string", "enum": ["filter", "search"]},
+        "keep_ids": {"type": "array", "items": {"type": "string"}},
+        "assistant_message": {"type": "string"},
+    },
+    "required": ["operation", "keep_ids", "assistant_message"],
+    "additionalProperties": False,
+}
+
+
+async def interpret_result_refinement(
+    prompt: str, model: str, key: str, candidates: list[dict]
+) -> dict:
+    """Decide whether the user is editing existing hits, without inventing catalogue IDs."""
+    instructions = (
+        "You manage an existing movie search result set. Choose operation=filter for "
+        "instructions to remove, exclude, keep only, sort down to a number, or narrow "
+        "the CURRENT results (e.g. 'retirer Valérian de la liste', 'only unwatched'). "
+        "For filter, return keep_ids as the subset of provided IDs matching the "
+        "instruction, preserving the supplied order unless explicitly asked to rank. "
+        "Never add new IDs. A removal only removes its matching entries and preserves "
+        "all other items. For a request to look for new films, expand the search, "
+        "replace the query, or if the current list lacks the data needed to filter, "
+        "choose operation=search and keep_ids=[]. "
+        "Do not filter by details that are not supplied in candidate data. "
+        "Return a concise assistant_message in the user's language. "
+        "Use only titles and metadata actually supplied."
+    )
+    async with httpx.AsyncClient(timeout=25.0) as client:
+        response = await tracked_post(
+            client,
+            "https://api.openai.com/v1/responses",
+            headers={"Authorization": "Bearer " + key},
+            json={
+                "model": model,
+                "instructions": instructions,
+                "input": "Current results: "
+                + json.dumps(candidates, ensure_ascii=False)
+                + "\\nUser instruction: "
+                + prompt,
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "result_refinement",
+                        "strict": True,
+                        "schema": REFINEMENT_SCHEMA,
+                    }
+                },
+                "store": False,
+                "max_output_tokens": 3400,
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+    chunks = [
+        part.get("text", "")
+        for output in data.get("output", [])
+        for part in output.get("content", [])
+        if part.get("type") == "output_text"
+    ]
+    if not chunks:
+        raise ValueError("No structured result refinement received.")
+    value = json.loads("".join(chunks))
+    if value.get("operation") not in ("filter", "search"):
+        raise ValueError("Invalid refinement operation.")
+    allowed = {item["id"] for item in candidates}
+    value["keep_ids"] = [
+        item["id"] for item in candidates if item["id"] in set(value.get("keep_ids", [])) & allowed
+    ]
+    return value
