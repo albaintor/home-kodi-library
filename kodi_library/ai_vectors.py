@@ -10,6 +10,8 @@ from pathlib import Path
 
 import httpx
 
+from .ai_usage import tracked_post
+
 
 class SemanticIndex:
     def __init__(self, data_dir: Path):
@@ -115,7 +117,8 @@ class SemanticIndex:
 async def embed(texts: list[str], model: str, key: str) -> list[list[float]]:
     """Embed only requested synopsis/title text; no source credentials are transmitted."""
     async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(
+        response = await tracked_post(
+            client,
             "https://api.openai.com/v1/embeddings",
             headers={"Authorization": "Bearer " + key},
             json={"model": model, "input": texts},
