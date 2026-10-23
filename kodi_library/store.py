@@ -1127,6 +1127,59 @@ class Store:
                 results[work_id] = roles
         return results
 
+
+    def ai_documents(self) -> list[dict[str, Any]]:
+        """Indexed descriptions include each episode synopsis and the parent series title."""
+        with self.connect() as conn:
+            rows = conn.execute(
+                "SELECT w.id,w.kind,w.title,w.plot,w.genres,w.parent_id,w.season,"
+                "w.episode,w.watch_status,p.title AS series_title "
+                "FROM works w LEFT JOIN works p ON p.id=w.parent_id "
+                "WHERE w.kind IN ('movie','tvshow','episode') ORDER BY w.id"
+            ).fetchall()
+        result = []
+        for row in rows:
+            series = row["series_title"] or ""
+            season, episode = row["season"], row["episode"]
+            label = (
+                f"{series} S{season:02d}E{episode:02d} {row['title']}"
+                if row["kind"] == "episode" and season is not None and episode is not None
+                else row["title"]
+            )
+            genres = ", ".join(json.loads(row["genres"] or "[]"))
+            plot = (row["plot"] or "")[:5000]
+            result.append(
+                {
+                    "id": row["id"],
+                    "kind": row["kind"],
+                    "parent_id": row["parent_id"],
+                    "title": row["title"],
+                    "series_title": series,
+                    "season": season,
+                    "episode": episode,
+                    "watch_status": row["watch_status"],
+                    "plot": plot,
+                    "text": f"{label}. Genres: {genres}. Synopsis: {plot}".strip(),
+                }
+            )
+        return result
+
+    def ai_lexical_hits(self, text: str, limit: int = 200) -> list[str]:
+        """FTS5 indexes individual episode plots as well as films and series."""
+        words = re.findall(r"\w+", text, flags=re.UNICODE)[:10]
+        if not words:
+            return []
+        expression = " AND ".join('"' + word.replace('"', '""') + '"*' for word in words)
+        with self.connect() as conn:
+            return [
+                row["work_id"]
+                for row in conn.execute(
+                    "SELECT work_id FROM works_fts WHERE works_fts MATCH ? "
+                    "ORDER BY bm25(works_fts) LIMIT ?",
+                    (expression, limit),
+                )
+            ]
+
     def media(
         self,
         *,
@@ -1148,6 +1201,7 @@ class Store:
         year_min: int | None = None,
         year_max: int | None = None,
         rating_min: float | None = None,
+        ids: list[str] | None = None,
         recent_days: int | None = None,
         sort: str = "date_added",
         order: str = "desc",
@@ -1159,6 +1213,14 @@ class Store:
         # constituent episodes. Explicit episode/parent queries remain available.
         if kind is None and parent_id is None:
             clauses.append("w.kind IN ('movie','tvshow')")
+        if ids is not None:
+            if len(ids) > 500:
+                raise ValueError("Too many selected media IDs.")
+            if not ids:
+                clauses.append("0=1")
+            else:
+                clauses.append("w.id IN (" + ",".join("?" for _ in ids) + ")")
+                params.extend(ids)
         # Most Kodi cast credits have a name but no TMDB/IMDb identifier.
         # Match known IDs first, then the same normalized credit name only
         # where there is no conflicting identifier for that named credit.
