@@ -1713,9 +1713,7 @@ class Store:
             placeholders = ",".join("?" for _ in ids)
             existing = {
                 row[0]
-                for row in conn.execute(
-                    f"SELECT id FROM works WHERE id IN ({placeholders})", ids
-                )
+                for row in conn.execute(f"SELECT id FROM works WHERE id IN ({placeholders})", ids)
             }
             if len(existing) != len(ids):
                 raise KeyError("Unknown media.")
@@ -1737,9 +1735,7 @@ class Store:
                     "INSERT INTO list_items(list_id,work_id,position) VALUES(?,?,?)",
                     ((list_id, work_id, first + i) for i, work_id in enumerate(pending)),
                 )
-                conn.execute(
-                    "UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,)
-                )
+                conn.execute("UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,)
             return {
                 "added": len(pending),
                 "already_present": len(ids) - len(pending),
