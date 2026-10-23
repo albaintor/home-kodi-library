@@ -491,3 +491,11 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .ai-results-grid .ai-result-card .poster{width:100%;aspect-ratio:2/3}
 .ai-results-grid .ai-result-card strong,.ai-results-grid .ai-result-card small{padding:0 5px;white-space:normal}
 .ai-results-grid .ai-result-card small{opacity:.7}
+
+
+.ai-chat-history{display:flex;flex-direction:column;gap:7px;margin:8px 0;max-height:220px;overflow:auto}
+.ai-chat-turn{border-radius:12px;padding:9px 12px;font-size:.88rem;max-width:90%;background:var(--surface-hover,#9992)}
+.ai-chat-turn.user{align-self:flex-end;border:1px solid var(--line,#8885)}
+.ai-chat-turn.assistant{align-self:flex-start}
+.ai-episode-hit{font-size:.73rem;padding:5px;border-top:1px solid #8884;text-align:left;line-height:1.25}
+.ai-episode-hit small{display:block;opacity:.7;margin-top:3px}
