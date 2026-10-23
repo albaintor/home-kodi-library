@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 SCHEMA = {
     "type": "object",
     "properties": {
-        "kind": {"type": ["string", "null"], "enum": ["movie", "tvshow", None]},
+        "kind": {"type": ["string", "null"], "enum": ["movie", "tvshow", "episode", None]},
         "watch_status": {
             "type": ["string", "null"],
             "enum": ["watched", "unwatched", "in_progress", "unknown", None],
@@ -24,6 +24,8 @@ SCHEMA = {
         "year_max": {"type": ["integer", "null"]},
         "rating_min": {"type": ["number", "null"]},
         "keywords": {"type": "string"},
+        "semantic_query": {"type": "string"},
+        "assistant_message": {"type": "string"},
     },
     "required": [
         "kind",
@@ -34,6 +36,8 @@ SCHEMA = {
         "year_max",
         "rating_min",
         "keywords",
+        "semantic_query",
+        "assistant_message",
     ],
     "additionalProperties": False,
 }
@@ -44,23 +48,27 @@ class AISettingsInput(BaseModel):
     model: str = Field(default="gpt-4o-mini", min_length=1, max_length=100)
     api_key: str | None = Field(default=None, max_length=300)
     clear_api_key: bool = False
+    embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=100)
 
 
 class AISearchInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     prompt: str = Field(min_length=3, max_length=500)
+    previous_plan: "AISearchPlan | None" = None
 
 
 class AISearchPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: str | None
-    watch_status: str | None
-    genre: str | None
-    format: str | None
-    year_min: int | None
-    year_max: int | None
-    rating_min: float | None
+    kind: str | None = None
+    watch_status: str | None = None
+    genre: str | None = None
+    format: str | None = None
+    year_min: int | None = None
+    year_max: int | None = None
+    rating_min: float | None = None
     keywords: str = ""
+    semantic_query: str = ""
+    assistant_message: str = ""
 
 
 class AIConfiguration:
@@ -87,6 +95,7 @@ class AIConfiguration:
                 "model": value.get("model") or "gpt-4o-mini",
                 "configured": bool(value.get("api_key")),
                 "has_api_key": bool(value.get("api_key")),
+                "embedding_model": value.get("embedding_model") or "text-embedding-3-small",
             }
 
     def credentials(self) -> tuple[str, str] | None:
@@ -96,7 +105,9 @@ class AIConfiguration:
             return (data.get("model") or "gpt-4o-mini", key) if key else None
 
     def update(self, request: AISettingsInput) -> dict:
-        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model):
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or not re.fullmatch(
+            r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model
+        ):
             raise ValueError("Invalid model identifier.")
         if request.api_key is not None and request.api_key and not request.api_key.strip():
             raise ValueError("The access key must not be whitespace.")
@@ -105,7 +116,9 @@ class AIConfiguration:
             key = "" if request.clear_api_key else value.get("api_key", "")
             if request.api_key:
                 key = request.api_key.strip()
-            contents = json.dumps({"model": request.model, "api_key": key})
+            contents = json.dumps(
+                {"model": request.model, "api_key": key, "embedding_model": request.embedding_model}
+            )
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
             try:
@@ -142,19 +155,31 @@ def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
     if values["rating_min"] is not None and not 0 <= values["rating_min"] <= 10:
         values["rating_min"] = None
     values["keywords"] = values["keywords"].strip()[:120]
+    values["semantic_query"] = values["semantic_query"].strip()[:300]
+    values["assistant_message"] = values["assistant_message"].strip()[:300]
     return AISearchPlan(**values)
 
 
-async def interpret_prompt(prompt: str, model: str, key: str, facets: dict) -> AISearchPlan:
+async def interpret_prompt(
+    prompt: str, model: str, key: str, facets: dict, previous: AISearchPlan | None = None
+) -> AISearchPlan:
     instructions = (
         "You translate film library searches into strictly factual filters. "
         "Set a field to null when not explicitly requested. "
         "Use a genre and format only if exactly present in the provided available values; "
         "do not invent a format such as HDR unless provided. "
         "Rating is on a 0-10 scale. "
+        "Set kind=episode for episode-specific requests; tvshow for series requests. "
+        "Return semantic_query as a short searchable description of the plot, theme, "
+        "atmosphere, or character requested, excluding constraints like year or format. "
+        "For purely structured searches without a theme, semantic_query must be empty. "
+        "Write assistant_message as one brief explanatory sentence in the user's language, "
+        "without claiming that any particular matching film exists. "
         "Set keywords ONLY for an explicitly named title, person, or unique quoted phrase "
         "that can be matched lexically in title/synopsis/cast; not for broad plots, moods or concepts. "
-        "Never invent film titles. Respond in JSON per schema."
+        "Never invent film titles. If previous filters are supplied, this is a conversational "
+        "refinement: preserve previous fields and semantic query unless the new user "
+        "request changes or removes them; output the complete merged plan. Respond in JSON per schema."
     )
     async with httpx.AsyncClient(timeout=25.0) as client:
         response = await client.post(
@@ -167,6 +192,8 @@ async def interpret_prompt(prompt: str, model: str, key: str, facets: dict) -> A
                 + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
                 + "\nAvailable formats: "
                 + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
+                + "\nPrevious search plan: "
+                + (previous.model_dump_json(exclude={"assistant_message"}) if previous else "none")
                 + "\nUser search: "
                 + prompt,
                 "text": {
