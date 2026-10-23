@@ -1033,6 +1033,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(502, str(exc)) from exc
             if not await asyncio.to_thread(store.save_enrichment, media_id, payload):
                 raise HTTPException(404, "Media was removed during enrichment.")
+            start_ai_index()
             if refresh:
                 photos = [
                     url
@@ -1393,6 +1394,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not store.source(source_id):
             raise HTTPException(404, "Unknown source.")
         store.delete_source(source_id)
+        # Remove deleted catalogue works from the semantic index asynchronously.
+        start_ai_index()
 
     @app.post(
         API + "/sources/sync-stale",
