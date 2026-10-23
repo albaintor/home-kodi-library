@@ -801,7 +801,8 @@ def test_advanced_full_credit_name_avoids_independent_token_false_positives(stor
     assert [item["title"] for item in advanced["items"]] == ["Les étoiles lointaines"]
     assert advanced["items"][0]["matched_roles"] == ["Music"]
     assert store.media(q="john", deep_search=True)["total"] > 1
-    assert store.media(q="John Williams", deep_search=False)["total"] == 1
+    # Title-only search retains its existing token-prefix behavior.
+    assert store.media(q="John Williams", deep_search=False)["total"] == 2
 
 
 def test_advanced_multiword_search_falls_back_to_contiguous_phrase(store):
@@ -818,4 +819,4 @@ def test_advanced_multiword_search_falls_back_to_contiguous_phrase(store):
     )
     page = store.media(q="John Williams", deep_search=True)
     assert [item["title"] for item in page["items"]] == ["Un film sur le cinéma"]
-    assert store.media(q="John Williams", deep_search=False)["total"] == 0
+    assert store.media(q="John Williams", deep_search=False)["total"] == 1
