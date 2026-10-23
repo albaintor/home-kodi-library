@@ -291,6 +291,7 @@ class ListView(BaseModel):
     description: str
     revision: int
     item_count: int
+    watched_count: int = 0
     created_at: str
 
 
