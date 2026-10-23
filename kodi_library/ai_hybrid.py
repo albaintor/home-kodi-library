@@ -123,6 +123,11 @@ async def hybrid_page(
         page["items"] = [item for item in page["items"] if item["id"] in explanations]
         page["total"] = len(page["items"])
         page["has_more"] = False
+        if not page["items"]:
+            note = (
+                "No convincing match for the requested style or theme was found "
+                "in the indexed catalogue; weakly related titles were excluded."
+            )
 
     matches = {}
     for item in page["items"]:
