@@ -56,6 +56,25 @@ OpenAI receives the query and, during indexing, title/plot metadata to produce
 embeddings; the index and credentials remain on the self-hosted server. See
 [AI search setup, data privacy and API endpoints](docs/ai-search.md).
 
+### Conversational AI: refine, expand, undo
+
+After an initial AI search, use follow-up prompts to **filter existing titles**
+("Retire Valérian de la liste"), **add more matching titles** without losing
+the current selection ("Ajoutes-en d'autres"), or **start a different search**
+("Cherche plutôt des films de Miyazaki"). On iOS, **Undo last refinement**
+restores the previous result list and conversation; **New search** clears them.
+An administrator can add up to the 60 currently displayed AI results to a new
+or existing list.
+
+To enable AI, open **Settings → AI search** on iOS or **Settings →
+Recherche intelligente · IA** on the web. Configure the OpenAI language
+model, embeddings model and API key, save, test both connections, and index
+your catalogue summaries. The monthly USD spending cap is configurable.
+The server stores the key; ordinary catalogue browsing does not require AI.
+Recent result-editing features require the `ai_refine_results` server capability;
+the client falls back to plan-only refinement on earlier servers. See the
+[full setup, privacy and API guide](docs/ai-search.md).
+
 ## Get started
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
