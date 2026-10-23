@@ -5,6 +5,7 @@ import hashlib
 import json
 import math
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
 
 import httpx
@@ -20,12 +21,18 @@ class SemanticIndex:
                 "id TEXT NOT NULL, model TEXT NOT NULL, hash TEXT NOT NULL,"
                 "vector TEXT NOT NULL, PRIMARY KEY(id,model))"
             )
+        self.path.chmod(0o600)
 
+    @contextmanager
     def _connect(self):
         conn = sqlite3.connect(self.path, timeout=30)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA busy_timeout=30000")
-        return conn
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
 
     @staticmethod
     def digest(text: str) -> str:
