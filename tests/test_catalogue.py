@@ -764,9 +764,7 @@ def test_advanced_full_credit_name_avoids_independent_token_false_positives(stor
                 "movie",
                 "Les étoiles lointaines",
                 plot="Une aventure dans les étoiles.",
-                metadata={
-                    "people": [{"name": "John Williams", "role": "Music", "tmdb_id": "491"}]
-                },
+                metadata={"people": [{"name": "John Williams", "role": "Music", "tmdb_id": "491"}]},
             ),
             Record(
                 "unrelated-tokens",
@@ -811,7 +809,9 @@ def test_advanced_multiword_search_falls_back_to_contiguous_phrase(store):
     store.apply_snapshot(
         sid,
         [
-            Record("one", "movie", "Un film sur le cinéma", plot="John Williams compose la musique."),
+            Record(
+                "one", "movie", "Un film sur le cinéma", plot="John Williams compose la musique."
+            ),
             Record("two", "movie", "John dans les bois", plot="Williams est un détective."),
             Record("three", "movie", "Williams John", plot="Ordre inverse."),
         ],
