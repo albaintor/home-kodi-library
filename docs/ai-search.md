@@ -142,7 +142,9 @@ enough if a selected model is unavailable or the project has exhausted quota.
 A vector embedding is only a retrieval heuristic, not proof of a creator's
 style. Semantic searches now apply a stricter minimum similarity and ask the
 configured language model to validate shortlisted film/episode descriptions
-against the entire original user request. This helps reject false matches
+against the entire original user request. This relevance validation transmits
+the candidate titles, genres and synopsis excerpts to OpenAI at search time,
+in addition to the indexing-time embeddings requests. This helps reject false matches
 (such as a generic fantasy comedy for a Miyazaki-inspired animation request).
 The response exposes `relevance_reasons` with grounded brief explanations for
 retained media IDs. Weak candidates are omitted; no result is preferable to a
