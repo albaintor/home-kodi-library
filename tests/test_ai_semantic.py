@@ -11,7 +11,7 @@ from kodi_library.connectors.base import Record
 
 
 def test_episode_plot_is_indexed_and_returned_on_parent_series(store, monkeypatch, tmp_path):
-    source = store.add_source({"name": "Kodi", "type": "kodi"})
+    source = store.save_source({"name": "Kodi", "type": "kodi"})
     sid = source["id"]
     store.apply_snapshot(
         sid,
