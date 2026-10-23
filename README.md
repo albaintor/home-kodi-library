@@ -38,12 +38,14 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 ## What's new — iOS 1.2 and AI search
 
 **Media Catalog for iOS/iPadOS 1.2** adds an optional OpenAI-powered search
-experience without replacing the standard native search interface. Apple's
-supported SwiftUI **search scopes** let people switch between **Classic**
-(title and metadata search) and **AI** (natural-language search) while using
-the same system search field. AI results are displayed directly in the search
-tab, rather than in a modal. Opening a movie or matching episode and returning
-preserves the conversation, search filters and result list.
+experience without replacing the standard native search interface. The
+**Mail-style SwiftUI toolbar** uses Apple's native filter menu, search field,
+and a one-tap AI action (iOS 26), switching between **Classic** (titles and
+metadata) and **AI** (natural-language prompts). Results are embedded in the
+Search tab, rather than in a modal. Typed media-ID navigation and stable
+search state ensure opening a movie or episode and returning preserves the
+conversation, filters and results. A second, strict relevance pass excludes
+unrelated style matches, rather than blindly trusting embedding similarity.
 
 On the Web and iOS, an administrator can select a language model and embeddings
 model, securely save the OpenAI key on the server, and **test both connections**
