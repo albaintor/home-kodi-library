@@ -8,6 +8,8 @@ import json
 
 import httpx
 
+from .ai_usage import tracked_post
+
 _RERANK_SCHEMA = {
     "type": "object",
     "properties": {
@@ -51,7 +53,8 @@ async def rerank_candidates(
         "user's language; an empty array is better than irrelevant results."
     )
     async with httpx.AsyncClient(timeout=35.0) as client:
-        response = await client.post(
+        response = await tracked_post(
+            client,
             "https://api.openai.com/v1/responses",
             headers={"Authorization": "Bearer " + key},
             json={
@@ -70,6 +73,7 @@ async def rerank_candidates(
                     }
                 },
                 "store": False,
+                "max_output_tokens": 5000,
             },
         )
         response.raise_for_status()
