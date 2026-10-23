@@ -109,3 +109,64 @@ def test_conversational_refinement_passes_previous_plan(client, admin, monkeypat
     assert received["previous"].year_min == 2015
     assert received["prompt"] == "plutôt les années 90"
     assert result.json()["plan"]["year_min"] == 1990
+
+
+def test_style_search_excludes_unrelated_barbie_match(store, monkeypatch, tmp_path):
+    """High cosine alone must not include a stylistically unrelated title."""
+    source = store.save_source({"name": "Style Test", "type": "clz"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "myth",
+                "movie",
+                "La forêt des esprits",
+                genres=["Animation", "Fantasy"],
+                plot="Un film d'animation poétique sur les esprits de la forêt.",
+                watched=False,
+            ),
+            Record(
+                "barbie",
+                "movie",
+                "Barbie",
+                genres=["Comedy", "Fantasy"],
+                plot="Une poupée découvre le monde réel dans une comédie.",
+                watched=False,
+            ),
+        ],
+    )
+    index = SemanticIndex(tmp_path)
+    docs = store.ai_documents()
+
+    async def fake_embed(texts, model, key):
+        return [[1.0, 0.0] for _ in texts]
+
+    async def strict_judge(prompt, candidates, model, key):
+        assert prompt == "liste des films du style Miyazaki que je n'ai pas vu"
+        assert any(item["title"] == "Barbie" for item in candidates)
+        return [
+            {"id": item["id"], "reason": "Animation et nature, proches du style recherché."}
+            for item in candidates
+            if item["title"] == "La forêt des esprits"
+        ]
+
+    monkeypatch.setattr("kodi_library.ai_vectors.embed", fake_embed)
+    monkeypatch.setattr("kodi_library.ai_hybrid.embed", fake_embed)
+    monkeypatch.setattr("kodi_library.ai_hybrid.rerank_candidates", strict_judge)
+    asyncio.run(index.refresh(docs, "test-style", "key"))
+    plan = AISearchPlan(kind="movie", watch_status="unwatched", semantic_query="style Miyazaki")
+    results = asyncio.run(
+        hybrid_page(
+            store,
+            plan,
+            index,
+            "test-style",
+            "key",
+            prompt="liste des films du style Miyazaki que je n'ai pas vu",
+            language_model="test-model",
+        )
+    )
+    assert [item["title"] for item in results["items"]] == ["La forêt des esprits"]
+    assert results["total"] == 1
+    assert "Barbie" not in str(results["items"])
+    assert len(results["relevance_reasons"]) == 1
