@@ -1254,8 +1254,38 @@ class Store:
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
             index = "works_fts" if deep_search else "works_title_fts"
-            clauses.append(f"w.id IN (SELECT work_id FROM {index} WHERE {index} MATCH ?)")
-            params.append(" AND ".join('"' + word.replace('"', '""') + '"*' for word in words))
+            full_name = fold(q.strip().strip('"')) if deep_search and len(words) > 1 else ""
+            # On an advanced name search, prefer exact credits from the
+            # normalized person index. A film with "John" in a title and
+            # "Williams" in a plot must not be treated as a John Williams film.
+            matching_credit = False
+            if full_name and not (person_name or person_tmdb_id or person_imdb_id):
+                with self.connect() as conn:
+                    matching_credit = (
+                        conn.execute(
+                            "SELECT 1 FROM work_person_names WHERE name_fold=? LIMIT 1",
+                            (full_name,),
+                        ).fetchone()
+                        is not None
+                    )
+            if matching_credit:
+                clauses.append(
+                    "w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)"
+                )
+                params.append(full_name)
+                person_name = q.strip().strip('"')
+            else:
+                clauses.append(f"w.id IN (SELECT work_id FROM {index} WHERE {index} MATCH ?)")
+                # FTS5 AND across separate terms allows false positives in
+                # different metadata fields. For multiword advanced searches
+                # require the literal contiguous phrase; single-word queries
+                # still support prefix typing.
+                if deep_search and len(words) > 1:
+                    params.append('"' + " ".join(words).replace('"', '""') + '"')
+                else:
+                    params.append(
+                        " AND ".join('"' + word.replace('"', '""') + '"*' for word in words)
+                    )
         for name, value in (
             ("kind", kind),
             ("watch_status", watch_status),
