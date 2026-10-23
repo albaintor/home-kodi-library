@@ -556,6 +556,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             refinement = await interpret_result_refinement(
                                 value.prompt, credentials[0], credentials[1], candidates
                             )
+                            if refinement["operation"] == "expand":
+                                # Reuse the original criteria, not the phrase "add more"
+                                # as a new semantic or lexical query.
+                                more = await hybrid_page(
+                                    store,
+                                    value.previous_plan,
+                                    ai_index,
+                                    ai_config.status()["embedding_model"],
+                                    credentials[1],
+                                    exclude_ids=set(previous_ids),
+                                )
+                                existing = await asyncio.to_thread(
+                                    store.media, ids=previous_ids, limit=60
+                                )
+                                positions = {
+                                    media_id: i for i, media_id in enumerate(previous_ids)
+                                }
+                                existing["items"].sort(
+                                    key=lambda item: positions.get(item["id"], len(positions))
+                                )
+                                merged = existing["items"] + more["items"]
+                                merged = merged[:60]
+                                return {
+                                    "items": merged,
+                                    "total": len(merged),
+                                    "has_more": more["has_more"] or len(
+                                        existing["items"] + more["items"]
+                                    ) > 60,
+                                    "plan": value.previous_plan.model_dump(),
+                                    "mode": "expand",
+                                    "episode_matches": more.get("episode_matches", {}),
+                                    "relevance_reasons": more.get("relevance_reasons", {}),
+                                    "assistant_message": (
+                                        f"{len(merged) - len(existing['items'])} "
+                                        "additional titles found."
+                                    ),
+                                    "note": more.get("note"),
+                                    "index": await asyncio.to_thread(ai_index_status),
+                                }
                             if refinement["operation"] == "filter":
                                 retained_ids = refinement["keep_ids"]
                                 if retained_ids:
