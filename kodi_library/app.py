@@ -32,6 +32,12 @@ from starlette.middleware.cors import CORSMiddleware
 from . import DATA_MODEL_VERSION, __version__
 from .ai import AIConfiguration, AISearchInput, AISettingsInput, interpret_prompt
 from .ai_hybrid import hybrid_page
+from .ai_usage import (
+    AIBudgetExceeded,
+    AIPriceUnavailable,
+    AIUsageLedger,
+    usage_session,
+)
 from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
@@ -107,10 +113,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     sync = SyncManager(store, settings)
     auth = Auth(settings, store)
     ai_config = AIConfiguration(settings.data_dir)
+    ai_usage = AIUsageLedger(settings.data_dir)
     ai_index = SemanticIndex(settings.data_dir)
     ai_index_lock = asyncio.Lock()
     ai_index_task: asyncio.Task | None = None
     ai_index_error: str | None = None
+    ai_index_dirty = asyncio.Event()
     ai_limit = asyncio.Semaphore(3)
     ai_rate_lock = asyncio.Lock()
     ai_attempts: dict[str, deque[float]] = defaultdict(deque)
@@ -133,6 +141,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if discovery:
                 await asyncio.to_thread(discovery.stop)
             await sync.close()
+            if ai_index_task and not ai_index_task.done():
+                ai_index_task.cancel()
+                try:
+                    await ai_index_task
+                except asyncio.CancelledError:
+                    pass
 
     app = FastAPI(
         title="Kodi Library API",
@@ -355,17 +369,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ai_index_error = None
             try:
                 documents = await asyncio.to_thread(store.ai_documents)
-                await ai_index.refresh(
-                    documents, ai_config.status()["embedding_model"], credentials[1]
-                )
+                with usage_session(
+                    ai_usage, ai_config.status()["monthly_budget_usd"], "indexing"
+                ):
+                    await ai_index.refresh(
+                        documents, ai_config.status()["embedding_model"], credentials[1]
+                    )
+            except (AIBudgetExceeded, AIPriceUnavailable) as exc:
+                ai_index_error = str(exc)
             except (httpx.HTTPError, ValueError, OSError) as exc:
                 _LOG.warning("AI indexing failed: %s", type(exc).__name__)
                 ai_index_error = "Could not build vector index. Check API key and embedding model."
 
+    async def run_ai_index_debounced():
+        # Coalesce Kodi scans and concurrent XML imports; never delay snapshot publication.
+        while ai_index_dirty.is_set():
+            ai_index_dirty.clear()
+            await asyncio.sleep(3)
+            await run_ai_index()
+
     def start_ai_index():
         nonlocal ai_index_task
+        if not ai_config.credentials():
+            return
+        ai_index_dirty.set()
         if ai_index_task is None or ai_index_task.done():
-            ai_index_task = asyncio.create_task(run_ai_index())
+            ai_index_task = asyncio.create_task(run_ai_index_debounced())
+
+    sync.on_catalog_changed = start_ai_index
 
     @app.get(API + "/ai/status", tags=["AI"], dependencies=[Depends(authenticated)])
     def ai_status():
@@ -373,14 +404,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
     def ai_settings():
-        return {**ai_config.status(), "index": ai_index_status()}
+        return {
+            **ai_config.status(),
+            "index": ai_index_status(),
+            "usage": ai_usage.status(ai_config.status()["monthly_budget_usd"]),
+        }
 
     @app.put(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
     def update_ai_settings(value: AISettingsInput):
         try:
-            return {**ai_config.update(value), "index": ai_index_status()}
+            status = ai_config.update(value)
+            return {
+                **status,
+                "index": ai_index_status(),
+                "usage": ai_usage.status(status["monthly_budget_usd"]),
+            }
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
+
+    @app.get(API + "/ai/usage", tags=["AI"], dependencies=[Depends(writable)])
+    def ai_usage_report():
+        return ai_usage.status(ai_config.status()["monthly_budget_usd"])
 
     def ai_probe_failure(exc: Exception) -> str:
         """Do not echo third-party error bodies or secrets to API clients."""
@@ -416,7 +460,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         results = {}
         async with ai_limit:
             try:
-                await interpret_prompt(
+                with usage_session(
+                    ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
+                ):
+                    await interpret_prompt(
                     "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
                 )
                 results["language"] = {"ok": True, "model": model}
