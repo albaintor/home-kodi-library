@@ -30,7 +30,13 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
-from .ai import AIConfiguration, AISearchInput, AISettingsInput, interpret_prompt
+from .ai import (
+    AIConfiguration,
+    AISearchInput,
+    AISettingsInput,
+    interpret_prompt,
+    interpret_result_refinement,
+)
 from .ai_hybrid import hybrid_page
 from .ai_usage import (
     AIBudgetExceeded,
@@ -269,7 +275,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "mobile_compatibility": mobile_compatibility(),
             # Additive capabilities allow newer mobile clients to avoid calling
             # routes missing on an older, otherwise contract-compatible NAS.
-            "capabilities": ["ai_search", "bulk_list_add"],
+            "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results"],
         }
 
     @app.post(
@@ -529,6 +535,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 with usage_session(ai_usage, ai_config.status()["monthly_budget_usd"], "search"):
                     facets = await asyncio.to_thread(store.facets)
+                    if value.previous_plan is not None and value.previous_ids:
+                        # Source metadata from the server, never trust client-supplied titles.
+                        previous_ids = list(dict.fromkeys(value.previous_ids))
+                        documents = await asyncio.to_thread(store.ai_documents)
+                        by_id = {doc["id"]: doc for doc in documents}
+                        candidates = [
+                            {
+                                "id": media_id,
+                                "title": by_id[media_id].get("title", ""),
+                                "year": by_id[media_id].get("year"),
+                                "watch_status": by_id[media_id].get("watch_status"),
+                                "kind": by_id[media_id].get("kind"),
+                                "plot": (by_id[media_id].get("plot") or "")[:350],
+                            }
+                            for media_id in previous_ids
+                            if media_id in by_id
+                        ]
+                        if candidates:
+                            refinement = await interpret_result_refinement(
+                                value.prompt, credentials[0], credentials[1], candidates
+                            )
+                            if refinement["operation"] == "filter":
+                                retained_ids = refinement["keep_ids"]
+                                if retained_ids:
+                                    page = await asyncio.to_thread(
+                                        store.media, ids=retained_ids, limit=60
+                                    )
+                                    order = {media_id: i for i, media_id in enumerate(retained_ids)}
+                                    page["items"].sort(
+                                        key=lambda item: order.get(item["id"], len(order))
+                                    )
+                                else:
+                                    page = {
+                                        "items": [], "total": 0, "limit": 60,
+                                        "offset": 0, "has_more": False,
+                                    }
+                                page["total"] = len(page["items"])
+                                page["has_more"] = False
+                                return {
+                                    **page,
+                                    "plan": value.previous_plan.model_dump(),
+                                    "mode": "refine",
+                                    "episode_matches": {},
+                                    "relevance_reasons": {},
+                                    "assistant_message": refinement["assistant_message"],
+                                    "note": None,
+                                    "index": await asyncio.to_thread(ai_index_status),
+                                }
                     if value.previous_plan is None:
                         plan = await interpret_prompt(value.prompt, *credentials, facets)
                     else:
