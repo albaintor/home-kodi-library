@@ -2044,11 +2044,15 @@ document.addEventListener('submit',async event=>{
       const filters=[p.kind,p.watch_status,p.genre,p.format,p.year_min&&'Depuis '+p.year_min,p.year_max&&'Jusqu’à '+p.year_max,p.rating_min!=null&&'Note ≥ '+p.rating_min,p.keywords].filter(Boolean);
       $('ai-search-feedback').textContent=result.total+' résultat(s) · '+(filters.join(' · ')||'Aucun filtre identifiable')+
         (result.has_more?' · 60 premiers affichés':'');
-      target.innerHTML=result.items.map(item=>
-        '<button class="ai-result-card" type="button" data-ai-media="'+esc(item.id)+'">'+
-        '<strong>'+esc(item.title)+'</strong> <small>'+(item.year||'')+
-        ' · '+esc(item.kind==='tvshow'?'Série':'Film')+'</small></button>'
-      ).join('')||'<p class="hint">Aucun média correspondant. Les recherches d’intrigue nécessitent une future indexation sémantique.</p>';
+      target.innerHTML=result.items.length
+        ? '<div class="ai-results-grid">'+result.items.map(item=>
+            '<button class="ai-result-card" type="button" data-ai-media="'+esc(item.id)+'">'+
+            poster(item)+'<strong class="card-title">'+esc(item.title)+'</strong>'+
+            '<small>'+esc([item.year,item.kind==='tvshow'?'Série':'Film'].filter(Boolean).join(' · '))+'</small>'+
+            '</button>'
+          ).join('')+'</div>'
+        : '<p class="hint">Aucun média correspondant. Les recherches d’intrigue nécessitent une future indexation sémantique.</p>';
+      attachImageFallbacks(target);
     }catch(e){$('ai-search-feedback').textContent=e.message;}
     finally{button.disabled=false;}
   }

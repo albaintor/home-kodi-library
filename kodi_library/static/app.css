@@ -485,3 +485,9 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 
 /* Optional AI search; normal catalogue remains usable without a provider. */
 .ai-search-area{margin:12px 0;padding:14px}.ai-prompt-row{display:flex;gap:8px;flex-wrap:wrap}.ai-prompt-row input{flex:1;min-width:220px}.ai-result-card{display:block;width:100%;text-align:left;padding:10px;margin:4px 0;border-radius:9px;border:1px solid var(--line, #7775);background:transparent;color:inherit;cursor:pointer}.ai-result-card:hover{background:var(--surface-hover,#8882)}
+
+.ai-results-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(140px,100%),1fr));gap:14px;margin-top:12px}
+.ai-results-grid .ai-result-card{margin:0;padding:0 0 8px;overflow:hidden;border:0;display:flex;flex-direction:column;gap:6px;align-items:stretch;background:transparent;text-align:left}
+.ai-results-grid .ai-result-card .poster{width:100%;aspect-ratio:2/3}
+.ai-results-grid .ai-result-card strong,.ai-results-grid .ai-result-card small{padding:0 5px;white-space:normal}
+.ai-results-grid .ai-result-card small{opacity:.7}
