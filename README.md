@@ -37,7 +37,7 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 
 ## What's new — iOS 1.2 and AI search
 
-**Media Catalog for iOS/iPadOS 1.2 (build 7)** keeps the standard
+**Media Catalog for iOS/iPadOS 1.2** keeps the standard
 SwiftUI search field **inside the main catalogue**, directly filtering the
 same poster/list view on iPhone, iPad and iPhone Duo. A sparkles action in
 the **top toolbar** opens a dedicated conversational AI page through native
