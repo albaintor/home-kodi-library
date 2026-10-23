@@ -48,7 +48,7 @@ class AISettingsInput(BaseModel):
     model: str = Field(default="gpt-4o-mini", min_length=1, max_length=100)
     api_key: str | None = Field(default=None, max_length=300)
     clear_api_key: bool = False
-    embedding_model: str = Field(default="text-embedding-3-small", min_length=1, max_length=100)
+    embedding_model: str | None = Field(default=None, min_length=1, max_length=100)
 
 
 class AISearchInput(BaseModel):
@@ -105,8 +105,9 @@ class AIConfiguration:
             return (data.get("model") or "gpt-4o-mini", key) if key else None
 
     def update(self, request: AISettingsInput) -> dict:
-        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or not re.fullmatch(
-            r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or (
+            request.embedding_model is not None
+            and not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model)
         ):
             raise ValueError("Invalid model identifier.")
         if request.api_key is not None and request.api_key and not request.api_key.strip():
@@ -117,7 +118,7 @@ class AIConfiguration:
             if request.api_key:
                 key = request.api_key.strip()
             contents = json.dumps(
-                {"model": request.model, "api_key": key, "embedding_model": request.embedding_model}
+                {"model": request.model, "api_key": key, "embedding_model": request.embedding_model or value.get("embedding_model") or "text-embedding-3-small"}
             )
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
