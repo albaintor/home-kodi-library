@@ -7,8 +7,14 @@ from .ai_vectors import SemanticIndex, embed
 
 
 async def hybrid_page(
-    store, plan, index: SemanticIndex, embedding_model: str, key: str,
-    *, prompt: str = "", language_model: str = ""
+    store,
+    plan,
+    index: SemanticIndex,
+    embedding_model: str,
+    key: str,
+    *,
+    prompt: str = "",
+    language_model: str = "",
 ) -> dict:
     """Return only existing catalogue entries. Episodes are projected onto their TV shows."""
     documents = store.ai_documents()
