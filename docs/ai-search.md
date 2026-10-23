@@ -113,12 +113,16 @@ remain available without an AI API key.
 
 ## iOS entry point
 
-In iOS 26, Apple's native magnifying-glass Search tab morphs into the
-standard bottom search field. The standard SwiftUI `searchScopes` control,
-shown on search presentation, offers two scopes: **Classic** (title/FTS search)
-and **AI** (natural language). No unsupported button is injected into the
-native search field, and no AI search modal is used. The same mechanisms
-are available within the supported legacy navigation search interface.
+Media Catalog 1.2 (build 4) uses Apple's **WWDC25 Mail-style toolbar**
+in its ordinary Search tab on iOS 26. The leading button is a native search
+mode menu, the centre is the real `DefaultToolbarItem(kind: .search,
+placement: .bottomBar)`, and the trailing sparkle button switches between
+**Classic** (titles/FTS) and **AI** (natural language). Native `ToolbarSpacer`
+items place these controls. No private API or fake search field is involved.
+On iOS 17–25 the app uses conventional, supported toolbar buttons. A regular
+search tab is necessary: Apple's specialized `role: .search` tab is a different
+design that replaces the entire tab bar and cannot place Mail-style actions
+on either side of the field.
 
 Choose AI, enter a prompt in the system search field and submit with the
 keyboard Search action. The prompt is sent to the configured language model,
@@ -132,3 +136,16 @@ To verify server credentials on either client, save the key/models first,
 then choose **Test OpenAI connection** in the AI settings. Each of the two
 configured models is validated independently. A valid API key alone is not
 enough if a selected model is unavailable or the project has exhausted quota.
+
+## Search precision and verified relevance
+
+A vector embedding is only a retrieval heuristic, not proof of a creator's
+style. Semantic searches now apply a stricter minimum similarity and ask the
+configured language model to validate shortlisted film/episode descriptions
+against the entire original user request. This helps reject false matches
+(such as a generic fantasy comedy for a Miyazaki-inspired animation request).
+The response exposes `relevance_reasons` with grounded brief explanations for
+retained media IDs. Weak candidates are omitted; no result is preferable to a
+misleading match. The additional relevance pass makes a second language-model
+API call and has corresponding cost. Structured catalogue constraints such
+as watched status remain enforced by SQLite.
