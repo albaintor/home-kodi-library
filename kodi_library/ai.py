@@ -284,7 +284,7 @@ async def interpret_result_refinement(
                 "instructions": instructions,
                 "input": "Current results: "
                 + json.dumps(candidates, ensure_ascii=False)
-                + "\\nUser instruction: "
+                + "\nUser instruction: "
                 + prompt,
                 "text": {
                     "format": {
@@ -312,7 +312,6 @@ async def interpret_result_refinement(
     if value.get("operation") not in ("filter", "search"):
         raise ValueError("Invalid refinement operation.")
     allowed = {item["id"] for item in candidates}
-    value["keep_ids"] = [
-        item["id"] for item in candidates if item["id"] in set(value.get("keep_ids", [])) & allowed
-    ]
+    selected = set(value.get("keep_ids", [])) & allowed
+    value["keep_ids"] = [item["id"] for item in candidates if item["id"] in selected]
     return value
