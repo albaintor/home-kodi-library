@@ -18,9 +18,7 @@ from kodi_library.ai_usage import (
 class FakeOpenAIClient:
     def __init__(self, data=None):
         self.calls = []
-        self.payload = data or {
-            "usage": {"input_tokens": 100, "output_tokens": 50}
-        }
+        self.payload = data or {"usage": {"input_tokens": 100, "output_tokens": 50}}
 
     async def post(self, url, *, headers, json):
         self.calls.append({"url": url, "model": json["model"]})
@@ -59,9 +57,7 @@ def test_ledger_counts_true_tokens_and_blocks_new_requests(tmp_path):
 
 def test_ledger_meter_embedding_tokens_and_index_category(tmp_path):
     ledger = AIUsageLedger(tmp_path)
-    client = FakeOpenAIClient(
-        {"usage": {"prompt_tokens": 125, "total_tokens": 125}}
-    )
+    client = FakeOpenAIClient({"usage": {"prompt_tokens": 125, "total_tokens": 125}})
     with usage_session(ledger, 5, "indexing"):
         asyncio.run(
             tracked_post(
@@ -97,16 +93,15 @@ def test_budget_settings_persist_and_reports_are_admin_only(client, admin):
     readonly = {"Authorization": f"Bearer {READ}"}
     assert client.get("/api/v1/ai/usage", headers=readonly).status_code == 403
     update = client.put(
-        "/api/v1/ai/settings", headers=admin,
+        "/api/v1/ai/settings",
+        headers=admin,
         json={"model": "gpt-6-luna", "monthly_budget_usd": 1.5},
     )
     assert update.status_code == 200, update.text
     assert update.json()["monthly_budget_usd"] == 1.5
     assert update.json()["usage"]["monthly_budget_usd"] == 1.5
     # Older web/iOS clients must not reset an existing budget on model edit.
-    second = client.put(
-        "/api/v1/ai/settings", headers=admin, json={"model": "gpt-4o-mini"}
-    )
+    second = client.put("/api/v1/ai/settings", headers=admin, json={"model": "gpt-4o-mini"})
     assert second.json()["monthly_budget_usd"] == 1.5
     assert client.get("/api/v1/ai/usage", headers=admin).json()["month"]
 
@@ -116,7 +111,7 @@ def test_catalogue_sync_trigger_is_connected_without_prolonging_imports():
 
     sync = (Path(__file__).parent.parent / "kodi_library" / "sync.py").read_text()
     assert 'result.get("rebuilt_works") and self.on_catalog_changed' in sync
-    assert 'self.on_catalog_changed()' in sync
+    assert "self.on_catalog_changed()" in sync
     app = (Path(__file__).parent.parent / "kodi_library" / "app.py").read_text()
     assert "sync.on_catalog_changed = start_ai_index" in app
     assert "run_ai_index_debounced" in app
