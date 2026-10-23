@@ -132,8 +132,8 @@ class AIUsageLedger:
             # retain its conservative reservation until it can be reconciled.
             if prompt == 0 and completion == 0:
                 conn.execute(
-                    "UPDATE calls SET status='estimated',cost_usd=reserved_cost_usd "
-                    "WHERE id=?", (reference,)
+                    "UPDATE calls SET status='estimated',cost_usd=reserved_cost_usd WHERE id=?",
+                    (reference,),
                 )
             else:
                 conn.execute(
