@@ -58,7 +58,8 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
             episode_hits[result_id].append((score, doc))
 
     for work_id, score in semantic[:400]:
-        add(work_id, score)
+        if score >= 0.20:
+            add(work_id, score)
     for rank, work_id in enumerate(lexical):
         add(work_id, 0.70 + 0.15 / (rank + 1))
 
@@ -69,12 +70,12 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
         page["items"] = page["items"][:60]
         page["has_more"] = page["total"] > 60
     else:
-        page = store.media(
-            **params,
-            q=plan.keywords if not plan.semantic_query else "",
-            deep_search=bool(plan.keywords),
-            limit=60,
-        )
+        if plan.semantic_query:
+            page = {"items": [], "total": 0, "limit": 60, "offset": 0, "has_more": False}
+        else:
+            page = store.media(
+                **params, q=plan.keywords, deep_search=bool(plan.keywords), limit=60
+            )
         if plan.semantic_query and not indexed["indexed"]:
             note = "Semantic index is building; showing structured filters only."
         elif plan.semantic_query and not relevance:
