@@ -1,9 +1,7 @@
 """Opt-in AI search: secrets, authorization, normal-search fallback and SQL filters."""
-from pathlib import Path
-
 from conftest import READ
 
-from kodi_library.ai import AISearchPlan, AIConfiguration, AISettingsInput, normalize_plan
+from kodi_library.ai import AISearchPlan, AIConfiguration, normalize_plan
 from kodi_library.connectors.base import Record
 
 
