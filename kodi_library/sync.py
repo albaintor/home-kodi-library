@@ -28,6 +28,7 @@ class SyncManager:
         self.tasks: set[asyncio.Task] = set()
         self.scan_tasks: set[asyncio.Task] = set()
         self.stale_sync_lock = asyncio.Lock()
+        self.on_catalog_changed = None  # Optional non-blocking post-publish hook.
 
     async def submit(self, source_id: str, xml: bytes | None = None) -> dict[str, Any]:
         if source_id in self.active:
@@ -247,6 +248,13 @@ class SyncManager:
                 result["mariadb_read_ms"] = mariadb_read_ms
                 result.update(connector.snapshot_report)
             await asyncio.to_thread(self.store.finish_job, job["id"], result=result)
+            if result.get("rebuilt_works") and self.on_catalog_changed:
+                # Failure to refresh the optional AI index must never roll back
+                # or change the status of a successful Kodi/collection import.
+                try:
+                    self.on_catalog_changed()
+                except Exception:
+                    LOGGER.exception("Failed to schedule optional semantic indexing")
         except (ConnectorError, ValueError) as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
         except Exception:
