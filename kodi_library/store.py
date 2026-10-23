@@ -1274,11 +1274,17 @@ class Store:
                 person_name = q.strip().strip('"')
             else:
                 clauses.append(f"w.id IN (SELECT work_id FROM {index} WHERE {index} MATCH ?)")
-                # FTS5 AND across separate terms allows false positives in
-                # different metadata fields. For multiword advanced searches
-                # require the literal contiguous phrase; single-word queries
-                # still support prefix typing.
-                if deep_search and len(words) > 1:
+                # Multiword proper names (e.g. "John Williams") must stay
+                # together instead of accidentally matching one token in the
+                # title and another in the plot. Other keyword searches
+                # intentionally keep flexible AND semantics: "équipe cité"
+                # must find a synopsis saying "équipe découvre une cité".
+                is_proper_name = (
+                    deep_search
+                    and len(words) > 1
+                    and all(word[0].isupper() for word in words)
+                )
+                if is_proper_name:
                     params.append('"' + " ".join(words).replace('"', '""') + '"')
                 else:
                     params.append(
