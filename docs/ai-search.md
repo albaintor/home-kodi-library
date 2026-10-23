@@ -73,6 +73,12 @@ ordinary searches are unaffected.
 - `PUT /api/v1/ai/settings`: administrator only. Payload example
   `{"model":"gpt-4o-mini","embedding_model":"text-embedding-3-small","api_key":"…"}`.
   Omit the key to preserve it or use `clear_api_key:true` to disable AI.
+- `POST /api/v1/ai/connection/test`: administrator-only live test of the
+  saved OpenAI language model (Responses API structured JSON output) and the
+  embeddings model. Two small billable requests are made. Returns separate
+  `language` and `embedding` status objects with safe error codes such as
+  `invalid_key`, `model_unavailable`, or `quota_or_rate_limit`. Never returns
+  the token or raw upstream error body.
 - `POST /api/v1/ai/index/refresh`: administrator-only incremental full scan.
 - `POST /api/v1/ai/search`: `{"prompt":"unwatched sci-fi involving a time loop"}`.
   The response includes catalogue media, structured `plan`, ranked mode,
@@ -104,3 +110,16 @@ incrementally. The server limits AI requests to 10/minute per client IP and
 A missing or broken provider is surfaced to the user: the server never silently
 pretends that a semantic result was computed. FTS5 and the standard catalogue
 remain available without an AI API key.
+
+## iOS entry point
+
+The native magnifying-glass Search tab **continues to use ordinary title/FTS
+search**. At the top of that tab, the prominent **Search with AI** button
+(opens a separate conversational sheet) is the dedicated natural-language
+entry point. It remains accessible even when iOS 26 replaces its tab bar with
+the native search field; the old icon-only toolbar shortcut was unreliable.
+
+To verify server credentials on either client, save the key/models first,
+then choose **Test OpenAI connection** in the AI settings. Each of the two
+configured models is validated independently. A valid API key alone is not
+enough if a selected model is unavailable or the project has exhausted quota.
