@@ -752,3 +752,70 @@ def test_overall_progress_is_monotonic_between_movies_series_episodes(store):
     assert values[-1] == 100
     assert 100 not in values[:-1]
     assert values[3] < values[4]
+
+
+def test_advanced_full_credit_name_avoids_independent_token_false_positives(store):
+    sid = source(store)
+    store.apply_snapshot(
+        sid,
+        [
+            Record(
+                "john-williams-score",
+                "movie",
+                "Les étoiles lointaines",
+                plot="Une aventure dans les étoiles.",
+                metadata={
+                    "people": [{"name": "John Williams", "role": "Music", "tmdb_id": "491"}]
+                },
+            ),
+            Record(
+                "unrelated-tokens",
+                "movie",
+                "John sur la route",
+                plot="Le détective Williams revient au village.",
+            ),
+            Record(
+                "split-credits",
+                "movie",
+                "La comédie",
+                metadata={
+                    "people": [
+                        {"name": "John Smith", "role": "Actor"},
+                        {"name": "Jane Williams", "role": "Actor"},
+                    ]
+                },
+            ),
+            Record(
+                "reversed-title",
+                "movie",
+                "Williams John",
+                plot="Aucun lien avec le compositeur.",
+            ),
+            Record(
+                "documentary",
+                "movie",
+                "John Williams : la biographie",
+                plot="Portrait d'un musicien, sans crédit de composition.",
+            ),
+        ],
+    )
+    advanced = store.media(q="John Williams", deep_search=True)
+    assert [item["title"] for item in advanced["items"]] == ["Les étoiles lointaines"]
+    assert advanced["items"][0]["matched_roles"] == ["Music"]
+    assert store.media(q="john", deep_search=True)["total"] > 1
+    assert store.media(q="John Williams", deep_search=False)["total"] == 1
+
+
+def test_advanced_multiword_search_falls_back_to_contiguous_phrase(store):
+    sid = source(store)
+    store.apply_snapshot(
+        sid,
+        [
+            Record("one", "movie", "Un film sur le cinéma", plot="John Williams compose la musique."),
+            Record("two", "movie", "John dans les bois", plot="Williams est un détective."),
+            Record("three", "movie", "Williams John", plot="Ordre inverse."),
+        ],
+    )
+    page = store.media(q="John Williams", deep_search=True)
+    assert [item["title"] for item in page["items"]] == ["Un film sur le cinéma"]
+    assert store.media(q="John Williams", deep_search=False)["total"] == 0
