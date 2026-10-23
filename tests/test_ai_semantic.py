@@ -4,10 +4,17 @@ import asyncio
 
 from conftest import READ
 
-from kodi_library.ai import AISearchPlan
+from kodi_library.ai import AISearchPlan, normalize_plan
 from kodi_library.ai_hybrid import hybrid_page
 from kodi_library.ai_vectors import SemanticIndex
 from kodi_library.connectors.base import Record
+
+
+
+def test_episode_scope_survives_structured_validation():
+    requested = AISearchPlan(kind="episode", semantic_query="une boucle temporelle")
+    resolved = normalize_plan(requested, {"genres": [], "formats": []})
+    assert resolved.kind == "episode"
 
 
 def test_episode_plot_is_indexed_and_returned_on_parent_series(store, monkeypatch, tmp_path):
