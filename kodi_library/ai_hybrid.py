@@ -15,8 +15,10 @@ async def hybrid_page(
     *,
     prompt: str = "",
     language_model: str = "",
+    exclude_ids: set[str] | None = None,
 ) -> dict:
     """Return only existing catalogue entries. Episodes are projected onto their TV shows."""
+    excluded = exclude_ids or set()
     documents = store.ai_documents()
     by_id = {doc["id"]: doc for doc in documents}
     indexed = index.status(documents, embedding_model)
@@ -61,7 +63,7 @@ async def hybrid_page(
         if not doc or not include(doc):
             return
         result_id = doc["parent_id"] if doc["kind"] == "episode" else work_id
-        if not result_id or result_id not in by_id:
+        if not result_id or result_id not in by_id or result_id in excluded:
             return
         relevance[result_id] = max(relevance.get(result_id, -1), score)
         if doc["kind"] == "episode":
@@ -83,7 +85,10 @@ async def hybrid_page(
         if plan.semantic_query:
             page = {"items": [], "total": 0, "limit": 60, "offset": 0, "has_more": False}
         else:
-            page = store.media(**params, q=plan.keywords, deep_search=bool(plan.keywords), limit=60)
+            page = store.media(**params, q=plan.keywords, deep_search=bool(plan.keywords), limit=200)
+            page["items"] = [item for item in page["items"] if item["id"] not in excluded][:60]
+            page["total"] = len(page["items"])
+            page["has_more"] = False
         if plan.semantic_query and not indexed["indexed"]:
             note = "Semantic index is building; showing structured filters only."
         elif plan.semantic_query and not relevance:
