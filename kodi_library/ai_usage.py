@@ -5,7 +5,6 @@ tokens, then reconciles actual usage from OpenAI's response. No access keys or
 prompt text are stored in the ledger. Prices are USD per million tokens.
 """
 
-import json
 import sqlite3
 from contextlib import contextmanager
 from contextvars import ContextVar
