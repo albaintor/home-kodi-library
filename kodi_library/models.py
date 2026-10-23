@@ -298,6 +298,16 @@ class ListItemInput(StrictModel):
     media_id: str
 
 
+class ListBulkAddInput(StrictModel):
+    media_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class ListBulkAddResult(StrictModel):
+    added: int
+    already_present: int
+    total_requested: int
+
+
 class ListOrderInput(StrictModel):
     media_ids: list[str] = Field(max_length=10000)
     revision: int = Field(ge=0)
