@@ -382,7 +382,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
 
-
     def ai_probe_failure(exc: Exception) -> str:
         """Do not echo third-party error bodies or secrets to API clients."""
         if isinstance(exc, httpx.HTTPStatusError):
