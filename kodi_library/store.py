@@ -1697,6 +1697,55 @@ class Store:
             if count:
                 conn.execute("UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,))
 
+    def add_list_items(self, list_id: str, media_ids: list[str]) -> dict[str, int]:
+        """Atomically add existing works to a list, preserving result order.
+
+        Repeated IDs and items already on the list are ignored. A missing work
+        aborts the transaction instead of producing an incomplete collection.
+        """
+        ids = list(dict.fromkeys(media_ids))
+        if not 1 <= len(ids) <= 200:
+            raise ValueError("Supply between 1 and 200 media IDs.")
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM lists WHERE id=?", (list_id,)).fetchone():
+                raise KeyError("Unknown list.")
+            placeholders = ",".join("?" for _ in ids)
+            existing = {
+                row[0]
+                for row in conn.execute(
+                    f"SELECT id FROM works WHERE id IN ({placeholders})", ids
+                )
+            }
+            if len(existing) != len(ids):
+                raise KeyError("Unknown media.")
+            already = {
+                row[0]
+                for row in conn.execute(
+                    f"SELECT work_id FROM list_items WHERE list_id=? "
+                    f"AND work_id IN ({placeholders})",
+                    (list_id, *ids),
+                )
+            }
+            pending = [work_id for work_id in ids if work_id not in already]
+            if pending:
+                first = conn.execute(
+                    "SELECT COALESCE(MAX(position)+1,0) FROM list_items WHERE list_id=?",
+                    (list_id,),
+                ).fetchone()[0]
+                conn.executemany(
+                    "INSERT INTO list_items(list_id,work_id,position) VALUES(?,?,?)",
+                    ((list_id, work_id, first + i) for i, work_id in enumerate(pending)),
+                )
+                conn.execute(
+                    "UPDATE lists SET revision=revision+1 WHERE id=?", (list_id,)
+                )
+            return {
+                "added": len(pending),
+                "already_present": len(ids) - len(pending),
+                "total_requested": len(ids),
+            }
+
     def reorder_list(self, list_id, media_ids, revision):
         with self.connect() as conn:
             conn.execute("BEGIN IMMEDIATE")
