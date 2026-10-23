@@ -10,6 +10,22 @@ The browser exchanges the token via `POST /auth/session` for an opaque HttpOnly,
 
 Ingress forwards a separate secret in `X-Kodi-Library-Ingress-Token`. `X-Ingress-Path` alone does not grant access. CORS is disabled by default and is unnecessary for `URLSession`; `CORS_ORIGINS` accepts a JSON list of explicitly allowed web origins.
 
+## Mobile client compatibility
+
+`GET /api/v1/discovery` is public and returns the API version, server
+version, data-model revision, and `mobile_compatibility` contract range.
+Mobile contract version **1** is currently supported by this server. It is
+independent of the application build and the server's model revision.
+
+As of **data model 6**, discovery also returns additive `capabilities`:
+`["ai_search", "bulk_list_add"]`. A client must check `bulk_list_add`
+before calling `POST /lists/{list_id}/items/bulk`, because older NAS
+installations with the same base data contract may not expose that route.
+Missing `capabilities` means optional features have not been advertised,
+not that the entire catalogue is incompatible. New discovery keys are
+optional for older clients. For breaking DTO changes, increment the mobile
+contract and keep the discovery handshake backwards-readable.
+
 ## Routes
 
 | Method | Route after `/api/v1` | Result |
