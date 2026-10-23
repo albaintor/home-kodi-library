@@ -369,9 +369,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             ai_index_error = None
             try:
                 documents = await asyncio.to_thread(store.ai_documents)
-                with usage_session(
-                    ai_usage, ai_config.status()["monthly_budget_usd"], "indexing"
-                ):
+                with usage_session(ai_usage, ai_config.status()["monthly_budget_usd"], "indexing"):
                     await ai_index.refresh(
                         documents, ai_config.status()["embedding_model"], credentials[1]
                     )
@@ -468,7 +466,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     )
                 results["language"] = {"ok": True, "model": model}
             except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(429, "OpenAI budget limit reached or model pricing unknown.") from None
+                raise HTTPException(
+                    429, "OpenAI budget limit reached or model pricing unknown."
+                ) from None
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("OpenAI language model connection test failed: %s", type(exc).__name__)
                 results["language"] = {
@@ -480,14 +480,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with usage_session(
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
-                    vectors = await embed(
-                        ["Test de recherche sémantique."], embedding_model, key
-                    )
+                    vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
                 if not vectors or not vectors[0]:
                     raise ValueError("Empty embedding vector")
                 results["embedding"] = {"ok": True, "model": embedding_model}
             except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(429, "OpenAI budget limit reached or model pricing unknown.") from None
+                raise HTTPException(
+                    429, "OpenAI budget limit reached or model pricing unknown."
+                ) from None
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
                 results["embedding"] = {
@@ -522,9 +522,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(429, "Too many AI searches in progress.")
         async with ai_limit:
             try:
-                with usage_session(
-                    ai_usage, ai_config.status()["monthly_budget_usd"], "search"
-                ):
+                with usage_session(ai_usage, ai_config.status()["monthly_budget_usd"], "search"):
                     facets = await asyncio.to_thread(store.facets)
                     if value.previous_plan is None:
                         plan = await interpret_prompt(value.prompt, *credentials, facets)
