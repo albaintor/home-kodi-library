@@ -2,14 +2,19 @@
 
 from collections import defaultdict
 
+from .ai_rerank import rerank_candidates
+
 from .ai_vectors import SemanticIndex, embed
 
 
-async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -> dict:
+async def hybrid_page(
+    store, plan, index: SemanticIndex, embedding_model: str, key: str,
+    *, prompt: str = "", language_model: str = ""
+) -> dict:
     """Return only existing catalogue entries. Episodes are projected onto their TV shows."""
     documents = store.ai_documents()
     by_id = {doc["id"]: doc for doc in documents}
-    indexed = index.status(documents, model)
+    indexed = index.status(documents, embedding_model)
     params = {
         "kind": "tvshow" if plan.kind == "episode" else plan.kind,
         "watch_status": None if plan.kind == "episode" else plan.watch_status,
@@ -22,8 +27,8 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
     semantic = []
     note = None
     if plan.semantic_query and indexed["indexed"]:
-        query_vector = (await embed([plan.semantic_query], model, key))[0]
-        semantic = index.rank(documents, model, query_vector)
+        query_vector = (await embed([plan.semantic_query], embedding_model, key))[0]
+        semantic = index.rank(documents, embedding_model, query_vector)
     elif plan.semantic_query:
         note = "Semantic index incomplete; results may be limited until indexing finishes."
 
@@ -58,7 +63,7 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
             episode_hits[result_id].append((score, doc))
 
     for work_id, score in semantic[:400]:
-        if score >= 0.20:
+        if score >= 0.35:
             add(work_id, score)
     for rank, work_id in enumerate(lexical):
         add(work_id, 0.70 + 0.15 / (rank + 1))
@@ -78,6 +83,38 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
             note = "Semantic index is building; showing structured filters only."
         elif plan.semantic_query and not relevance:
             note = "No matching semantic documents; showing structured filters."
+
+    # Semantic cosine scores are candidates, not a relevance verdict. Strictly
+    # verify the style/theme against individual titles and actual synopses
+    # before returning results (e.g. do not equate Barbie with Miyazaki).
+    explanations = {}
+    if plan.semantic_query and relevance and prompt and language_model:
+        candidates = []
+        for item in page["items"]:
+            doc = by_id.get(item["id"])
+            if doc is None:
+                continue
+            candidate = {
+                "id": item["id"],
+                "title": item["title"],
+                "kind": doc["kind"],
+                "synopsis": doc["plot"][:850],
+                "matched_episodes": [
+                    {
+                        "title": episode["title"],
+                        "plot": episode["plot"][:400],
+                    }
+                    for _, episode in sorted(
+                        episode_hits.get(item["id"], []), key=lambda hit: -hit[0]
+                    )[:2]
+                ],
+            }
+            candidates.append(candidate)
+        verified = await rerank_candidates(prompt, candidates, language_model, key)
+        explanations = {entry["id"]: entry["reason"] for entry in verified}
+        page["items"] = [item for item in page["items"] if item["id"] in explanations]
+        page["total"] = len(page["items"])
+        page["has_more"] = False
 
     matches = {}
     for item in page["items"]:
@@ -107,6 +144,7 @@ async def hybrid_page(store, plan, index: SemanticIndex, model: str, key: str) -
         "plan": plan.model_dump(),
         "mode": "hybrid" if relevance else "filters",
         "episode_matches": matches,
+        "relevance_reasons": explanations,
         "assistant_message": plan.assistant_message,
         "note": note,
         "index": indexed,
