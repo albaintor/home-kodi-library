@@ -4,7 +4,7 @@
  */
 const EN = {
   "Plafond mensuel OpenAI (USD)": "OpenAI monthly spending cap (USD)",
-  "Le serveur bloque les appels OpenAI lorsque le budget mensuel est atteint. L'indexation automatique reprend après renouvellement du plafond ou augmentation de celui-ci. Mettre 0 pour bloquer les appels payants.": "The server blocks OpenAI calls when the monthly budget is exhausted. Automatic indexing resumes once the limit resets or is increased. Enter 0 to block paid calls.",
+  "Le serveur bloque les appels OpenAI lorsque le budget mensuel est atteint. Après rétablissement du budget, la prochaine synchronisation ou recherche IA relance l'indexation manquante. Mettre 0 pour bloquer les appels payants.": "The server blocks OpenAI calls when the monthly budget is exhausted. Automatic indexing resumes once the limit resets or is increased. Enter 0 to block paid calls.",
   "Actualiser la consommation": "Refresh usage",
   "Consommation OpenAI non disponible.": "OpenAI usage is unavailable.",
   "Coût estimé :": "Estimated cost:",
