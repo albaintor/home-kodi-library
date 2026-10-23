@@ -1127,7 +1127,6 @@ class Store:
                 results[work_id] = roles
         return results
 
-
     def ai_documents(self) -> list[dict[str, Any]]:
         """Indexed descriptions include each episode synopsis and the parent series title."""
         with self.connect() as conn:
