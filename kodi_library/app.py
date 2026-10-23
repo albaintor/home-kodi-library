@@ -267,6 +267,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "data_model_version": DATA_MODEL_VERSION,
             "pairing": True,
             "mobile_compatibility": mobile_compatibility(),
+            # Additive capabilities allow newer mobile clients to avoid calling
+            # routes missing on an older, otherwise contract-compatible NAS.
+            "capabilities": ["ai_search", "bulk_list_add"],
         }
 
     @app.post(
