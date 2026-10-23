@@ -20,7 +20,8 @@ The vector index is stored in `DATA_DIR/ai-vectors.db`. These files can contain
 sensitive data (including descriptions); back them up securely, separately from
 the catalogue JSON export. Remote access should use HTTPS.
 
-**Privacy**: A search transmits the user's prompt, context filters, and the
+**Privacy**: A search transmits the user's prompt, context filters, and (when refining)
+metadata for the current candidate titles, together with the
 catalogue's available genre/format values to OpenAI. Vector indexing explicitly
 sends **titles, genres, film/series summaries and each imported episode synopsis**
 to the configured OpenAI embeddings API, in batches. Vectors are stored locally
@@ -117,12 +118,61 @@ rather than bypassing the cap. The ledger is held locally in
   The response includes catalogue media, structured `plan`, ranked mode,
   matched episodes (`episode_matches`), index progress, and optional note.
 
-V3: for conversational refinement, send the **complete previously returned**
-`plan` as `previous_plan` with the new prompt:
-`{"prompt":"plutôt des années 90","previous_plan":{...}}`.
-The server asks the model to preserve unaffected constraints. The client displays
-the conversation, and "New search" clears the prior plan. Conversations are
-client-held; no history database is needed.
+## Conversational refinement and result lists
+
+On iOS, follow-up prompts reuse the current search session. The client sends
+the previously returned `plan` as `previous_plan` and, when the server
+advertises `ai_refine_results`, up to 60 currently displayed media IDs as
+`previous_ids`. The server reads candidate metadata from its own database;
+the client does not supply trusted titles or arbitrary search results.
+
+The model distinguishes three operations:
+
+| Operation | Example | Result |
+| --- | --- | --- |
+| `filter` | "Retire Valérian de la liste" | Keeps the other displayed titles and removes matching items. |
+| `expand` | "Ajoutes-en d'autres" | Keeps the current selection and searches for additional titles using the previous search plan; duplicate IDs are excluded. |
+| `search` | "Cherche plutôt des films de Miyazaki" | Runs a fresh search, with conversational criteria interpreted by the server. |
+
+Example follow-up request:
+
+```json
+{
+  "prompt": "Retire Valérian de la liste",
+  "previous_plan": {
+    "kind": "movie",
+    "watch_status": null,
+    "genre": null,
+    "format": null,
+    "year_min": null,
+    "year_max": null,
+    "rating_min": null,
+    "keywords": "",
+    "semantic_query": "science-fiction",
+    "assistant_message": ""
+  },
+  "previous_ids": ["existing-media-id-1", "existing-media-id-2"]
+}
+```
+
+The response carries `items`, `plan`, `mode` (`refine`, `expand`,
+`hybrid` or `filters`), `assistant_message` and relevant search metadata.
+The IDs in the example are placeholders, not valid catalogue IDs.
+
+The iOS **Undo last refinement** action restores the previous result snapshot
+and conversation state without sending another request. **New search** clears
+the current results, history and previous criteria. A failed network request
+leaves the prior results intact.
+
+The interface displays at most 60 results. Expanding a full list cannot
+display more than 60 simultaneously; it is not unlimited pagination.
+**Add all AI results to a list** adds the currently displayed IDs only, to
+an existing or new list, using the server's `bulk_list_add` capability.
+This action requires administrator access. When a server does not advertise
+`ai_refine_results`, the iOS client omits `previous_ids` and falls back to
+the earlier plan-only refinement, rather than sending an unsupported field.
+The discovery endpoint advertises optional capabilities, independently of the
+mobile data-contract version.
 
 ## Ranking and episode results
 
