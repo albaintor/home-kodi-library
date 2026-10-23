@@ -309,8 +309,8 @@ def test_mobile_contract_announced_without_changing_versioned_endpoint(client, a
     assert status.status_code == 200
     assert status.json()["api_version"] == "v1"
     assert status.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
-    assert status.json()["data_model_version"] == 5
-    assert status.json()["version"].endswith("+model.5")
+    assert status.json()["data_model_version"] == 6
+    assert status.json()["version"].endswith("+model.6")
 
     discovery = client.get("/api/v1/discovery")
     assert discovery.status_code == 200
@@ -484,7 +484,6 @@ def test_bulk_add_ai_results_to_new_and_existing_lists(client, admin):
     read = {"Authorization": "Bearer " + READ}
     assert client.post(url, headers=read, json={"media_ids": ids}).status_code == 403
     assert client.post(url, headers=admin, json={"media_ids": []}).status_code == 422
-
 
 
 def test_mobile_discovery_advertises_optional_features_and_contract(client, admin):
