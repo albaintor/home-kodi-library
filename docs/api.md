@@ -180,10 +180,18 @@ All writes require administrator permissions: external Bearer, CSRF-protected se
 | DELETE | `/lists/{id}` | Deletes only the list (204) |
 | GET | `/lists/{id}/items` | Page with `items,total,limit,offset,has_more,revision` |
 | POST | `/lists/{id}/items` | `{ "media_id": "UUID" }`; idempotent append to the end of the list (204) |
+| POST | `/lists/{id}/items/bulk` | `{ "media_ids": ["UUID1","UUID2"] }` → `{ "added": 2, "already_present": 0, "total_requested": 2 }`; add 1–200 media IDs atomically, ignoring duplicates (200) |
 | DELETE | `/lists/{id}/items/{media_id}` | Removes media from the list (204) |
 | PUT | `/lists/{id}/order` | `{ "media_ids": ["UUID2","UUID1"], "revision": 3 }`; full reorder (204) |
 
 `PATCH personal` leaves omitted fields unchanged; `null` removes the personal override for that field and restores its imported value. `user_rating` accepts values from 0 to 10. `watched` accepts true/false/null. Effective values appear in pages, details, and filters; `user_rating` sorting is available in the catalog. Editions retain their original metadata. These values are shared across the installation, without per-user profiles.
+
+The bulk-list endpoint requires write privileges and accepts at most 200
+IDs per request. It preserves the supplied order for new additions, skips
+IDs already in the list, increments the list revision once when needed and
+triggers one thumbnail refresh. Unknown media IDs reject the entire
+transaction (404) without partial insertion. The iOS AI search flow uses
+this endpoint for displayed results, without a new OpenAI request.
 
 List items accept `sort=position|title|year|date_added|rating|user_rating`, `order=asc|desc`, `limit=1..200`, and `offset>=0`. Automatic sorting does not rewrite `position`. To reorder a paginated list, read all UUIDs at the same revision, then send each exactly once (maximum 10,000). A concurrent change returns 409; an incomplete or duplicate reorder returns 422. Mutations, including media disappearing from all sources, change the revision. The detail view includes `personal` and `lists`.
 
