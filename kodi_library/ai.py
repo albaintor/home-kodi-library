@@ -152,7 +152,7 @@ def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
         values[field] = next(
             (v for v in available if selected and v.casefold() == selected.casefold()), None
         )
-    if values["kind"] not in (None, "movie", "tvshow"):
+    if values["kind"] not in (None, "movie", "tvshow", "episode"):
         values["kind"] = None
     if values["watch_status"] not in (None, "watched", "unwatched", "in_progress", "unknown"):
         values["watch_status"] = None
