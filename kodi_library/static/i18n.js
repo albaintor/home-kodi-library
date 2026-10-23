@@ -3,6 +3,16 @@
  * preferences or the explicit language selector. Persist the user's choice.
  */
 const EN = {
+  "Les résumés (y compris ceux des épisodes) sont envoyés à OpenAI pour calculer les embeddings ; les vecteurs restent sur le NAS. ": "Summaries (including episode summaries) are sent to OpenAI for embeddings; vectors remain on the NAS. ",
+  "Les résumés (y compris ceux des épisodes) sont envoyés à OpenAI pour calculer les embeddings ; les vecteurs restent sur le NAS.": "Summaries (including episode summaries) are sent to OpenAI to compute embeddings; vectors remain on the NAS.",
+  "Seul le serveur conserve la clé. Sans clé, la recherche classique reste disponible. Les prompts sont envoyés à OpenAI uniquement lors des recherches IA.": "Only the server stores the key. Standard search works without it. Prompts are sent to OpenAI only for AI searches.",
+  "Index sémantique :": "Semantic index:",
+  "médias indexés": "items indexed",
+  "Indexer / actualiser": "Index / refresh",
+  "Enregistrez les changements avant le test.": "Save changes before testing.",
+  "Les résumés des épisodes sont envoyés à OpenAI pour calculer les embeddings.": "Episode summaries are sent to OpenAI for embeddings.",
+  "Teste séparément le modèle de langage et le modèle d’embeddings enregistrés. Enregistrez les changements avant le test.": "Tests the saved language and embedding models separately. Save changes before testing.",
+  "Indexation sémantique démarrée. Elle reprend uniquement les résumés modifiés.": "Semantic indexing started. Only changed summaries are processed.",
   "Recherche intelligente": "Smart search",
   "Recherche avec IA": "AI search",
   "Décrivez une intrigue, une ambiance ou une scène, même dans le résumé d’un épisode. Vous pouvez ensuite affiner la demande en langage naturel.": "Describe a plot, mood or scene, including details in episode summaries. Then refine your request in natural language.",
