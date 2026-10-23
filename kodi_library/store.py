@@ -1645,7 +1645,11 @@ class Store:
                 "thumbnail": f"/api/v1/lists/{r['id']}/thumbnails/{r['revision']}.jpg",
             }
             for r in conn.execute(
-                "SELECT l.*,(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count FROM lists l"
+                "SELECT l.*,"
+                "(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count,"
+                "(SELECT COUNT(*) FROM list_items i JOIN works w ON w.id=i.work_id "
+                "WHERE i.list_id=l.id AND w.watch_status='watched') AS watched_count "
+                "FROM lists l"
                 + where
                 + " ORDER BY l.name COLLATE NOCASE,l.id",
                 (work_id,) if work_id else (),
