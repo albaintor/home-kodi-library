@@ -32,7 +32,7 @@ from starlette.middleware.cors import CORSMiddleware
 from . import DATA_MODEL_VERSION, __version__
 from .ai import AIConfiguration, AISearchInput, AISettingsInput, interpret_prompt
 from .ai_hybrid import hybrid_page
-from .ai_vectors import SemanticIndex
+from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
@@ -381,6 +381,66 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return {**ai_config.update(value), "index": ai_index_status()}
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
+
+
+    def ai_probe_failure(exc: Exception) -> str:
+        """Do not echo third-party error bodies or secrets to API clients."""
+        if isinstance(exc, httpx.HTTPStatusError):
+            status = exc.response.status_code
+            if status == 401:
+                return "invalid_key"
+            if status == 403:
+                return "access_denied"
+            if status == 404:
+                return "model_unavailable"
+            if status == 429:
+                return "quota_or_rate_limit"
+            if status == 400:
+                return "model_or_request_incompatible"
+            if status >= 500:
+                return "provider_unavailable"
+            return "provider_error"
+        if isinstance(exc, httpx.TimeoutException):
+            return "timeout"
+        if isinstance(exc, httpx.RequestError):
+            return "network_error"
+        return "invalid_response"
+
+    @app.post(API + "/ai/connection/test", tags=["AI"], dependencies=[Depends(writable)])
+    async def test_ai_connection():
+        """Probe both configured models, not just a valid HTTP/API token."""
+        credentials = ai_config.credentials()
+        if not credentials:
+            raise HTTPException(503, "Configure and save an OpenAI API key first.")
+        model, key = credentials
+        embedding_model = ai_config.status()["embedding_model"]
+        results = {}
+        async with ai_limit:
+            try:
+                await interpret_prompt(
+                    "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
+                )
+                results["language"] = {"ok": True, "model": model}
+            except (httpx.HTTPError, ValueError) as exc:
+                _LOG.warning("OpenAI language model connection test failed: %s", type(exc).__name__)
+                results["language"] = {
+                    "ok": False,
+                    "model": model,
+                    "reason": ai_probe_failure(exc),
+                }
+            try:
+                vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
+                if not vectors or not vectors[0]:
+                    raise ValueError("Empty embedding vector")
+                results["embedding"] = {"ok": True, "model": embedding_model}
+            except (httpx.HTTPError, ValueError) as exc:
+                _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
+                results["embedding"] = {
+                    "ok": False,
+                    "model": embedding_model,
+                    "reason": ai_probe_failure(exc),
+                }
+        return {"ok": results["language"]["ok"] and results["embedding"]["ok"], **results}
 
     @app.post(API + "/ai/index/refresh", tags=["AI"], dependencies=[Depends(writable)])
     async def refresh_ai_index():
