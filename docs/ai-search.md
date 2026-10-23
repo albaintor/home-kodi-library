@@ -24,4 +24,4 @@ cannot generate SQL, change the catalogue, or invent matching titles.
 **Scope of V1:** Exact structured filters (type, watch state, genre, format,
 year range, minimum editorial rating) and optional lexical FTS. Subjective
 plot-level similarity is not implemented yet; that requires local embeddings
-(V2). Provider failures return an error while standard search still works.
+(V2). Provider failures return an error while standard search still works. To bound API cost, searches are limited to 10 per minute per client IP and three concurrent upstream requests.

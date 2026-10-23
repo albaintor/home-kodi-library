@@ -3,11 +3,14 @@
 import asyncio
 import json
 import logging
+import time
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
+import httpx
 from fastapi import (
     BackgroundTasks,
     Depends,
@@ -27,7 +30,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
-from .ai import AIConfiguration, AISettingsInput, AISearchInput, interpret_prompt
+from .ai import AIConfiguration, AISearchInput, AISettingsInput, interpret_prompt
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
@@ -103,6 +106,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     auth = Auth(settings, store)
     ai_config = AIConfiguration(settings.data_dir)
     ai_limit = asyncio.Semaphore(3)
+    ai_rate_lock = asyncio.Lock()
+    ai_attempts: dict[str, deque[float]] = defaultdict(deque)
     personal_edit_lock = asyncio.Lock()
 
     @asynccontextmanager
@@ -343,11 +348,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from None
 
     @app.post(API + "/ai/search", tags=["AI"], dependencies=[Depends(authenticated)])
-    async def search_with_ai(value: AISearchInput):
+    async def search_with_ai(value: AISearchInput, request: Request):
         credentials = ai_config.credentials()
         if not credentials:
             raise HTTPException(503, "AI search is not configured. Use the standard catalogue search.")
-        # Limit expensive upstream requests; authentication applies to read-only clients too.
+        # Bound provider spending even for compromised read-only device tokens.
+        client_ip = request.client.host if request.client else "unknown"
+        async with ai_rate_lock:
+            attempts = ai_attempts[client_ip]
+            current = time.monotonic()
+            while attempts and attempts[0] < current - 60:
+                attempts.popleft()
+            if len(attempts) >= 10:
+                raise HTTPException(429, "AI search limit reached. Try again in one minute.")
+            attempts.append(current)
         if ai_limit.locked():
             raise HTTPException(429, "Too many AI searches in progress.")
         async with ai_limit:
