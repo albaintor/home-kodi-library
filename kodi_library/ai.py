@@ -247,7 +247,7 @@ async def interpret_prompt(
 REFINEMENT_SCHEMA = {
     "type": "object",
     "properties": {
-        "operation": {"type": "string", "enum": ["filter", "search"]},
+        "operation": {"type": "string", "enum": ["filter", "expand", "search"]},
         "keep_ids": {"type": "array", "items": {"type": "string"}},
         "assistant_message": {"type": "string"},
     },
@@ -266,10 +266,13 @@ async def interpret_result_refinement(
         "the CURRENT results (e.g. 'retirer Valérian de la liste', 'only unwatched'). "
         "For filter, return keep_ids as the subset of provided IDs matching the "
         "instruction, preserving the supplied order unless explicitly asked to rank. "
-        "Never add new IDs. A removal only removes its matching entries and preserves "
-        "all other items. For a request to look for new films, expand the search, "
-        "replace the query, or if the current list lacks the data needed to filter, "
-        "choose operation=search and keep_ids=[]. "
+        "Never add new IDs when filtering. A removal only removes its matching entries "
+        "and preserves all other items. Choose operation=expand when asked to add "
+        "more, find others, extend the current list, or show additional results "
+        "(including 'ajoutes en d'autres'); use keep_ids=[]. Expand retains the "
+        "existing search criteria and its current results. Choose operation=search "
+        "for a genuinely new search or replacement of the query, or when current "
+        "metadata is insufficient to filter; use keep_ids=[]. "
         "Do not filter by details that are not supplied in candidate data. "
         "Return a concise assistant_message in the user's language. "
         "Use only titles and metadata actually supplied."
@@ -309,7 +312,7 @@ async def interpret_result_refinement(
     if not chunks:
         raise ValueError("No structured result refinement received.")
     value = json.loads("".join(chunks))
-    if value.get("operation") not in ("filter", "search"):
+    if value.get("operation") not in ("filter", "expand", "search"):
         raise ValueError("Invalid refinement operation.")
     allowed = {item["id"] for item in candidates}
     selected = set(value.get("keep_ids", [])) & allowed
