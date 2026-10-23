@@ -103,6 +103,9 @@ async def hybrid_page(
                 "id": item["id"],
                 "title": item["title"],
                 "kind": doc["kind"],
+                "year": item.get("year"),
+                "genres": item.get("genres", []),
+                "original_title": item.get("original_title"),
                 "synopsis": doc["plot"][:850],
                 "matched_episodes": [
                     {
