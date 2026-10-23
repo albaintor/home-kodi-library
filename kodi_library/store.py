@@ -1280,9 +1280,7 @@ class Store:
                 # intentionally keep flexible AND semantics: "équipe cité"
                 # must find a synopsis saying "équipe découvre une cité".
                 is_proper_name = (
-                    deep_search
-                    and len(words) > 1
-                    and all(word[0].isupper() for word in words)
+                    deep_search and len(words) > 1 and all(word[0].isupper() for word in words)
                 )
                 if is_proper_name:
                     params.append('"' + " ".join(words).replace('"', '""') + '"')
