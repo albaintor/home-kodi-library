@@ -83,7 +83,9 @@ class SemanticIndex:
                 )
         return indexed
 
-    def rank(self, documents: list[dict], model: str, query: list[float]) -> list[tuple[str, float]]:
+    def rank(
+        self, documents: list[dict], model: str, query: list[float]
+    ) -> list[tuple[str, float]]:
         hashes = {doc["id"]: self.digest(doc["text"]) for doc in documents}
         query_norm = math.sqrt(sum(v * v for v in query))
         if not query_norm:
