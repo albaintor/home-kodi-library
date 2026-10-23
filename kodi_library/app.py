@@ -31,6 +31,8 @@ from starlette.middleware.cors import CORSMiddleware
 
 from . import DATA_MODEL_VERSION, __version__
 from .ai import AIConfiguration, AISearchInput, AISettingsInput, interpret_prompt
+from .ai_hybrid import hybrid_page
+from .ai_vectors import SemanticIndex
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
@@ -105,6 +107,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     sync = SyncManager(store, settings)
     auth = Auth(settings, store)
     ai_config = AIConfiguration(settings.data_dir)
+    ai_index = SemanticIndex(settings.data_dir)
+    ai_index_lock = asyncio.Lock()
+    ai_index_task: asyncio.Task | None = None
+    ai_index_error: str | None = None
     ai_limit = asyncio.Semaphore(3)
     ai_rate_lock = asyncio.Lock()
     ai_attempts: dict[str, deque[float]] = defaultdict(deque)
@@ -331,29 +337,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
 
+
+    def ai_index_status():
+        docs = store.ai_documents()
+        model = ai_config.status()["embedding_model"]
+        return {
+            **ai_index.status(docs, model),
+            "running": bool(ai_index_task and not ai_index_task.done()),
+            "error": ai_index_error,
+        }
+
+    async def run_ai_index():
+        nonlocal ai_index_error
+        async with ai_index_lock:
+            credentials = ai_config.credentials()
+            if not credentials:
+                return
+            ai_index_error = None
+            try:
+                documents = await asyncio.to_thread(store.ai_documents)
+                await ai_index.refresh(
+                    documents, ai_config.status()["embedding_model"], credentials[1]
+                )
+            except (httpx.HTTPError, ValueError, OSError) as exc:
+                _LOG.warning("AI indexing failed: %s", type(exc).__name__)
+                ai_index_error = "Could not build vector index. Check API key and embedding model."
+
+    def start_ai_index():
+        nonlocal ai_index_task
+        if ai_index_task is None or ai_index_task.done():
+            ai_index_task = asyncio.create_task(run_ai_index())
+
     @app.get(API + "/ai/status", tags=["AI"], dependencies=[Depends(authenticated)])
     def ai_status():
-        return ai_config.status()
+        return {**ai_config.status(), "index": ai_index_status()}
 
     @app.get(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
     def ai_settings():
-        return ai_config.status()  # API token deliberately never returned.
+        return {**ai_config.status(), "index": ai_index_status()}
 
     @app.put(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
     def update_ai_settings(value: AISettingsInput):
         try:
-            return ai_config.update(value)
+            return {**ai_config.update(value), "index": ai_index_status()}
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from None
+
+    @app.post(API + "/ai/index/refresh", tags=["AI"], dependencies=[Depends(writable)])
+    async def refresh_ai_index():
+        if not ai_config.credentials():
+            raise HTTPException(503, "AI is not configured.")
+        start_ai_index()
+        return {"status": "started", "index": await asyncio.to_thread(ai_index_status)}
 
     @app.post(API + "/ai/search", tags=["AI"], dependencies=[Depends(authenticated)])
     async def search_with_ai(value: AISearchInput, request: Request):
         credentials = ai_config.credentials()
         if not credentials:
-            raise HTTPException(
-                503, "AI search is not configured. Use the standard catalogue search."
-            )
-        # Bound provider spending even for compromised read-only device tokens.
+            raise HTTPException(503, "AI search is not configured. Use standard search.")
         client_ip = request.client.host if request.client else "unknown"
         async with ai_rate_lock:
             attempts = ai_attempts[client_ip]
@@ -367,29 +408,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(429, "Too many AI searches in progress.")
         async with ai_limit:
             try:
-                plan = await interpret_prompt(value.prompt, *credentials, store.facets())
+                facets = await asyncio.to_thread(store.facets)
+                if value.previous_plan is None:
+                    plan = await interpret_prompt(value.prompt, *credentials, facets)
+                else:
+                    plan = await interpret_prompt(
+                        value.prompt, *credentials, facets, value.previous_plan
+                    )
+                output = await hybrid_page(
+                    store, plan, ai_index, ai_config.status()["embedding_model"], credentials[1]
+                )
             except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("AI search unavailable: %s", type(exc).__name__)
-                raise HTTPException(
-                    502, "AI provider unavailable or model configuration invalid."
-                ) from None
-        page = await asyncio.to_thread(
-            store.media,
-            q=plan.keywords,
-            deep_search=bool(plan.keywords),
-            kind=plan.kind,
-            watch_status=plan.watch_status,
-            genre=plan.genre,
-            format=plan.format,
-            year_min=plan.year_min,
-            year_max=plan.year_max,
-            rating_min=plan.rating_min,
-            sort="rating",
-            order="desc",
-            limit=60,
-            offset=0,
-        )
-        return {**page, "plan": plan.model_dump(), "mode": "filters"}
+                _LOG.warning("AI search failed: %s", type(exc).__name__)
+                raise HTTPException(502, "AI provider unavailable or invalid model.") from None
+        if plan.semantic_query and not output["index"]["complete"]:
+            start_ai_index()  # Lazy refresh discovers episode changes after Kodi sync.
+        output["index"] = await asyncio.to_thread(ai_index_status)
+        return output
 
     @app.get(
         API + "/media",
