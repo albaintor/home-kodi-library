@@ -1,4 +1,5 @@
 """Opt-in OpenAI prompt-to-filters search. API secrets never leave the server."""
+
 import json
 import os
 import re
@@ -13,7 +14,10 @@ SCHEMA = {
     "type": "object",
     "properties": {
         "kind": {"type": ["string", "null"], "enum": ["movie", "tvshow", None]},
-        "watch_status": {"type": ["string", "null"], "enum": ["watched", "unwatched", "in_progress", "unknown", None]},
+        "watch_status": {
+            "type": ["string", "null"],
+            "enum": ["watched", "unwatched", "in_progress", "unknown", None],
+        },
         "genre": {"type": ["string", "null"]},
         "format": {"type": ["string", "null"]},
         "year_min": {"type": ["integer", "null"]},
@@ -21,7 +25,16 @@ SCHEMA = {
         "rating_min": {"type": ["number", "null"]},
         "keywords": {"type": "string"},
     },
-    "required": ["kind", "watch_status", "genre", "format", "year_min", "year_max", "rating_min", "keywords"],
+    "required": [
+        "kind",
+        "watch_status",
+        "genre",
+        "format",
+        "year_min",
+        "year_max",
+        "rating_min",
+        "keywords",
+    ],
     "additionalProperties": False,
 }
 
@@ -52,6 +65,7 @@ class AISearchPlan(BaseModel):
 
 class AIConfiguration:
     """Dedicated 0600 JSON config in /data, outside catalogue backups and HTTP."""
+
     def __init__(self, data_dir: Path):
         self.path = data_dir / "ai-settings.json"
         self.lock = RLock()
@@ -68,8 +82,12 @@ class AIConfiguration:
     def status(self) -> dict:
         with self.lock:
             value = self._read()
-            return {"provider": "openai", "model": value.get("model") or "gpt-4o-mini",
-                    "configured": bool(value.get("api_key")), "has_api_key": bool(value.get("api_key"))}
+            return {
+                "provider": "openai",
+                "model": value.get("model") or "gpt-4o-mini",
+                "configured": bool(value.get("api_key")),
+                "has_api_key": bool(value.get("api_key")),
+            }
 
     def credentials(self) -> tuple[str, str] | None:
         with self.lock:
@@ -106,10 +124,14 @@ class AIConfiguration:
 def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
     """Drop invented facets; all predicates are applied locally to SQLite."""
     values = plan.model_dump()
-    for field, available in (("genre", facets.get("genres", [])),
-                             ("format", facets.get("formats", []))):
+    for field, available in (
+        ("genre", facets.get("genres", [])),
+        ("format", facets.get("formats", [])),
+    ):
         selected = values[field]
-        values[field] = next((v for v in available if selected and v.casefold() == selected.casefold()), None)
+        values[field] = next(
+            (v for v in available if selected and v.casefold() == selected.casefold()), None
+        )
     if values["kind"] not in (None, "movie", "tvshow"):
         values["kind"] = None
     if values["watch_status"] not in (None, "watched", "unwatched", "in_progress", "unknown"):
@@ -141,18 +163,31 @@ async def interpret_prompt(prompt: str, model: str, key: str, facets: dict) -> A
             json={
                 "model": model,
                 "instructions": instructions,
-                "input": "Available genres: " + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
-                         + "\nAvailable formats: " + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
-                         + "\nUser search: " + prompt,
-                "text": {"format": {"type": "json_schema", "name": "catalogue_filter",
-                                    "strict": True, "schema": SCHEMA}},
+                "input": "Available genres: "
+                + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
+                + "\nAvailable formats: "
+                + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
+                + "\nUser search: "
+                + prompt,
+                "text": {
+                    "format": {
+                        "type": "json_schema",
+                        "name": "catalogue_filter",
+                        "strict": True,
+                        "schema": SCHEMA,
+                    }
+                },
                 "store": False,
             },
         )
         response.raise_for_status()
         data = response.json()
-    chunks = [part.get("text", "") for output in data.get("output", [])
-              for part in output.get("content", []) if part.get("type") == "output_text"]
+    chunks = [
+        part.get("text", "")
+        for output in data.get("output", [])
+        for part in output.get("content", [])
+        if part.get("type") == "output_text"
+    ]
     if not chunks:
         raise ValueError("The AI provider returned no structured search.")
     return normalize_plan(AISearchPlan.model_validate_json("".join(chunks)), facets)

@@ -19,7 +19,14 @@ def test_explicit_media_action_buttons_in_both_catalogue_layouts():
     assert ".media-actions-trigger{" in css
     assert ".list-results .media-card-entry" in css
     assert "document.addEventListener('contextmenu'" not in js
-    assert "event.preventDefault()" not in js[js.index("function openMediaActions(trigger)"):js.index("function attachImageFallbacks(root)")]
+    assert (
+        "event.preventDefault()"
+        not in js[
+            js.index("function openMediaActions(trigger)") : js.index(
+                "function attachImageFallbacks(root)"
+            )
+        ]
+    )
 
 
 def test_quick_actions_share_existing_backend_api_routes():

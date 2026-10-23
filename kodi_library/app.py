@@ -331,7 +331,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
 
-
     @app.get(API + "/ai/status", tags=["AI"], dependencies=[Depends(authenticated)])
     def ai_status():
         return ai_config.status()
@@ -351,7 +350,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def search_with_ai(value: AISearchInput, request: Request):
         credentials = ai_config.credentials()
         if not credentials:
-            raise HTTPException(503, "AI search is not configured. Use the standard catalogue search.")
+            raise HTTPException(
+                503, "AI search is not configured. Use the standard catalogue search."
+            )
         # Bound provider spending even for compromised read-only device tokens.
         client_ip = request.client.host if request.client else "unknown"
         async with ai_rate_lock:
@@ -369,12 +370,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 plan = await interpret_prompt(value.prompt, *credentials, store.facets())
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("AI search unavailable: %s", type(exc).__name__)
-                raise HTTPException(502, "AI provider unavailable or model configuration invalid.") from None
+                raise HTTPException(
+                    502, "AI provider unavailable or model configuration invalid."
+                ) from None
         page = await asyncio.to_thread(
-            store.media, q=plan.keywords, deep_search=bool(plan.keywords), kind=plan.kind,
-            watch_status=plan.watch_status, genre=plan.genre, format=plan.format,
-            year_min=plan.year_min, year_max=plan.year_max, rating_min=plan.rating_min,
-            sort="rating", order="desc", limit=60, offset=0,
+            store.media,
+            q=plan.keywords,
+            deep_search=bool(plan.keywords),
+            kind=plan.kind,
+            watch_status=plan.watch_status,
+            genre=plan.genre,
+            format=plan.format,
+            year_min=plan.year_min,
+            year_max=plan.year_max,
+            rating_min=plan.rating_min,
+            sort="rating",
+            order="desc",
+            limit=60,
+            offset=0,
         )
         return {**page, "plan": plan.model_dump(), "mode": "filters"}
 
