@@ -484,3 +484,17 @@ def test_bulk_add_ai_results_to_new_and_existing_lists(client, admin):
     read = {"Authorization": "Bearer " + READ}
     assert client.post(url, headers=read, json={"media_ids": ids}).status_code == 403
     assert client.post(url, headers=admin, json={"media_ids": []}).status_code == 422
+
+
+
+def test_mobile_discovery_advertises_optional_features_and_contract(client, admin):
+    discovery = client.get("/api/v1/discovery")
+    assert discovery.status_code == 200
+    body = discovery.json()
+    assert body["api_version"] == "v1"
+    assert body["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert {"ai_search", "bulk_list_add"} <= set(body["capabilities"])
+    assert body["data_model_version"] >= 6
+    status = client.get("/api/v1/status", headers=admin).json()
+    assert status["version"] == body["server_version"]
+    assert status["data_model_version"] == body["data_model_version"]
