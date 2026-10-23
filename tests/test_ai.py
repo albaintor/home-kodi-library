@@ -1,7 +1,7 @@
 """Opt-in AI search: secrets, authorization, normal-search fallback and SQL filters."""
 from conftest import READ
 
-from kodi_library.ai import AISearchPlan, AIConfiguration, normalize_plan
+from kodi_library.ai import AIConfiguration, AISearchPlan, normalize_plan
 from kodi_library.connectors.base import Record
 
 
