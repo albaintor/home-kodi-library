@@ -125,7 +125,11 @@ class AIConfiguration:
                 {
                     "model": request.model,
                     "api_key": key,
-                    "monthly_budget_usd": (request.monthly_budget_usd if request.monthly_budget_usd is not None else value.get("monthly_budget_usd", 5.0)),
+                    "monthly_budget_usd": (
+                        request.monthly_budget_usd
+                        if request.monthly_budget_usd is not None
+                        else value.get("monthly_budget_usd", 5.0)
+                    ),
                     "embedding_model": request.embedding_model
                     or value.get("embedding_model")
                     or "text-embedding-3-small",
