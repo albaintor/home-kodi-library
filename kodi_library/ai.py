@@ -96,7 +96,7 @@ class AIConfiguration:
             return (data.get("model") or "gpt-4o-mini", key) if key else None
 
     def update(self, request: AISettingsInput) -> dict:
-        if not re.fullmatch(r"[a-zA-Z0-9_.:/-]{1,100}", request.model):
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model):
             raise ValueError("Invalid model identifier.")
         if request.api_key is not None and request.api_key and not request.api_key.strip():
             raise ValueError("The access key must not be whitespace.")
