@@ -113,11 +113,20 @@ remain available without an AI API key.
 
 ## iOS entry point
 
-The native magnifying-glass Search tab **continues to use ordinary title/FTS
-search**. At the top of that tab, the prominent **Search with AI** button
-(opens a separate conversational sheet) is the dedicated natural-language
-entry point. It remains accessible even when iOS 26 replaces its tab bar with
-the native search field; the old icon-only toolbar shortcut was unreliable.
+In iOS 26, Apple's native magnifying-glass Search tab morphs into the
+standard bottom search field. The standard SwiftUI `searchScopes` control,
+shown on search presentation, offers two scopes: **Classic** (title/FTS search)
+and **AI** (natural language). No unsupported button is injected into the
+native search field, and no AI search modal is used. The same mechanisms
+are available within the supported legacy navigation search interface.
+
+Choose AI, enter a prompt in the system search field and submit with the
+keyboard Search action. The prompt is sent to the configured language model,
+then matched using exact metadata filters and semantic similarity over episode
+and film summaries. Results, filters and conversational turns belong to
+the search tab's observable state, surviving normal navigation into a media
+detail and back. Switch to Classic without erasing the AI results, or use
+New search to explicitly start a fresh conversation.
 
 To verify server credentials on either client, save the key/models first,
 then choose **Test OpenAI connection** in the AI settings. Each of the two
