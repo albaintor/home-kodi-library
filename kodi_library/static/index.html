@@ -68,7 +68,9 @@
           <label for="ai-prompt">Recherche avec IA</label>
           <div class="ai-prompt-row"><input id="ai-prompt" type="search" maxlength="500" minlength="3" required placeholder="Ex. Films de science-fiction non vus après 2015"><button class="secondary" type="submit">✨ Rechercher</button></div>
         </form>
+        <div id="ai-chat-history" class="ai-chat-history" aria-live="polite"></div>
         <p id="ai-search-feedback" class="hint" role="status"></p>
+        <button id="ai-new-search" class="secondary" type="button">Nouvelle recherche</button>
         <div id="ai-search-results"></div>
       </section>
       <details id="filters-panel" class="filters-panel">
