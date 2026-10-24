@@ -59,6 +59,17 @@ async def _resolve_video(request, player, data):
     kodi_id = edition["metadata"].get("kodi_id")
     if type(kodi_id) is not int or kodi_id < 0:
         raise HTTPException(422, "Invalid Kodi ID. Synchronize this library.")
+    # Fast path: the catalogue already contains the canonical Kodi edition
+    # path from its last import/scan. Only server-side Kodi editions linked to
+    # this player are eligible; no client-supplied path is ever accepted.
+    # Kodi VFS independently enforces its configured shared source directories.
+    # Skipping another JSON-RPC lookup avoids an extra Kodi connection before
+    # every remote SMB/NFS media open, which is noticeable for large files.
+    known_path = edition["metadata"].get("file")
+    if isinstance(known_path, str) and known_path and len(known_path) <= 8192 and all(ord(c) >= 32 for c in known_path):
+        return known_path, edition
+
+    # Backward compatibility for older imports without a persisted file path.
     key = "movieid" if detail["kind"] == "movie" else "episodeid"
     method = (
         "VideoLibrary.GetMovieDetails" if key == "movieid" else "VideoLibrary.GetEpisodeDetails"
