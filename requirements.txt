@@ -94,3 +94,6 @@ yarl==1.25.1
 # Bonjour service publication (home-kodi-library)
 ifaddr==0.2.0
 zeroconf==0.147.0
+
+# HNSW vector search accelerator (prebuilt CPython 3.12 wheels for amd64/arm64)
+usearch==2.26.5
