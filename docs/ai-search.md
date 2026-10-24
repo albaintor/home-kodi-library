@@ -22,9 +22,10 @@ the catalogue JSON export. Remote access should use HTTPS.
 
 **Privacy**: A search transmits the user's prompt, context filters, and (when refining)
 metadata for the current candidate titles, together with the
-catalogue's available genre/format values to OpenAI. Vector indexing explicitly
-sends **titles, genres, film/series summaries and each imported episode synopsis**
-to the configured OpenAI embeddings API, in batches. Vectors are stored locally
+catalogue's available genre/format values to OpenAI. Vector indexing explicitly sends **titles, genres, film/series summaries,
+individual episode synopses, credited cast/director/composer/writer names, and
+available general/personal ratings** to the configured OpenAI embeddings API,
+in batches. Vectors are stored locally
 on the server. Do not enable this feature if transferring those descriptions
 to a third party is unacceptable. No Kodi database password or API token is
 sent as part of those requests.
@@ -57,6 +58,11 @@ Use the administrator-only **Indexer / actualiser** button in web settings,
 or **Index or refresh summaries** in iOS. The server builds an incremental
 semantic index, including individual episode plots and their parent series titles.
 It reuses unchanged vectors and deletes stale records when a full pass completes.
+A document now contains credited people grouped by function (up to 30 names
+per function) and available ratings on the 0–10 scale. A changed credit
+or rating changes its SHA-256 digest and triggers re-embedding of that work.
+This also applies to existing catalogs after upgrading: the next refresh
+incrementally rebuilds only documents with changed embedding text.
 A semantic search can also start index refresh automatically if the corpus is
 missing or has changed since the previous scan. After importing or synchronizing
 Kodi, triggering a new semantic search checks for changed episodes.
@@ -74,8 +80,9 @@ changes catalogue records, the server schedules a **debounced asynchronous**
 vector refresh. Metadata enrichment and source deletion also request a refresh.
 Kodi/import publication does not wait for embeddings; several close-together
 changes are coalesced. The existing `ai-vectors.db` hashes prevent charges for
-unchanged synopses. Watched-state or rating changes are not part of indexed
-texts, so they do not trigger unnecessary embedding calls.
+unchanged synopses. Watched-state changes do not affect embedding text. A modified general
+or personal rating now does: only that work needs a new embedding. A personal
+rating edited via the API requests an asynchronous refresh.
 
 An administrator can set **Monthly OpenAI spending cap (USD)** in the Web or
 iOS AI settings (default **$5.00/month**; **$0** blocks all paid calls).
@@ -177,7 +184,13 @@ mobile data-contract version.
 ## Ranking and episode results
 
 A structured plan is validated server-side; the model never supplies executable
-SQL. Semantic cosine similarity and SQLite FTS5 title/plot matches are blended,
+SQL. Named actors, directors, composers and writers are matched by their
+**actual credit category** using a dedicated indexed SQLite lookup, not
+only by semantic similarity. The extracted `person_name` and
+`person_role` are optional and can be combined with plot constraints.
+Likewise, `rating_min` filters the general rating and
+`user_rating_min` filters the personal rating numerically in SQLite;
+missing ratings never satisfy minimum-note filters. Semantic cosine similarity and SQLite FTS5 title/plot matches are blended,
 then exact year, genre, format, rating and watch constraints are applied through
 the existing catalogue database. Only titles already imported into the server
 can be returned. A matching episode is shown as a result under its parent show,
@@ -185,7 +198,15 @@ with season/episode number and a synopsis excerpt; the original episode ID is
 retained for navigation.
 
 The semantic score is approximate and reflects the quality of imported
-synopses. A lexical title/name request uses FTS5; plot/theme queries require an
+synopses and credited metadata. Search scoring is run outside the FastAPI
+event loop. SQLite `ai-vectors.db` remains the authoritative index:
+for fewer than 2,000 eligible vectors, a cached NumPy matrix performs exact
+cosine search. From 2,000 vectors, USearch provides an in-memory **HNSW ANN**
+index (cosine, float32). The graph is lazily recreated from SQLite when
+the indexed hashes or scoped document selection change, or after a server restart;
+it need not be backed up. If NumPy/USearch is unavailable, the code falls
+back to exact cosine ranking. HNSW is approximate and can miss some
+low-ranked neighbors; role/rating constraints remain exact SQLite predicates. A lexical title/name request uses FTS5; plot/theme queries require an
 indexed embedding. Initial results show at most 60 works; the index is refreshed
 incrementally. The server limits AI requests to 10/minute per client IP and
 3 concurrent upstream searches.
