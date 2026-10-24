@@ -125,8 +125,12 @@ async def create_local_stream(
 async def stream_local_video(player_id: str, ticket: str, filename: str, request: Request):
     """Proxy byte-ranged Kodi /vfs HTTP without holding the entire movie in RAM."""
     item = _TICKETS.get(ticket)
-    if (not item or item["player_id"] != player_id or
-            item["filename"] != filename or item["expires"] <= time.monotonic()):
+    if (
+        not item
+        or item["player_id"] != player_id
+        or item["filename"] != filename
+        or item["expires"] <= time.monotonic()
+    ):
         raise HTTPException(403, "Stream ticket is invalid or expired.")
     player = _lookup(request, player_id)
     range_header = request.headers.get("range")
