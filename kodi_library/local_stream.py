@@ -108,7 +108,7 @@ async def create_local_stream(
     started = time.monotonic()
     file_path, edition = await _resolve_video(request, player, data)
     resolved_ms = round((time.monotonic() - started) * 1000, 1)
-    LOG.info("Kodi stream ticket resolved player=%s jsonrpc_ms=%.1f", player_id, resolved_ms)
+    LOG.info("Kodi stream ticket resolved player=%s resolve_ms=%.1f", player_id, resolved_ms)
     current = time.monotonic()
     for old, value in list(_TICKETS.items()):
         if value["expires"] <= current:
