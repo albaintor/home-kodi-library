@@ -20,7 +20,7 @@ def test_public_discovery_is_minimal_and_pairing_is_admin_only(client, admin):
         "server_version": __version__,
         "data_model_version": DATA_MODEL_VERSION,
         "mobile_compatibility": {"min_contract": 1, "max_contract": 1},
-        "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results"],
+        "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results", "kodi_local_stream"],
     }
     assert client.post("/api/v1/pairing/start", json={}).status_code == 401
     assert (
