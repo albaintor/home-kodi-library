@@ -1729,6 +1729,14 @@ document.addEventListener('click',async event=>{
     }
   }catch(e){if(result){result.textContent=e.message;result.className='error-text play-status';}if(button.dataset.sync||button.dataset.scanKodi){const status=$('job-status');if(status){status.hidden=false;status.textContent='Échec : '+e.message;}}toast(e.message);}finally{button.disabled=false;}
 });
+$('play-dialog')?.addEventListener('close',()=>{
+  const video=$('browser-video');
+  if(video){
+    video.pause();
+    video.removeAttribute('src');
+    video.load();
+  }
+});
 $('connections-button').addEventListener('click',connections);
 $('lists-button').addEventListener('click',()=>openLists());
 $('create-list-button').addEventListener('click',()=>openLists(state.listId,{create:true}));
