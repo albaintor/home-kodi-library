@@ -159,18 +159,27 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     except httpx.HTTPError as exc:
         await client.aclose()
         raise HTTPException(502, "Cannot reach Kodi's VFS HTTP endpoint.") from exc
-    if upstream.status_code not in (200, 206, 416):
+    if upstream.status_code not in (200, 206):
         code = upstream.status_code
         await upstream.aclose()
         await client.aclose()
         raise HTTPException(502, f"Kodi VFS returned HTTP {code}.")
+    # Never silently present a full-file response as the requested nonzero
+    # range. AVPlayer would interpret these bytes at the wrong offset.
+    if range_header and upstream.status_code == 200:
+        requested_start = int(range_header[6:].split("-", 1)[0])
+        if requested_start > 0:
+            await upstream.aclose()
+            await client.aclose()
+            raise HTTPException(502, "Kodi VFS does not support seeking (HTTP byte ranges).")
     exposed = {
         key: value
         for key, value in upstream.headers.items()
         if key.lower()
         in {"content-length", "content-range", "accept-ranges", "etag", "last-modified"}
     }
-    exposed["Accept-Ranges"] = "bytes"
+    exposed["Accept-Ranges"] = "bytes" if upstream.status_code == 206 else "none"
+    exposed["X-Kodi-VFS-Ranges"] = "supported" if upstream.status_code == 206 else "unconfirmed"
     exposed["Cache-Control"] = "private, no-store"
     exposed["Referrer-Policy"] = "no-referrer"
     media_type = mimetypes.guess_type(item["file"])[0] or upstream.headers.get(
