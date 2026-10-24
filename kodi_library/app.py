@@ -278,7 +278,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "mobile_compatibility": mobile_compatibility(),
             # Additive capabilities allow newer mobile clients to avoid calling
             # routes missing on an older, otherwise contract-compatible NAS.
-            "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results", "kodi_local_stream"],
+            "capabilities": [
+                "ai_search",
+                "bulk_list_add",
+                "ai_refine_results",
+                "kodi_local_stream",
+            ],
         }
 
     @app.post(
