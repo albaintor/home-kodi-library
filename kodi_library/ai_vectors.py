@@ -110,7 +110,10 @@ class SemanticIndex:
         return indexed
 
     def rank(
-        self, documents: list[dict], model: str, query: list[float],
+        self,
+        documents: list[dict],
+        model: str,
+        query: list[float],
         limit: int = DEFAULT_RANK_LIMIT,
     ) -> list[tuple[str, float]]:
         """Exact SIMD ranking for small corpora; HNSW for large ones.
@@ -129,9 +132,7 @@ class SemanticIndex:
             with self._connect() as conn:
                 valid = sorted(
                     (row["id"], row["hash"])
-                    for row in conn.execute(
-                        "SELECT id,hash FROM vectors WHERE model=?", (model,)
-                    )
+                    for row in conn.execute("SELECT id,hash FROM vectors WHERE model=?", (model,))
                     if expected.get(row["id"]) == row["hash"]
                 )
             if not valid:
@@ -173,9 +174,14 @@ class SemanticIndex:
                     if len(ids) >= ANN_MIN_DOCUMENTS:
                         try:
                             from usearch.index import Index
+
                             index = Index(
-                                ndim=len(query), metric="cos", dtype="f32",
-                                connectivity=16, expansion_add=128, expansion_search=128,
+                                ndim=len(query),
+                                metric="cos",
+                                dtype="f32",
+                                connectivity=16,
+                                expansion_add=128,
+                                expansion_search=128,
                             )
                             index.add(np.arange(len(ids), dtype=np.uint64), matrix, threads=2)
                             cache["ann"] = index
@@ -191,13 +197,16 @@ class SemanticIndex:
             count = min(limit, len(ids))
             if cache["backend"] == "hnsw":
                 import numpy as np
+
                 matches = cache["ann"].search(np.asarray(query, dtype=np.float32), count)
                 return sorted(
                     ((ids[int(match.key)], 1.0 - float(match.distance)) for match in matches),
-                    key=lambda pair: pair[1], reverse=True,
+                    key=lambda pair: pair[1],
+                    reverse=True,
                 )[:count]
             if cache["backend"] == "numpy":
                 import numpy as np
+
                 q = np.asarray(query, dtype=np.float32) / query_norm
                 scores = cache["matrix"] @ q
                 order = np.argsort(scores)[::-1][:count]
