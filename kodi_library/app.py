@@ -275,7 +275,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "mobile_compatibility": mobile_compatibility(),
             # Additive capabilities allow newer mobile clients to avoid calling
             # routes missing on an older, otherwise contract-compatible NAS.
-            "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results"],
+            "capabilities": ["ai_search", "bulk_list_add", "ai_refine_results", "kodi_local_stream"],
         }
 
     @app.post(
@@ -1757,5 +1757,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .remote import router as remote_router
 
     app.include_router(remote_router)
+
+    # Kodi credentials remain on this server; native players receive only
+    # an expiring HTTP byte-range streaming ticket.
+    from .local_stream import router as local_stream_router
+
+    app.include_router(local_stream_router)
 
     return app
