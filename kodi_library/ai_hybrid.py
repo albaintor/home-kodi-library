@@ -1,5 +1,6 @@
 """Combine server-authoritative structured predicates, FTS5 and semantic episode hits."""
 
+import asyncio
 from collections import defaultdict
 
 from .ai_rerank import rerank_candidates
@@ -19,7 +20,7 @@ async def hybrid_page(
 ) -> dict:
     """Return only existing catalogue entries. Episodes are projected onto their TV shows."""
     excluded = exclude_ids or set()
-    documents = store.ai_documents()
+    documents = await asyncio.to_thread(store.ai_documents)
     by_id = {doc["id"]: doc for doc in documents}
     indexed = index.status(documents, embedding_model)
     params = {
@@ -30,12 +31,24 @@ async def hybrid_page(
         "year_min": plan.year_min,
         "year_max": plan.year_max,
         "rating_min": plan.rating_min,
+        "person_name": plan.person_name,
+        "person_role": plan.person_role,
     }
     semantic = []
     note = None
     if plan.semantic_query and indexed["indexed"]:
         query_vector = (await embed([plan.semantic_query], embedding_model, key))[0]
-        semantic = index.rank(documents, embedding_model, query_vector)
+        # Apply narrow named-credit constraints before ranking so rare
+        # composers/directors do not disappear from the global top-400.
+        matching_docs = documents
+        if plan.person_name or plan.person_role:
+            selected = await asyncio.to_thread(
+                store.ai_person_ids, plan.person_name, plan.person_role
+            )
+            matching_docs = [doc for doc in documents if doc["id"] in selected]
+        semantic = await asyncio.to_thread(
+            index.rank, matching_docs, embedding_model, query_vector
+        )
     elif plan.semantic_query:
         note = "Semantic index incomplete; results may be limited until indexing finishes."
 
@@ -110,6 +123,13 @@ async def hybrid_page(
                 "kind": doc["kind"],
                 "year": item.get("year"),
                 "genres": item.get("genres", []),
+                "credits": [
+                    {"category": role, "name": name}
+                    for role, name in doc.get("credits", [])
+                    if role in ("cast", "director", "composer", "writer")
+                ][:60],
+                "rating": doc.get("rating"),
+                "user_rating": doc.get("user_rating"),
                 "original_title": item.get("original_title"),
                 "synopsis": doc["plot"][:850],
                 "matched_episodes": [
