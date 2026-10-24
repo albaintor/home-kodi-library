@@ -123,3 +123,22 @@ exporting XML does not upload separate image files.
 The parser fixtures in `tests/fixtures/filmotech.xml` and `mymovies.xml` are
 representative test documents. Validate an export from your application version
 before replacing a large collection; provider-specific XML variants may differ.
+
+
+### Automatic Kodi/MariaDB catalogue refresh
+
+The server imports an empty catalogue once when possible. Later, opening
+the web app or connecting from iOS requests a `/api/v1/sources/sync-stale`
+check. A successful Kodi-source import is eligible for automatic refresh only
+after 24 hours.
+
+Automatic imports also have a **durable 24-hour attempt cooldown**. If Kodi
+or the configured MariaDB fallback is unavailable, the failed job's
+`created_at` in the persistent jobs table prevents repeated imports on
+every app or server restart. Manual **Synchronize** and **Scan Kodi**
+actions are unaffected. The server does not initiate a Kodi library scan as
+part of the automatic refresh.
+
+A successful import updates the source's `last_sync`. The jobs feed shows
+the latest attempt and any failure; this can be used to distinguish a simple
+startup freshness check from a full import.
