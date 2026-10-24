@@ -2096,6 +2096,21 @@ class Store:
             return start
         return start
 
+    def last_kodi_sync_attempt(self, source_id: str) -> str | None:
+        """Last durable SQL/Kodi import attempt, including failed jobs.
+
+        Auto-refresh throttling must survive app and server restarts. A source
+        that is offline must not trigger another full catalogue synchronization
+        on every app launch, even though its last_sync remains stale.
+        """
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT created_at FROM jobs WHERE source_id=? AND operation='kodi_sync' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (source_id,),
+            ).fetchone()
+            return row[0] if row else None
+
     def jobs(self, *, limit: int = 30) -> list[dict[str, Any]]:
         """Durable feed of manual and automatically scheduled jobs."""
         with self.connect() as conn:
