@@ -953,6 +953,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             }
             if changes:
                 await asyncio.to_thread(store.update_personal, media_id, changes)
+                if "user_rating" in changes:
+                    # Personal ratings are embedded; watch-state-only edits are not.
+                    start_ai_index()
             relevant_source_ids = {edition["source_id"] for edition in detail["editions"]}
             sources = [
                 await asyncio.to_thread(store.source, source_id, private=True)
