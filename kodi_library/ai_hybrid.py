@@ -31,6 +31,7 @@ async def hybrid_page(
         "year_min": plan.year_min,
         "year_max": plan.year_max,
         "rating_min": plan.rating_min,
+        "user_rating_min": plan.user_rating_min,
         "person_name": plan.person_name,
         "person_role": plan.person_role,
     }
