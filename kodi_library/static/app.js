@@ -568,7 +568,7 @@ function playbackMarkup(item) {
   let controls;
   if(state.role!=='admin')controls='<p class="hint">Un accès administrateur est nécessaire pour lancer la lecture.</p>';
   else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier.</p><button class="secondary" data-action="connections">Configurer une instance Kodi</button>';
-  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
+  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><div id="browser-video-wrapper" hidden><video id="browser-video" playsinline controls preload="metadata" style="display:block;width:100%;max-height:65vh;background:#000;border-radius:10px"></video><p class="hint">Lecture HTML5 : MP4/H.264 ou HEVC selon le navigateur. Les fichiers MKV et les pistes audio spécialisées peuvent ne pas être pris en charge.</p></div><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
   return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Kodi lit le fichier avec ses propres accès au NAS.</p>`;
 }
 function savePlaybackDraft() {
@@ -588,6 +588,14 @@ function openPlayback() {
     $('play-resume').checked=draft.resume;
   }
   showDialog('play-dialog');
+  const video=$('browser-video');
+  if(video)video.addEventListener('error',()=>{
+    const error=video.error;
+    const reason=error?.code===4
+      ? 'Format ou codec non pris en charge par ce navigateur. Essayez la lecture sur Kodi.'
+      : 'Lecture impossible dans le navigateur (code '+(error?.code||'inconnu')+').';
+    if($('play-status'))$('play-status').textContent=reason;
+  });
 }
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
@@ -1619,9 +1627,9 @@ document.addEventListener('click',async event=>{
     const target=$('writeback-source-history');target.hidden=true;target.replaceChildren();return;
   }
   if(button.dataset.quick) {state.recent=button.dataset.quick==='recent'; $('watch-status').value=['all','recent'].includes(button.dataset.quick)?'':button.dataset.quick;  if(state.recent){$('sort').value='date_added';state.order='desc';$('sort-order').textContent='↓ Décroissant';}loadMedia();}
-  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.addPlayerSource&&!button.dataset.configureMymovies&&!button.dataset.scanKodi&&!button.dataset.writebackHistory&&!button.dataset.testPlayer&&!['play-button','test-tmdb'].includes(button.id))return;
-  const result=button.id==='play-button'?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
-  if(result){result.className='hint play-status';result.textContent=button.id==='play-button'?'Envoi de la lecture à Kodi…':'Vérification de la connexion…';}
+  if(!button.dataset.testConnection&&!button.dataset.sync&&!button.dataset.removeSource&&!button.dataset.removePlayer&&!button.dataset.editSource&&!button.dataset.editPlayer&&!button.dataset.addPlayerSource&&!button.dataset.configureMymovies&&!button.dataset.scanKodi&&!button.dataset.writebackHistory&&!button.dataset.testPlayer&&!['play-button','play-browser','test-tmdb'].includes(button.id))return;
+  const result=['play-button','play-browser'].includes(button.id)?$('play-status'):button.id==='test-tmdb'?$('tmdb-test-result'):button.dataset.testPlayer?$(`player-result-${button.dataset.testPlayer}`):null;
+  if(result){result.className='hint play-status';result.textContent=button.id==='play-button'?'Envoi de la lecture à Kodi…':button.id==='play-browser'?'Chargement du flux vidéo via Kodi…':'Vérification de la connexion…';}
   try {
     if(button.dataset.testConnection) {const form=$(button.dataset.testConnection); const fields=['host','port',...(form.getAttribute('id')==='kodi-form'?['username']:[])];if(fields.every(name=>form.elements.namedItem(name).reportValidity())) await testConnection(form);}
     if(button.dataset.sync) {button.disabled=true;toast('Synchronisation Kodi demandée (JSON-RPC, ou MariaDB si indisponible).');await pollJob(await api(`sources/${button.dataset.sync}/sync`,{method:'POST'}));}
@@ -1669,6 +1677,40 @@ document.addEventListener('click',async event=>{
       if(!p)throw new Error('Choisissez une instance Kodi.');
       const tested=await api('connections/kodi/test',{method:'POST',body:JSON.stringify({player_id:p.id,host:p.host,port:p.port,username:p.username,tls:p.tls})});
       result.textContent=tested.message;result.className='success-text play-status';
+    }
+    if(button.id==='play-browser') {
+      savePlaybackDraft();
+      button.disabled=true;
+      const playerId=$('play-target').value;
+      const ticket=await api(`players/${encodeURIComponent(playerId)}/local-play`,{
+        method:'POST',
+        body:JSON.stringify({
+          media_id:state.detail.id,
+          edition_id:$('play-edition').value||null,
+          resume:$('play-resume').checked
+        })
+      });
+      if(typeof ticket.path!=='string' ||
+         !ticket.path.startsWith(`/api/v1/players/${playerId}/local-stream/`)) {
+        throw new Error('Le serveur a renvoyé une URL de lecture invalide.');
+      }
+      const video=$('browser-video');
+      const wrapper=$('browser-video-wrapper');
+      if(!video||!wrapper)throw new Error('Lecteur HTML5 indisponible.');
+      const videoURL=url(ticket.path);
+      if(new URL(videoURL).origin!==location.origin)throw new Error('URL de streaming non autorisée.');
+      video.pause();
+      video.src=videoURL;
+      wrapper.hidden=false;
+      video.onloadedmetadata=()=>{
+        if($('play-resume')?.checked && Number(ticket.resume_seconds)>0) {
+          video.currentTime=Number(ticket.resume_seconds);
+        }
+      };
+      video.load();
+      try {await video.play();result.textContent='Lecture dans le navigateur.';}
+      catch(e) {result.textContent='Appuyez sur ▶ dans le lecteur. Si le fichier est incompatible, utilisez Kodi.';}
+      return;
     }
     if(button.id==='play-button') {
       savePlaybackDraft();
