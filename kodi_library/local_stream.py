@@ -9,7 +9,7 @@ import re
 import secrets
 import time
 from collections import OrderedDict
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -91,25 +91,34 @@ async def create_local_stream(
     for old, value in list(_TICKETS.items()):
         if value["expires"] <= current:
             _TICKETS.pop(old, None)
+    # Include a file extension in the URL so AVFoundation can recognize
+    # the container even though the opaque capability token hides the filename.
+    suffix = urlsplit(file_path).path.rsplit("/", 1)[-1].rsplit(".", 1)
+    extension = suffix[-1].lower() if len(suffix) == 2 else "mp4"
+    if extension not in {"mp4", "m4v", "mov", "mkv", "avi", "ts", "m2ts"}:
+        extension = "mp4"
+    filename = f"video.{extension}"
     token = secrets.token_urlsafe(40)
     _TICKETS[token] = {
-        "player_id": player_id, "file": file_path, "expires": current + _TICKET_TTL,
+        "player_id": player_id, "file": file_path, "filename": filename,
+        "expires": current + _TICKET_TTL,
     }
     while len(_TICKETS) > _TICKET_LIMIT:
         _TICKETS.popitem(last=False)
     return {
-        "path": f"/api/v1/players/{player_id}/local-stream/{token}",
+        "path": f"/api/v1/players/{player_id}/local-stream/{token}/{filename}",
         "edition_id": edition["id"],
         "resume_seconds": edition.get("resume_seconds") or 0,
         "expires_in": _TICKET_TTL,
     }
 
 
-@router.api_route("/{player_id}/local-stream/{ticket}", methods=["GET", "HEAD"])
-async def stream_local_video(player_id: str, ticket: str, request: Request):
+@router.api_route("/{player_id}/local-stream/{ticket}/{filename}", methods=["GET", "HEAD"])
+async def stream_local_video(player_id: str, ticket: str, filename: str, request: Request):
     """Proxy byte-ranged Kodi /vfs HTTP without holding the entire movie in RAM."""
     item = _TICKETS.get(ticket)
-    if not item or item["player_id"] != player_id or item["expires"] <= time.monotonic():
+    if (not item or item["player_id"] != player_id or
+            item["filename"] != filename or item["expires"] <= time.monotonic()):
         raise HTTPException(403, "Stream ticket is invalid or expired.")
     player = _lookup(request, player_id)
     range_header = request.headers.get("range")
