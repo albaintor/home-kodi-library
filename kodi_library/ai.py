@@ -25,6 +25,9 @@ SCHEMA = {
         "year_min": {"type": ["integer", "null"]},
         "year_max": {"type": ["integer", "null"]},
         "rating_min": {"type": ["number", "null"]},
+        "user_rating_min": {"type": ["number", "null"]},
+        "person_name": {"type": ["string", "null"]},
+        "person_role": {"type": ["string", "null"]},
         "keywords": {"type": "string"},
         "semantic_query": {"type": "string"},
         "assistant_message": {"type": "string"},
@@ -37,6 +40,9 @@ SCHEMA = {
         "year_min",
         "year_max",
         "rating_min",
+        "user_rating_min",
+        "person_name",
+        "person_role",
         "keywords",
         "semantic_query",
         "assistant_message",
@@ -70,6 +76,9 @@ class AISearchPlan(BaseModel):
     year_min: int | None = None
     year_max: int | None = None
     rating_min: float | None = None
+    user_rating_min: float | None = None
+    person_name: str | None = None
+    person_role: str | None = None
     keywords: str = ""
     semantic_query: str = ""
     assistant_message: str = ""
@@ -169,8 +178,13 @@ def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
     for field in ("year_min", "year_max"):
         if values[field] is not None and not 1800 <= values[field] <= 2200:
             values[field] = None
-    if values["rating_min"] is not None and not 0 <= values["rating_min"] <= 10:
-        values["rating_min"] = None
+    for field in ("rating_min", "user_rating_min"):
+        if values[field] is not None and not 0 <= values[field] <= 10:
+            values[field] = None
+    if values["person_role"] not in (None, "cast", "director", "composer", "writer"):
+        values["person_role"] = None
+    if values["person_name"] is not None:
+        values["person_name"] = values["person_name"].strip()[:120] or None
     values["keywords"] = values["keywords"].strip()[:120]
     values["semantic_query"] = values["semantic_query"].strip()[:300]
     values["assistant_message"] = values["assistant_message"].strip()[:300]
@@ -190,14 +204,21 @@ async def interpret_prompt(
         "An artistic/director/style reference is a strict relevance requirement, not "
         "just a loose theme. Prefer precision over recall and avoid loosely related movies. "
         "Do not invent a format such as HDR unless provided. "
-        "Rating is on a 0-10 scale. "
+        "Rating is on a 0-10 scale. Use rating_min for a minimum general "
+        "rating and user_rating_min for a minimum personal rating. "
+        "Extract a named actor, director, film composer or screenwriter into "
+        "person_name and set person_role to cast, director, composer or writer. "
+        "Use person_role=null when the credit is unspecified. "
+        "For searches about a named person's credits, do not place their name "
+        "in semantic_query or keywords unless an additional plot/theme is requested. "
+        "Never confuse a film score composer with its cast. "
         "Set kind=episode for episode-specific requests; tvshow for series requests. "
         "Return semantic_query as a short searchable description of the plot, theme, "
         "atmosphere, or character requested, excluding constraints like year or format. "
         "For purely structured searches without a theme, semantic_query must be empty. "
         "Write assistant_message as one brief explanatory sentence in the user's language, "
         "without claiming that any particular matching film exists. "
-        "Set keywords ONLY for an explicitly named title, person, or unique quoted phrase "
+        "Set keywords ONLY for an explicitly named title or unique quoted phrase "
         "that can be matched lexically in title/synopsis/cast; not for broad plots, moods or concepts. "
         "Never invent film titles. If previous filters are supplied, this is a conversational "
         "refinement: preserve previous fields and semantic query unless the new user "
