@@ -137,6 +137,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await asyncio.to_thread(store.initialize)
         await asyncio.to_thread(auth.load_devices)
         await sync.bootstrap_empty_catalogue()
+        # Reconcile the persisted vector index on every server start. Scheduling
+        # is immediate and non-blocking; unchanged documents cost no API calls.
+        start_ai_index(immediate=True)
         discovery = None
         if settings.discovery_enabled:
             from .discovery import BonjourPublisher
@@ -390,20 +393,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 _LOG.warning("AI indexing failed: %s", type(exc).__name__)
                 ai_index_error = "Could not build vector index. Check API key and embedding model."
 
-    async def run_ai_index_debounced():
-        # Coalesce Kodi scans and concurrent XML imports; never delay snapshot publication.
+    async def run_ai_index_debounced(*, immediate: bool = False):
+        # Startup reconciliation begins immediately. Later catalogue changes
+        # retain the debounce to coalesce imports and Kodi synchronizations.
         while ai_index_dirty.is_set():
             ai_index_dirty.clear()
-            await asyncio.sleep(3)
+            if not immediate:
+                await asyncio.sleep(3)
+            immediate = False
             await run_ai_index()
 
-    def start_ai_index():
+    def start_ai_index(*, immediate: bool = False):
         nonlocal ai_index_task
         if not ai_config.credentials():
             return
         ai_index_dirty.set()
         if ai_index_task is None or ai_index_task.done():
-            ai_index_task = asyncio.create_task(run_ai_index_debounced())
+            ai_index_task = asyncio.create_task(run_ai_index_debounced(immediate=immediate))
 
     sync.on_catalog_changed = start_ai_index
 
