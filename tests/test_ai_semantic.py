@@ -172,7 +172,6 @@ def test_style_search_excludes_unrelated_barbie_match(store, monkeypatch, tmp_pa
     assert len(results["relevance_reasons"]) == 1
 
 
-
 def test_roles_and_ratings_are_embedded_and_filterable(store):
     source = store.save_source({"name": "Credited films", "type": "clz"})
     store.apply_snapshot(
@@ -185,11 +184,13 @@ def test_roles_and_ratings_are_embedded_and_filterable(store):
                 plot="Une expédition dans l'espace.",
                 rating=8.5,
                 user_rating=9,
-                metadata={"people": [
-                    {"name": "Alice Martin", "category": "cast"},
-                    {"name": "Claire Moreau", "category": "director"},
-                    {"name": "Jean Dupont", "category": "composer"},
-                ]},
+                metadata={
+                    "people": [
+                        {"name": "Alice Martin", "category": "cast"},
+                        {"name": "Claire Moreau", "category": "director"},
+                        {"name": "Jean Dupont", "category": "composer"},
+                    ]
+                },
             ),
             Record(
                 "two",
@@ -197,10 +198,12 @@ def test_roles_and_ratings_are_embedded_and_filterable(store):
                 "Le retour",
                 rating=6,
                 user_rating=7,
-                metadata={"people": [
-                    {"name": "Jean Dupont", "category": "cast"},
-                    {"name": "Claire Moreau", "category": "director"},
-                ]},
+                metadata={
+                    "people": [
+                        {"name": "Jean Dupont", "category": "cast"},
+                        {"name": "Claire Moreau", "category": "director"},
+                    ]
+                },
             ),
         ],
     )
@@ -212,21 +215,35 @@ def test_roles_and_ratings_are_embedded_and_filterable(store):
     assert "Note personnelle: 9.0/10" in docs["Le voyage"]["text"]
     expected = docs["Le voyage"]["id"]
     assert store.ai_person_ids("Jean Dupont", "composer") == {expected}
-    assert [item["id"] for item in store.media(
-        person_name="Jean Dupont", person_role="composer",
-        rating_min=8, user_rating_min=8,
-    )["items"]] == [expected]
+    assert [
+        item["id"]
+        for item in store.media(
+            person_name="Jean Dupont",
+            person_role="composer",
+            rating_min=8,
+            user_rating_min=8,
+        )["items"]
+    ] == [expected]
     assert store.media(person_name="Jean Dupont", person_role="cast", rating_min=8)["total"] == 0
-    assert store.media(person_name="Jean Dupont", person_role="composer", user_rating_min=9.5)["total"] == 0
+    assert (
+        store.media(person_name="Jean Dupont", person_role="composer", user_rating_min=9.5)["total"]
+        == 0
+    )
 
 
 def test_credit_role_migration_rebuilds_from_existing_records(store):
     source = store.save_source({"name": "Old films", "type": "clz"})
-    store.apply_snapshot(source["id"], [
-        Record("old", "movie", "Ancien film", metadata={
-            "people": [{"name": "Claude Durand", "category": "composer"}]
-        })
-    ])
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "old",
+                "movie",
+                "Ancien film",
+                metadata={"people": [{"name": "Claude Durand", "category": "composer"}]},
+            )
+        ],
+    )
     with store.connect() as conn:
         conn.execute("DELETE FROM work_person_roles")
         conn.execute("DELETE FROM catalogue_meta WHERE key='person_roles_index_v1'")
