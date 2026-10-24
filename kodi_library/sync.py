@@ -291,6 +291,36 @@ class SyncManager:
                             continue
                     except (TypeError, ValueError, OverflowError):
                         pass
+                # Last successful publication can stay stale when Kodi is
+                # offline or a MariaDB import fails. A durable attempt cooldown
+                # prevents repeated automatic imports on every web/iOS launch.
+                # The explicit /sources/{id}/sync action bypasses this limit.
+                last_attempt = await asyncio.to_thread(
+                    self.store.last_kodi_sync_attempt, source["id"]
+                )
+                if last_attempt:
+                    try:
+                        attempted = datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))
+                        if attempted.tzinfo is None:
+                            attempted = attempted.replace(tzinfo=UTC)
+                        if attempted.timestamp() >= cutoff:
+                            continue
+                    except (TypeError, ValueError, OverflowError):
+                        pass
+                # Auto-import on an empty catalogue must also be bounded
+                # across container restarts if Kodi is repeatedly unavailable.
+                last_attempt = await asyncio.to_thread(
+                    self.store.last_kodi_sync_attempt, source["id"]
+                )
+                if last_attempt:
+                    try:
+                        attempt = datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))
+                        if attempt.tzinfo is None:
+                            attempt = attempt.replace(tzinfo=UTC)
+                        if (datetime.now(UTC) - attempt).total_seconds() < 24 * 60 * 60:
+                            continue
+                    except (TypeError, ValueError, OverflowError):
+                        pass
                 try:
                     created.append(await self.submit(source["id"]))
                 except (BusyError, ValueError):
