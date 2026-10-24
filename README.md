@@ -48,11 +48,14 @@ first display. Strict semantic verification filters unrelated style matches.
 
 On the Web and iOS, an administrator can select a language model and embeddings
 model, securely save the OpenAI key on the server, and **test both connections**
-independently. Indexed film, series and episode synopses power incremental
-semantic retrieval, including matched episode season/number and plot excerpts.
+independently. Indexed film, series and episode synopses and credited people power incremental
+semantic retrieval, including role-specific cast/director/composer searches,
+numeric rating filters, and matched episode season/number and plot excerpts.
+A cached in-memory HNSW index accelerates large vector collections.
 AI is entirely optional; no key or indexing is needed for ordinary browsing.
 
-OpenAI receives the query and, during indexing, title/plot metadata to produce
+OpenAI receives the query and, during indexing, title/genre/plot metadata,
+credited actors/directors/composers/writers and available ratings to produce
 embeddings; the index and credentials remain on the self-hosted server. See
 [AI search setup, data privacy and API endpoints](docs/ai-search.md).
 
