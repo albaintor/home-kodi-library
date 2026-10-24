@@ -3,6 +3,7 @@
 Kodi credentials and network-share credentials never leave the NAS. Streams
 are byte ranges: a 24 GB movie is never downloaded into server memory.
 """
+
 import asyncio
 import mimetypes
 import re
@@ -43,7 +44,8 @@ async def _resolve_video(request, player, data):
     if not detail or detail["kind"] not in ("movie", "episode"):
         raise HTTPException(404, "No playable Kodi movie or episode.")
     editions = [
-        item for item in detail["editions"]
+        item
+        for item in detail["editions"]
         if item["source_id"] == player["source_id"] and item["source_type"] == "kodi"
     ]
     if data.edition_id:
@@ -56,7 +58,9 @@ async def _resolve_video(request, player, data):
     if type(kodi_id) is not int or kodi_id < 0:
         raise HTTPException(422, "Invalid Kodi ID. Synchronize this library.")
     key = "movieid" if detail["kind"] == "movie" else "episodeid"
-    method = "VideoLibrary.GetMovieDetails" if key == "movieid" else "VideoLibrary.GetEpisodeDetails"
+    method = (
+        "VideoLibrary.GetMovieDetails" if key == "movieid" else "VideoLibrary.GetEpisodeDetails"
+    )
     result_key = "moviedetails" if key == "movieid" else "episodedetails"
     try:
         async with connection(player["config"]) as rpc:
@@ -67,7 +71,9 @@ async def _resolve_video(request, player, data):
     if not isinstance(item, dict) or not item:
         raise HTTPException(409, "Kodi no longer has this media ID. Synchronize the library.")
     remote_ids = identifiers(item.get("uniqueid") or {})
-    if any(k in remote_ids and remote_ids[k] != value for k, value in edition["identifiers"].items()):
+    if any(
+        k in remote_ids and remote_ids[k] != value for k, value in edition["identifiers"].items()
+    ):
         raise HTTPException(409, "Kodi library identity differs from the catalogue.")
     # Honor the explicit movie-version file; otherwise resolve live through Kodi.
     path = (
@@ -100,7 +106,9 @@ async def create_local_stream(
     filename = f"video.{extension}"
     token = secrets.token_urlsafe(40)
     _TICKETS[token] = {
-        "player_id": player_id, "file": file_path, "filename": filename,
+        "player_id": player_id,
+        "file": file_path,
+        "filename": filename,
         "expires": current + _TICKET_TTL,
     }
     while len(_TICKETS) > _TICKET_LIMIT:
@@ -127,13 +135,12 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
     config = player["config"]
-    auth = (
-        (config["username"], config.get("password") or "")
-        if config.get("username") else None
-    )
+    auth = (config["username"], config.get("password") or "") if config.get("username") else None
     client = httpx.AsyncClient(
         timeout=httpx.Timeout(connect=8, read=40, write=8, pool=8),
-        auth=auth, follow_redirects=False, trust_env=False,
+        auth=auth,
+        follow_redirects=False,
+        trust_env=False,
     )
     headers = {"Accept-Encoding": "identity"}
     if range_header:
@@ -154,8 +161,10 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
         await client.aclose()
         raise HTTPException(502, f"Kodi VFS returned HTTP {code}.")
     exposed = {
-        key: value for key, value in upstream.headers.items()
-        if key.lower() in {"content-length", "content-range", "accept-ranges", "etag", "last-modified"}
+        key: value
+        for key, value in upstream.headers.items()
+        if key.lower()
+        in {"content-length", "content-range", "accept-ranges", "etag", "last-modified"}
     }
     exposed["Accept-Ranges"] = "bytes"
     exposed["Cache-Control"] = "private, no-store"
@@ -183,6 +192,8 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
             await client.aclose()
 
     return StreamingResponse(
-        chunks(), status_code=upstream.status_code, headers=exposed,
+        chunks(),
+        status_code=upstream.status_code,
+        headers=exposed,
         media_type=media_type,
     )
