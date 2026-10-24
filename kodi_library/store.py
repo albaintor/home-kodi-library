@@ -180,6 +180,7 @@ def person_names(work_id: str, members: Any) -> list[tuple[str, str, str, str]]:
         )
     return credits
 
+
 def person_roles(work_id: str, members: Any) -> list[tuple[str, str, str]]:
     """Extract normalized names and canonical credit categories."""
     if not isinstance(members, list):
@@ -192,7 +193,9 @@ def person_roles(work_id: str, members: Any) -> list[tuple[str, str, str]]:
         if not name:
             continue
         role = str(member.get("category") or "")
-        role = credit_category(role if role not in ("crew", "") else str(member.get("role") or role))
+        role = credit_category(
+            role if role not in ("crew", "") else str(member.get("role") or role)
+        )
         result.append((work_id, name, role))
     return result
 
@@ -302,8 +305,11 @@ class Store:
                     if isinstance(directors, str):
                         conn.executemany(
                             "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
-                            ((record["work_id"], fold(name.strip()), "director")
-                             for name in directors.split(" / ") if name.strip()),
+                            (
+                                (record["work_id"], fold(name.strip()), "director")
+                                for name in directors.split(" / ")
+                                if name.strip()
+                            ),
                         )
                 for record in conn.execute("SELECT work_id,payload FROM enrichment"):
                     conn.executemany(
@@ -932,8 +938,11 @@ class Store:
             if isinstance(directors, str):
                 conn.executemany(
                     "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
-                    ((work_id, fold(name.strip()), "director")
-                     for name in directors.split(" / ") if name.strip()),
+                    (
+                        (work_id, fold(name.strip()), "director")
+                        for name in directors.split(" / ")
+                        if name.strip()
+                    ),
                 )
         if enrichment:
             conn.executemany(
@@ -1223,7 +1232,8 @@ class Store:
                                 continue
                             role = str(member.get("category") or "")
                             role = credit_category(
-                                role if role not in ("crew", "")
+                                role
+                                if role not in ("crew", "")
                                 else str(member.get("role") or role)
                             )
                             credits[row["work_id"]].add((role, name.strip()))
@@ -1231,10 +1241,11 @@ class Store:
                 if isinstance(directors, str):
                     credits[row["work_id"]].update(
                         ("director", name.strip())
-                        for name in directors.split(" / ") if name.strip()
+                        for name in directors.split(" / ")
+                        if name.strip()
                     )
             for row in conn.execute("SELECT work_id,payload FROM enrichment"):
-                members = (json.loads(row["payload"]).get("people") or [])
+                members = json.loads(row["payload"]).get("people") or []
                 for member in members:
                     if not isinstance(member, dict):
                         continue
@@ -1243,8 +1254,7 @@ class Store:
                         continue
                     role = str(member.get("category") or "")
                     role = credit_category(
-                        role if role not in ("crew", "")
-                        else str(member.get("role") or role)
+                        role if role not in ("crew", "") else str(member.get("role") or role)
                     )
                     credits[row["work_id"]].add((role, name.strip()))
 
@@ -1272,7 +1282,8 @@ class Store:
                     grouped[role].append(name)
             details = [
                 f"{labels[role]}: {', '.join(grouped[role][:30])}"
-                for role in labels if grouped[role]
+                for role in labels
+                if grouped[role]
             ]
             if row["rating"] is not None:
                 details.append(f"Note générale: {row['rating']}/10")
@@ -1314,7 +1325,8 @@ class Store:
             params.append(person_role)
         with self.connect() as conn:
             return {
-                row[0] for row in conn.execute(
+                row[0]
+                for row in conn.execute(
                     "SELECT work_id FROM work_person_roles WHERE " + " AND ".join(conditions),
                     params,
                 )
@@ -1415,7 +1427,8 @@ class Store:
                 raise ValueError("Invalid credit role.")
             clauses.append(
                 "w.id IN (SELECT work_id FROM work_person_roles WHERE category=?"
-                + (" AND name_fold=?" if person_name else "") + ")"
+                + (" AND name_fold=?" if person_name else "")
+                + ")"
             )
             params.append(person_role)
             if person_name:
@@ -1821,9 +1834,7 @@ class Store:
                 "(SELECT COUNT(*) FROM list_items i WHERE i.list_id=l.id) AS item_count,"
                 "(SELECT COUNT(*) FROM list_items i JOIN works w ON w.id=i.work_id "
                 "WHERE i.list_id=l.id AND w.watch_status='watched') AS watched_count "
-                "FROM lists l"
-                + where
-                + " ORDER BY l.name COLLATE NOCASE,l.id",
+                "FROM lists l" + where + " ORDER BY l.name COLLATE NOCASE,l.id",
                 (work_id,) if work_id else (),
             )
         ]
