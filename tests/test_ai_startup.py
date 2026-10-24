@@ -44,9 +44,7 @@ def test_startup_reindexes_changed_vectors_but_not_unchanged_ones(tmp_path, monk
     store = Store(tmp_path / "catalogue.db")
     store.initialize()
     source = store.save_source({"name": "Films", "type": "clz"})
-    store.apply_snapshot(
-        source["id"], [Record("film", "movie", "Voyage", plot="Ancien synopsis")]
-    )
+    store.apply_snapshot(source["id"], [Record("film", "movie", "Voyage", plot="Ancien synopsis")])
     AIConfiguration(tmp_path).update(AISettingsInput(api_key="test-only-key"))
     index = SemanticIndex(tmp_path)
     calls = []
@@ -58,17 +56,16 @@ def test_startup_reindexes_changed_vectors_but_not_unchanged_ones(tmp_path, monk
         return [[1.0, 0.0] for _ in texts]
 
     monkeypatch.setattr("kodi_library.ai_vectors.embed", fake_embed)
-    assert asyncio.run(
-        index.refresh(store.ai_documents(), "text-embedding-3-small", "test-only-key")
-    ) == 1
+    assert (
+        asyncio.run(index.refresh(store.ai_documents(), "text-embedding-3-small", "test-only-key"))
+        == 1
+    )
     calls.clear()
     embedded.clear()
 
     # No API request or manual refresh: entering the application lifespan
     # must notice that the only changed document has a different hash.
-    store.apply_snapshot(
-        source["id"], [Record("film", "movie", "Voyage", plot="Nouveau synopsis")]
-    )
+    store.apply_snapshot(source["id"], [Record("film", "movie", "Voyage", plot="Nouveau synopsis")])
     with server(tmp_path) as client:
         assert client.get("/healthz").status_code == 200
         assert embedded.wait(5)
