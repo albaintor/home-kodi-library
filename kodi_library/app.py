@@ -570,9 +570,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 existing = await asyncio.to_thread(
                                     store.media, ids=previous_ids, limit=60
                                 )
-                                positions = {
-                                    media_id: i for i, media_id in enumerate(previous_ids)
-                                }
+                                positions = {media_id: i for i, media_id in enumerate(previous_ids)}
                                 existing["items"].sort(
                                     key=lambda item: positions.get(item["id"], len(positions))
                                 )
@@ -581,9 +579,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 return {
                                     "items": merged,
                                     "total": len(merged),
-                                    "has_more": more["has_more"] or len(
-                                        existing["items"] + more["items"]
-                                    ) > 60,
+                                    "has_more": more["has_more"]
+                                    or len(existing["items"] + more["items"]) > 60,
                                     "plan": value.previous_plan.model_dump(),
                                     "mode": "expand",
                                     "episode_matches": more.get("episode_matches", {}),
@@ -607,8 +604,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     )
                                 else:
                                     page = {
-                                        "items": [], "total": 0, "limit": 60,
-                                        "offset": 0, "has_more": False,
+                                        "items": [],
+                                        "total": 0,
+                                        "limit": 60,
+                                        "offset": 0,
+                                        "has_more": False,
                                     }
                                 page["total"] = len(page["items"])
                                 page["has_more"] = False
