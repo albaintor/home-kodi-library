@@ -17,9 +17,9 @@ from fastapi.responses import StreamingResponse
 
 from .auth import authenticated
 from .connectors.base import ConnectorError
+from .models import PlayInput
 from .players import connection, endpoint
 from .utils import identifiers
-from .models import PlayInput
 
 router = APIRouter(prefix="/api/v1/players", tags=["Players"])
 # Ephemeral tickets: only the iOS client with the authenticated API token may
