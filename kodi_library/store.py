@@ -1299,6 +1299,26 @@ class Store:
             )
         return result
 
+    def ai_person_ids(self, person_name: str | None, person_role: str | None) -> set[str]:
+        """SQL-indexed lookup for exact credited person and/or function."""
+        if not person_name and not person_role:
+            return set()
+        conditions = []
+        params = []
+        if person_name:
+            conditions.append("name_fold=?")
+            params.append(fold(person_name.strip()))
+        if person_role:
+            conditions.append("category=?")
+            params.append(person_role)
+        with self.connect() as conn:
+            return {
+                row[0] for row in conn.execute(
+                    "SELECT work_id FROM work_person_roles WHERE " + " AND ".join(conditions),
+                    params,
+                )
+            }
+
     def ai_lexical_hits(self, text: str, limit: int = 200) -> list[str]:
         """FTS5 indexes individual episode plots as well as films and series."""
         words = re.findall(r"\w+", text, flags=re.UNICODE)[:10]
@@ -1337,6 +1357,7 @@ class Store:
         year_min: int | None = None,
         year_max: int | None = None,
         rating_min: float | None = None,
+        user_rating_min: float | None = None,
         ids: list[str] | None = None,
         recent_days: int | None = None,
         sort: str = "date_added",
@@ -1464,6 +1485,9 @@ class Store:
         if rating_min is not None:
             clauses.append("w.rating>=?")
             params.append(rating_min)
+        if user_rating_min is not None:
+            clauses.append("w.user_rating>=?")
+            params.append(user_rating_min)
         requested_formats = [format] if isinstance(format, str) else (format or [])
         if len(requested_formats) > 20 or any(
             not isinstance(label, str) or not 1 <= len(label.strip()) <= 120
