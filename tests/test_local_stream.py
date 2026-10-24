@@ -22,8 +22,10 @@ def test_missing_ticket_rejected():
 
 def test_expired_ticket_rejected():
     local_stream._TICKETS["expired-test"] = {
-        "player_id": "player", "filename": "video.mp4",
-        "file": "smb://localhost/video.mp4", "expires": time.monotonic() - 1,
+        "player_id": "player",
+        "filename": "video.mp4",
+        "file": "smb://localhost/video.mp4",
+        "expires": time.monotonic() - 1,
     }
     try:
         with pytest.raises(HTTPException) as exc:
