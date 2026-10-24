@@ -47,9 +47,7 @@ async def hybrid_page(
                 store.ai_person_ids, plan.person_name, plan.person_role
             )
             matching_docs = [doc for doc in documents if doc["id"] in selected]
-        semantic = await asyncio.to_thread(
-            index.rank, matching_docs, embedding_model, query_vector
-        )
+        semantic = await asyncio.to_thread(index.rank, matching_docs, embedding_model, query_vector)
     elif plan.semantic_query:
         note = "Semantic index incomplete; results may be limited until indexing finishes."
 
@@ -99,7 +97,9 @@ async def hybrid_page(
         if plan.semantic_query:
             page = {"items": [], "total": 0, "limit": 60, "offset": 0, "has_more": False}
         else:
-            page = store.media(**params, q=plan.keywords, deep_search=bool(plan.keywords), limit=200)
+            page = store.media(
+                **params, q=plan.keywords, deep_search=bool(plan.keywords), limit=200
+            )
             page["items"] = [item for item in page["items"] if item["id"] not in excluded][:60]
             page["total"] = len(page["items"])
             page["has_more"] = False
