@@ -5,6 +5,7 @@ are byte ranges: a 24 GB movie is never downloaded into server memory.
 """
 
 import asyncio
+import logging
 import mimetypes
 import re
 import secrets
@@ -23,13 +24,14 @@ from .players import connection, endpoint
 from .utils import identifiers
 
 router = APIRouter(prefix="/api/v1/players", tags=["Players"])
+LOG = logging.getLogger(__name__)
 # Ephemeral tickets: only the iOS client with the authenticated API token may
 # request one. AVPlayer doesn't support our API's bearer header, so the GET
 # uses a non-reusable-to-other-media, high-entropy capability ticket.
 _TICKETS = OrderedDict()
 _TICKET_TTL = 4 * 3600
 _TICKET_LIMIT = 128
-_RANGE = re.compile(r"^bytes=\d+-\d*$")
+_RANGE = re.compile(r"^bytes=(?:\d+-\d*|-\d+)$")
 
 
 def _lookup(request, player_id):
@@ -92,7 +94,10 @@ async def create_local_stream(
 ):
     """Validate the precise Kodi edition, return only a relative time-limited URL."""
     player = _lookup(request, player_id)
+    started = time.monotonic()
     file_path, edition = await _resolve_video(request, player, data)
+    resolved_ms = round((time.monotonic() - started) * 1000, 1)
+    LOG.info("Kodi stream ticket resolved player=%s jsonrpc_ms=%.1f", player_id, resolved_ms)
     current = time.monotonic()
     for old, value in list(_TICKETS.items()):
         if value["expires"] <= current:
@@ -118,6 +123,7 @@ async def create_local_stream(
         "edition_id": edition["id"],
         "resume_seconds": edition.get("resume_seconds") or 0,
         "expires_in": _TICKET_TTL,
+        "resolution_ms": resolved_ms,
     }
 
 
@@ -133,6 +139,7 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     ):
         raise HTTPException(403, "Stream ticket is invalid or expired.")
     player = _lookup(request, player_id)
+    start = time.monotonic()
     range_header = request.headers.get("range")
     if range_header and not _RANGE.fullmatch(range_header):
         raise HTTPException(416, "Only single byte ranges are supported.")
@@ -167,7 +174,8 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     # Never silently present a full-file response as the requested nonzero
     # range. AVPlayer would interpret these bytes at the wrong offset.
     if range_header and upstream.status_code == 200:
-        requested_start = int(range_header[6:].split("-", 1)[0])
+        segment = range_header.removeprefix("bytes=")
+        requested_start = int(segment.split("-", 1)[0]) if not segment.startswith("-") else 1
         if requested_start > 0:
             await upstream.aclose()
             await client.aclose()
@@ -178,6 +186,13 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
         if key.lower()
         in {"content-length", "content-range", "accept-ranges", "etag", "last-modified"}
     }
+    kodi_header_ms = round((time.monotonic() - start) * 1000, 1)
+    LOG.info(
+        "Kodi VFS opened player=%s upstream_status=%d response_headers_ms=%.1f range=%s",
+        player_id, upstream.status_code, kodi_header_ms,
+        "present" if range_header else "absent",
+    )
+    exposed["Server-Timing"] = f"kodi_vfs;dur={kodi_header_ms}"
     exposed["Accept-Ranges"] = "bytes" if upstream.status_code == 206 else "none"
     exposed["X-Kodi-VFS-Ranges"] = "supported" if upstream.status_code == 206 else "unconfirmed"
     exposed["Cache-Control"] = "private, no-store"
@@ -195,14 +210,22 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
         return Response(status_code=200, headers=exposed, media_type=media_type)
 
     async def chunks():
+        first_chunk = True
+        sent = 0
         try:
-            async for chunk in upstream.aiter_bytes(chunk_size=256 * 1024):
-                if await request.is_disconnected():
-                    break
+            async for chunk in upstream.aiter_bytes(chunk_size=128 * 1024):
+                if first_chunk:
+                    first_chunk = False
+                    LOG.info(
+                        "Kodi VFS first chunk player=%s first_byte_ms=%.1f",
+                        player_id, (time.monotonic() - start) * 1000,
+                    )
+                sent += len(chunk)
                 yield chunk
         finally:
             await upstream.aclose()
             await client.aclose()
+            LOG.debug("Kodi VFS stream finished player=%s bytes=%d", player_id, sent)
 
     return StreamingResponse(
         chunks(),
