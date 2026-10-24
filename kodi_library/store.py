@@ -14,7 +14,7 @@ from uuid import uuid4
 from .connectors.base import Record
 from .connectors.collection_xml import COLLECTION_TYPES, SOURCE_TYPES
 from .media_formats import canonical_format, canonical_source_format
-from .people import person_view, youtube_url
+from .people import category as credit_category, person_view, youtube_url
 from .utils import fold, now
 
 SCHEMA = """
@@ -85,6 +85,12 @@ CREATE TABLE IF NOT EXISTS work_person_names (
  PRIMARY KEY(work_id,name_fold,tmdb_id,imdb_id)
 );
 CREATE INDEX IF NOT EXISTS work_person_names_by_name ON work_person_names(name_fold,work_id);
+CREATE TABLE IF NOT EXISTS work_person_roles (
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ name_fold TEXT NOT NULL, category TEXT NOT NULL,
+ PRIMARY KEY(work_id,name_fold,category)
+);
+CREATE INDEX IF NOT EXISTS work_person_roles_by_name ON work_person_roles(name_fold,category,work_id);
 CREATE TABLE IF NOT EXISTS device_tokens (
  token_hash TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL,
  created_at TEXT NOT NULL
@@ -173,6 +179,22 @@ def person_names(work_id: str, members: Any) -> list[tuple[str, str, str, str]]:
         )
     return credits
 
+def person_roles(work_id: str, members: Any) -> list[tuple[str, str, str]]:
+    """Extract normalized names and canonical credit categories."""
+    if not isinstance(members, list):
+        return []
+    result = []
+    for member in members:
+        if not isinstance(member, dict) or not isinstance(member.get("name"), str):
+            continue
+        name = fold(member["name"].strip())
+        if not name:
+            continue
+        role = str(member.get("category") or "")
+        role = credit_category(role if role not in ("crew", "") else str(member.get("role") or role))
+        result.append((work_id, name, role))
+    return result
+
 
 class Store:
     def __init__(self, path: Path):
@@ -260,6 +282,37 @@ class Store:
                     )
                 conn.execute(
                     "INSERT INTO catalogue_meta(key,value) VALUES('person_names_index_v1',?)",
+                    (now(),),
+                )
+            # Backfill role-aware names without requiring a Kodi resynchronization.
+            if not conn.execute(
+                "SELECT 1 FROM catalogue_meta WHERE key='person_roles_index_v1'"
+            ).fetchone():
+                for record in conn.execute("SELECT work_id,payload FROM records"):
+                    metadata = json.loads(record["payload"]).get("metadata") or {}
+                    if not isinstance(metadata, dict):
+                        continue
+                    for field in ("people", "cast"):
+                        conn.executemany(
+                            "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                            person_roles(record["work_id"], metadata.get(field)),
+                        )
+                    directors = metadata.get("director") or ""
+                    if isinstance(directors, str):
+                        conn.executemany(
+                            "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                            ((record["work_id"], fold(name.strip()), "director")
+                             for name in directors.split(" / ") if name.strip()),
+                        )
+                for record in conn.execute("SELECT work_id,payload FROM enrichment"):
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                        person_roles(
+                            record["work_id"], json.loads(record["payload"]).get("people")
+                        ),
+                    )
+                conn.execute(
+                    "INSERT INTO catalogue_meta(key,value) VALUES('person_roles_index_v1',?)",
                     (now(),),
                 )
             # Compatible migration for existing NAS installations (schema v2).
@@ -793,6 +846,7 @@ class Store:
         conn.execute("DELETE FROM identifiers WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM work_person_ids WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM work_person_names WHERE work_id=?", (work_id,))
+        conn.execute("DELETE FROM work_person_roles WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM works_fts WHERE work_id=?", (work_id,))
         conn.execute("DELETE FROM works_title_fts WHERE work_id=?", (work_id,))
         if not rows:
@@ -868,7 +922,23 @@ class Store:
                         "(work_id,name_fold,tmdb_id,imdb_id) VALUES(?,?,?,?)",
                         person_names(work_id, metadata.get(key)),
                     )
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                        person_roles(work_id, metadata.get(key)),
+                    )
+        for payload, _ in entries:
+            directors = (payload.get("metadata") or {}).get("director") or ""
+            if isinstance(directors, str):
+                conn.executemany(
+                    "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                    ((work_id, fold(name.strip()), "director")
+                     for name in directors.split(" / ") if name.strip()),
+                )
         if enrichment:
+            conn.executemany(
+                "INSERT OR IGNORE INTO work_person_roles VALUES(?,?,?)",
+                person_roles(work_id, json.loads(enrichment[0]).get("people")),
+            )
             conn.executemany(
                 "INSERT OR IGNORE INTO work_person_ids(namespace,person_id,work_id) VALUES(?,?,?)",
                 person_ids(work_id, json.loads(enrichment[0]).get("people")),
@@ -1128,15 +1198,62 @@ class Store:
         return results
 
     def ai_documents(self) -> list[dict[str, Any]]:
-        """Indexed descriptions include each episode synopsis and the parent series title."""
+        """One embedding per work, including credited people and both available ratings."""
         with self.connect() as conn:
             rows = conn.execute(
                 "SELECT w.id,w.kind,w.title,w.plot,w.genres,w.parent_id,w.season,"
-                "w.episode,w.watch_status,p.title AS series_title "
+                "w.episode,w.watch_status,w.rating,w.user_rating,p.title AS series_title "
                 "FROM works w LEFT JOIN works p ON p.id=w.parent_id "
                 "WHERE w.kind IN ('movie','tvshow','episode') ORDER BY w.id"
             ).fetchall()
+            credits: dict[str, set[tuple[str, str]]] = defaultdict(set)
+            for row in conn.execute("SELECT work_id,payload FROM records"):
+                metadata = json.loads(row["payload"]).get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    continue
+                for field in ("people", "cast"):
+                    members = metadata.get(field)
+                    if isinstance(members, list):
+                        for member in members:
+                            if not isinstance(member, dict):
+                                continue
+                            name = member.get("name")
+                            if not isinstance(name, str) or not name.strip():
+                                continue
+                            role = str(member.get("category") or "")
+                            role = credit_category(
+                                role if role not in ("crew", "")
+                                else str(member.get("role") or role)
+                            )
+                            credits[row["work_id"]].add((role, name.strip()))
+                directors = metadata.get("director") or ""
+                if isinstance(directors, str):
+                    credits[row["work_id"]].update(
+                        ("director", name.strip())
+                        for name in directors.split(" / ") if name.strip()
+                    )
+            for row in conn.execute("SELECT work_id,payload FROM enrichment"):
+                members = (json.loads(row["payload"]).get("people") or [])
+                for member in members:
+                    if not isinstance(member, dict):
+                        continue
+                    name = member.get("name")
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+                    role = str(member.get("category") or "")
+                    role = credit_category(
+                        role if role not in ("crew", "")
+                        else str(member.get("role") or role)
+                    )
+                    credits[row["work_id"]].add((role, name.strip()))
+
         result = []
+        labels = {
+            "cast": "Acteurs",
+            "director": "Réalisateurs",
+            "composer": "Compositeurs",
+            "writer": "Scénaristes",
+        }
         for row in rows:
             series = row["series_title"] or ""
             season, episode = row["season"], row["episode"]
@@ -1147,6 +1264,22 @@ class Store:
             )
             genres = ", ".join(json.loads(row["genres"] or "[]"))
             plot = (row["plot"] or "")[:5000]
+            roles = sorted(credits.get(row["id"], set()), key=lambda item: (item[0], fold(item[1])))
+            grouped: dict[str, list[str]] = defaultdict(list)
+            for role, name in roles:
+                if role in labels:
+                    grouped[role].append(name)
+            details = [
+                f"{labels[role]}: {', '.join(grouped[role][:30])}"
+                for role in labels if grouped[role]
+            ]
+            if row["rating"] is not None:
+                details.append(f"Note générale: {row['rating']}/10")
+            if row["user_rating"] is not None:
+                details.append(f"Note personnelle: {row['user_rating']}/10")
+            text = f"{label}. Genres: {genres}. Synopsis: {plot}"
+            if details:
+                text += ". " + ". ".join(details)
             result.append(
                 {
                     "id": row["id"],
@@ -1158,7 +1291,10 @@ class Store:
                     "episode": episode,
                     "watch_status": row["watch_status"],
                     "plot": plot,
-                    "text": f"{label}. Genres: {genres}. Synopsis: {plot}".strip(),
+                    "rating": row["rating"],
+                    "user_rating": row["user_rating"],
+                    "credits": roles,
+                    "text": text.strip(),
                 }
             )
         return result
@@ -1187,6 +1323,7 @@ class Store:
         person_tmdb_id: str | None = None,
         person_imdb_id: str | None = None,
         person_name: str | None = None,
+        person_role: str | None = None,
         kind: str | None = None,
         watch_status: str | None = None,
         genre: str | None = None,
@@ -1251,6 +1388,16 @@ class Store:
             # Name-only cast searches should not match unrelated plot/title text.
             clauses.append("w.id IN (SELECT work_id FROM work_person_names WHERE name_fold=?)")
             params.append(fold(person_name.strip()))
+        if person_role:
+            if person_role not in ("cast", "director", "composer", "writer"):
+                raise ValueError("Invalid credit role.")
+            clauses.append(
+                "w.id IN (SELECT work_id FROM work_person_roles WHERE category=?"
+                + (" AND name_fold=?" if person_name else "") + ")"
+            )
+            params.append(person_role)
+            if person_name:
+                params.append(fold(person_name.strip()))
         words = re.findall(r"\w+", q, flags=re.UNICODE)
         if words:
             index = "works_fts" if deep_search else "works_title_fts"
