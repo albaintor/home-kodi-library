@@ -54,9 +54,20 @@ preserve it rather than silently substituting a preset.
 
 ## Indexing
 
-Use the administrator-only **Indexer / actualiser** button in web settings,
-or **Index or refresh summaries** in iOS. The server builds an incremental
-semantic index, including individual episode plots and their parent series titles.
+On every server startup, after the catalogue is initialized, the server
+automatically starts a **non-blocking, incremental reconciliation** of the
+semantic index if an OpenAI API key is configured. Existing SHA-256 hashes
+are compared with the current documents: only missing or changed vectors
+require embeddings API calls. When the index is already current, no
+embeddings API request is made. Obsolete vectors for the selected model
+are removed. HTTP access for iOS/Web stays available during indexing;
+an in-progress indexing task is cancelled cleanly on server shutdown.
+The configured monthly API spending cap continues to apply.
+
+Administrators can also use the **Indexer / actualiser** button in web
+settings, or **Index or refresh summaries** in iOS, to request a manual
+refresh. The server builds an incremental semantic index, including
+individual episode plots and their parent series titles.
 It reuses unchanged vectors and deletes stale records when a full pass completes.
 A document now contains credited people grouped by function (up to 30 names
 per function) and available ratings on the 0–10 scale. A changed credit
