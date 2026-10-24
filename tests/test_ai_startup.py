@@ -6,6 +6,7 @@ from threading import Event
 
 from conftest import ADMIN, INGRESS, READ
 from fastapi.testclient import TestClient
+
 from kodi_library.ai import AIConfiguration, AISettingsInput
 from kodi_library.ai_vectors import SemanticIndex
 from kodi_library.app import create_app
