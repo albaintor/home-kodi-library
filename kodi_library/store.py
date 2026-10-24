@@ -14,7 +14,8 @@ from uuid import uuid4
 from .connectors.base import Record
 from .connectors.collection_xml import COLLECTION_TYPES, SOURCE_TYPES
 from .media_formats import canonical_format, canonical_source_format
-from .people import category as credit_category, person_view, youtube_url
+from .people import category as credit_category
+from .people import person_view, youtube_url
 from .utils import fold, now
 
 SCHEMA = """
