@@ -1681,6 +1681,7 @@ document.addEventListener('click',async event=>{
     if(button.id==='play-browser') {
       savePlaybackDraft();
       button.disabled=true;
+      const startingAt=performance.now();
       const playerId=$('play-target').value;
       const ticket=await api(`players/${encodeURIComponent(playerId)}/local-play`,{
         method:'POST',
@@ -1702,14 +1703,28 @@ document.addEventListener('click',async event=>{
       video.pause();
       video.src=videoURL;
       wrapper.hidden=false;
+      const metadataMs=Number(ticket.resolution_ms)||0;
+      const resumeAt= $('play-resume')?.checked ? Number(ticket.resume_seconds)||0 : 0;
       video.onloadedmetadata=()=>{
-        if($('play-resume')?.checked && Number(ticket.resume_seconds)>0) {
-          video.currentTime=Number(ticket.resume_seconds);
+        // Seeking before the first frame can cost another Kodi VFS file open.
+        // Make that step explicit and diagnose it separately from URL creation.
+        if(resumeAt>0 && Number.isFinite(video.duration) && video.duration>resumeAt) {
+          video.currentTime=resumeAt;
+        }
+        console.info('Kodi browser playback metadata ms',Math.round(performance.now()-startingAt));
+      };
+      video.onplaying=()=>{
+        const elapsed=((performance.now()-startingAt)/1000).toFixed(1);
+        if(result){
+          result.textContent='Lecture démarrée en '+elapsed+' s (résolution catalogue '+metadataMs+' ms).';
         }
       };
       video.load();
-      try {await video.play();result.textContent='Lecture dans le navigateur.';}
-      catch(e) {result.textContent='Appuyez sur ▶ dans le lecteur. Si le fichier est incompatible, utilisez Kodi.';}
+      result.textContent='Ouverture du flux Kodi en cours…';
+      try {await video.play();}
+      catch(e) {
+        result.textContent='La lecture automatique est indisponible : appuyez sur ▶ dans le lecteur. Certains formats restent incompatibles.';
+      }
       return;
     }
     if(button.id==='play-button') {
