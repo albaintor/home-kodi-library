@@ -170,3 +170,101 @@ def test_style_search_excludes_unrelated_barbie_match(store, monkeypatch, tmp_pa
     assert results["total"] == 1
     assert "Barbie" not in str(results["items"])
     assert len(results["relevance_reasons"]) == 1
+
+
+
+def test_roles_and_ratings_are_embedded_and_filterable(store):
+    source = store.save_source({"name": "Credited films", "type": "clz"})
+    store.apply_snapshot(
+        source["id"],
+        [
+            Record(
+                "one",
+                "movie",
+                "Le voyage",
+                plot="Une expédition dans l'espace.",
+                rating=8.5,
+                user_rating=9,
+                metadata={"people": [
+                    {"name": "Alice Martin", "category": "cast"},
+                    {"name": "Claire Moreau", "category": "director"},
+                    {"name": "Jean Dupont", "category": "composer"},
+                ]},
+            ),
+            Record(
+                "two",
+                "movie",
+                "Le retour",
+                rating=6,
+                user_rating=7,
+                metadata={"people": [
+                    {"name": "Jean Dupont", "category": "cast"},
+                    {"name": "Claire Moreau", "category": "director"},
+                ]},
+            ),
+        ],
+    )
+    docs = {doc["title"]: doc for doc in store.ai_documents()}
+    assert "Acteurs: Alice Martin" in docs["Le voyage"]["text"]
+    assert "Réalisateurs: Claire Moreau" in docs["Le voyage"]["text"]
+    assert "Compositeurs: Jean Dupont" in docs["Le voyage"]["text"]
+    assert "Note générale: 8.5/10" in docs["Le voyage"]["text"]
+    assert "Note personnelle: 9.0/10" in docs["Le voyage"]["text"]
+    expected = docs["Le voyage"]["id"]
+    assert store.ai_person_ids("Jean Dupont", "composer") == {expected}
+    assert [item["id"] for item in store.media(
+        person_name="Jean Dupont", person_role="composer",
+        rating_min=8, user_rating_min=8,
+    )["items"]] == [expected]
+    assert store.media(person_name="Jean Dupont", person_role="cast", rating_min=8)["total"] == 0
+    assert store.media(person_name="Jean Dupont", person_role="composer", user_rating_min=9.5)["total"] == 0
+
+
+def test_credit_role_migration_rebuilds_from_existing_records(store):
+    source = store.save_source({"name": "Old films", "type": "clz"})
+    store.apply_snapshot(source["id"], [
+        Record("old", "movie", "Ancien film", metadata={
+            "people": [{"name": "Claude Durand", "category": "composer"}]
+        })
+    ])
+    with store.connect() as conn:
+        conn.execute("DELETE FROM work_person_roles")
+        conn.execute("DELETE FROM catalogue_meta WHERE key='person_roles_index_v1'")
+    store.initialize()
+    assert len(store.ai_person_ids("Claude Durand", "composer")) == 1
+
+
+def test_hnsw_cache_and_scoped_search(tmp_path, monkeypatch):
+    pytest = __import__("pytest")
+    pytest.importorskip("numpy")
+    pytest.importorskip("usearch.index")
+    import kodi_library.ai_vectors as vectors
+
+    async def fake_embed(texts, model, key):
+        lookup = {
+            "first": [1.0, 0.0],
+            "second": [0.0, 1.0],
+            "third": [-1.0, 0.0],
+            "changed": [0.9, 0.1],
+        }
+        return [lookup[text] for text in texts]
+
+    monkeypatch.setattr(vectors, "embed", fake_embed)
+    monkeypatch.setattr(vectors, "ANN_MIN_DOCUMENTS", 2)
+    docs = [
+        {"id": "a", "text": "first"},
+        {"id": "b", "text": "second"},
+        {"id": "c", "text": "third"},
+    ]
+    index = SemanticIndex(tmp_path)
+    assert asyncio.run(index.refresh(docs, "test", "dummy")) == 3
+    assert index.rank(docs, "test", [1.0, 0.0])[0][0] == "a"
+    assert index._rank_cache["backend"] == "hnsw"
+    assert [work_id for work_id, _ in index.rank(docs[1:], "test", [1.0, 0.0])] == ["b", "c"]
+    assert index._rank_cache["backend"] == "hnsw"
+    assert asyncio.run(index.refresh(docs, "test", "dummy")) == 0
+    docs[0] = {"id": "a", "text": "changed"}
+    assert index.missing(docs, "test") == docs[:1]
+    assert asyncio.run(index.refresh(docs, "test", "dummy")) == 1
+    assert index._rank_cache is None
+    assert index.rank(docs, "test", [1.0, 0.0])[0][0] == "a"
