@@ -1,6 +1,5 @@
 """Browser MKV decoding is progressive and produces valid fragmented MP4."""
 
-import io
 import shutil
 import subprocess
 
