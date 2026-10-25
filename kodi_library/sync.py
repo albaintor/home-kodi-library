@@ -428,6 +428,23 @@ class SyncManager:
                             continue
                     except (ValueError, TypeError, OverflowError):
                         pass
+                # An empty catalogue may indicate a failed previous import,
+                # not just the first launch. Prevent hourly server restarts
+                # from repeatedly contacting unreachable Kodi instances.
+                last_attempt = await asyncio.to_thread(
+                    self.store.last_kodi_sync_attempt, source["id"]
+                )
+                if last_attempt:
+                    try:
+                        attempt = datetime.fromisoformat(
+                            last_attempt.replace("Z", "+00:00")
+                        )
+                        if attempt.tzinfo is None:
+                            attempt = attempt.replace(tzinfo=UTC)
+                        if (datetime.now(UTC) - attempt).total_seconds() < 24 * 60 * 60:
+                            continue
+                    except (TypeError, ValueError, OverflowError):
+                        pass
                 try:
                     created.append(await self.submit(source["id"]))
                 except (BusyError, ValueError):
