@@ -224,8 +224,19 @@ class SyncManager:
                 players = await asyncio.to_thread(self.store.players)
                 candidates = [p for p in players if p["source_id"] == source["id"]]
                 offline = bool(candidates)
+                # Cleanup must not collapse previously imported multiple Kodi
+                # movie versions: SQL preserves edition-level file identity.
+                prefer_sql = (
+                    scan_info is not None
+                    and "kodi_clean" in scan_info
+                    and bool(source["config"].get("host"))
+                    and bool(source["config"].get("username"))
+                    and await asyncio.to_thread(
+                        self.store.has_multiple_kodi_movie_versions, source["id"]
+                    )
+                )
                 deadline = monotonic() + 1.0
-                for player in candidates:
+                for player in ([] if prefer_sql else candidates):
                     if player["id"] in (offline_player_ids or set()):
                         continue
                     remaining = deadline - monotonic()
