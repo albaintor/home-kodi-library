@@ -1,6 +1,8 @@
 """Remote artwork extraction is bounded, cached, and protocol-independent."""
 
 import io
+import shutil
+import subprocess
 
 import pytest
 from fastapi import HTTPException
@@ -57,3 +59,34 @@ def test_large_stream_is_bounded():
         yield b"B" * length
 
     assert thumbs._read_limited(source, 1024) == b"A" * 1024
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not installed")
+def test_ffmpeg_extracts_video_frame_from_mkv():
+    movie = subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=blue:s=320x180:d=2",
+            "-frames:v",
+            "15",
+            "-c:v",
+            "mpeg4",
+            "-f",
+            "matroska",
+            "pipe:1",
+        ],
+        capture_output=True,
+        timeout=12,
+        check=True,
+    ).stdout
+    result = thumbs._jpeg_thumbnail(movie, ".mkv")
+    assert result is not None
+    with Image.open(io.BytesIO(result)) as image:
+        assert image.format == "JPEG"
+        assert image.width <= 360
