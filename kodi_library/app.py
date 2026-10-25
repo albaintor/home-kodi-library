@@ -1531,12 +1531,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(writable)],
         tags=["Playback"],
     )
-    def authorize_playback_cloud(location_id: str):
+    def authorize_playback_cloud(location_id: str, return_to: str = "web"):
         location = store.playback_location(location_id)
         if not location:
             raise HTTPException(404, "Unknown playback location.")
         try:
-            return {"authorization_url": cloud_auth.start(location_id, location["kind"])}
+            return {
+                "authorization_url": cloud_auth.start(
+                    location_id, location["kind"], return_to=return_to
+                )
+            }
         except CloudOAuthError as exc:
             raise HTTPException(422, str(exc)) from exc
 
@@ -1544,10 +1548,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def playback_cloud_callback(
         state: str = "", code: str = "", error: str = "", hostname: str = ""
     ):
-        from fastapi.responses import HTMLResponse
+        from fastapi.responses import HTMLResponse, RedirectResponse
 
+        # The iOS flow is still a server-owned OAuth transaction: the third
+        # party only redirects to our HTTPS callback, never to the iPhone.
+        # The final app callback carries no authorization code or access token.
+        return_to = cloud_auth.pending.get(state, {}).get("return_to", "web")
         try:
-            await cloud_auth.complete(state=state, code=code, error=error, hostname=hostname)
+            result = await cloud_auth.complete(
+                state=state, code=code, error=error, hostname=hostname
+            )
+            if result == "ios":
+                return RedirectResponse(
+                    "homekodilibrary://oauth/server?result=connected",
+                    status_code=302,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
             return HTMLResponse(
                 '<!doctype html><html lang="fr"><meta charset="utf-8">'
                 '<title>Compte connecté</title><body><h2>Compte connecté.</h2>'
@@ -1564,6 +1580,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # Keep the error visible: the browser must never silently close a
             # failed login. The parent receives the same safe error message.
             explanation = str(exc) or "Connexion refusée ou expirée."
+            if return_to == "ios":
+                from urllib.parse import urlencode
+                return RedirectResponse(
+                    "homekodilibrary://oauth/server?" +
+                    urlencode({"result": "error", "message": explanation}),
+                    status_code=302,
+                    headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+                )
             return HTMLResponse(
                 '<!doctype html><html lang="fr"><meta charset="utf-8">'
                 '<title>Connexion refusée</title><body>'
