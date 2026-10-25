@@ -107,7 +107,7 @@ class CloudOAuth:
                 "Aucune application OAuth n’est enregistrée pour ce fournisseur sur le serveur. "
                 "La configuration est à effectuer une seule fois par l’administrateur."
             )
-        if provider in {"google_drive", "box", "pcloud"} and not client.get("client_secret"):
+        if provider in {"onedrive", "google_drive", "box", "pcloud"} and not client.get("client_secret"):
             return "Le secret de l’application OAuth manque dans la configuration du serveur."
         parsed = urlsplit(redirect or "")
         if (
