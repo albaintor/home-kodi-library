@@ -1501,7 +1501,7 @@ function observeNetworkThumbnails(){
 function networkThumbnail(entry){
   const loc=networkExplorer.selected;
   if(!loc || entry.is_dir || !/\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|heic|heif|avif|mp4|m4v|mov|mkv|avi|ts|m2ts|webm|mpg|mpeg)$/i.test(entry.name||''))return '';
-  const src=url('api/v1/playback/thumbnail/'+encodeURIComponent(loc.id)+'?path='+encodeURIComponent(entry.path)).href;
+  const src=url('api/v1/playback/thumbnail/'+encodeURIComponent(loc.id)+'?path='+encodeURIComponent(entry.path));
   return '<img class="network-browser-thumbnail" loading="lazy" decoding="async" data-thumbnail-url="'+esc(src)+'" alt="">';
 }
 function networkCurrentPath(){
