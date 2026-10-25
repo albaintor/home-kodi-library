@@ -24,6 +24,9 @@ class Settings:
     discovery_enabled: bool = False
     discovery_name: str = "Home Kodi Library"
     discovery_port: int = 8099
+    cloud_oauth_clients: dict = field(default_factory=dict)
+    cloud_oauth_redirect_url: str = ""
+    playback_encryption_key: str = ""
 
     def validate(self) -> None:
         if len(self.api_token) < 24:
@@ -44,6 +47,23 @@ class Settings:
             raise ValueError("CORS_ORIGINS must list exact origins, not a wildcard.")
         if not (1 <= self.discovery_port <= 65535) or not self.discovery_name.strip():
             raise ValueError("Invalid Bonjour discovery name or port.")
+        if self.cloud_oauth_redirect_url:
+            from urllib.parse import urlsplit
+            address = urlsplit(self.cloud_oauth_redirect_url)
+            if (address.scheme != "https" or not address.hostname or
+                    address.path != "/api/v1/playback/cloud/callback" or
+                    address.query or address.fragment or address.username):
+                raise ValueError(
+                    "CLOUD_OAUTH_REDIRECT_URL must be an HTTPS callback URL ending "
+                    "with /api/v1/playback/cloud/callback"
+                )
+        if not isinstance(self.cloud_oauth_clients, dict):
+            raise ValueError("CLOUD_OAUTH_CLIENTS must be a JSON object.")
+        for provider, options in self.cloud_oauth_clients.items():
+            if not isinstance(options, dict) or not isinstance(options.get("client_id"), str):
+                raise ValueError("CLOUD_OAUTH_CLIENTS entries require a client_id.")
+            if options.get("client_secret") is not None and not isinstance(options["client_secret"], str):
+                raise ValueError("CLOUD_OAUTH_CLIENTS client_secret must be a string.")
         for name, networks in (
             ("LOCAL_AUTH_NETWORKS", self.local_auth_networks),
             ("TRUSTED_PROXY_NETWORKS", self.trusted_proxy_networks),
@@ -71,6 +91,9 @@ class Settings:
             trusted_proxy_networks=json.loads(os.environ.get("TRUSTED_PROXY_NETWORKS", "[]")),
             tmdb_api_token=os.environ.get("TMDB_API_TOKEN", ""),
             discovery_enabled=os.environ.get("DISCOVERY_ENABLED", "false").lower() == "true",
+            cloud_oauth_clients=json.loads(os.environ.get("CLOUD_OAUTH_CLIENTS", "{}")),
+            cloud_oauth_redirect_url=os.environ.get("CLOUD_OAUTH_REDIRECT_URL", ""),
+            playback_encryption_key=os.environ.get("PLAYBACK_ENCRYPTION_KEY", ""),
             discovery_name=os.environ.get("DISCOVERY_NAME", "Home Kodi Library"),
             discovery_port=int(os.environ.get("DISCOVERY_PORT", os.environ.get("PORT", "8099"))),
         )
