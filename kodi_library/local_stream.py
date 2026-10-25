@@ -99,6 +99,61 @@ async def _resolve_video(request, player, data):
     return path, edition
 
 
+@router.get("/{player_id}/local-size")
+async def kodi_local_file_size(
+    player_id: str,
+    media_id: str,
+    edition_id: str,
+    request: Request,
+    _=Depends(authenticated),
+):
+    """Read the *entire* Kodi file byte length without opening a player.
+
+    Unlike a HEAD against a temporary streaming ticket, this endpoint is
+    authenticated, edition-scoped, and validates the VFS Content-Range for
+    a one-byte GET. Do not confuse a 206's one-byte Content-Length with
+    the actual file length.
+    """
+    player = _lookup(request, player_id)
+    path, edition = await _resolve_video(
+        request, player, PlayInput(media_id=media_id, edition_id=edition_id)
+    )
+    base = endpoint(player["config"]).removesuffix("/jsonrpc")
+    vfs_url = f"{base}/vfs/{quote(path, safe='')}"
+    config = player["config"]
+    auth = (
+        (config["username"], config.get("password") or "")
+        if config.get("username") else None
+    )
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(connect=8, read=12, write=8, pool=8),
+            auth=auth, follow_redirects=False, trust_env=False,
+        ) as client:
+            async with client.stream(
+                "GET", vfs_url,
+                headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
+            ) as upstream:
+                if upstream.status_code == 206:
+                    content_range = upstream.headers.get("content-range", "")
+                    match = re.fullmatch(r"bytes\s+0-0/(\d+)", content_range)
+                    byte_count = int(match.group(1)) if match else None
+                elif upstream.status_code == 200:
+                    # Kodi ignored the range and returned the whole file.
+                    # Headers are enough; do not read or buffer the body.
+                    length = upstream.headers.get("content-length", "")
+                    byte_count = int(length) if length.isdigit() else None
+                else:
+                    raise HTTPException(
+                        502, f"Kodi VFS returned HTTP {upstream.status_code}."
+                    )
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Cannot read Kodi VFS file size.") from exc
+    if byte_count is None or byte_count <= 0:
+        raise HTTPException(404, "Kodi VFS did not expose the total file size.")
+    return {"edition_id": edition["id"], "bytes": byte_count}
+
+
 @router.post("/{player_id}/local-play")
 async def create_local_stream(
     player_id: str, data: PlayInput, request: Request, _=Depends(authenticated)
