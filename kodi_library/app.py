@@ -1580,7 +1580,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 '<title>Compte connecté</title><body><h2>Compte connecté.</h2>'
                 '<p>Cette fenêtre peut être fermée.</p>'
                 '<script>if(window.opener){window.opener.postMessage('
-                '{type:"homekodi-cloud-oauth",success:true},location.origin);'
+                '{type:"homekodi-cloud-oauth",success:true},"*");'
                 'window.close();}</script></body></html>',
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
@@ -1608,7 +1608,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 '<script>if(window.opener){window.opener.postMessage('
                 + json.dumps({"type": "homekodi-cloud-oauth", "success": False,
                               "error": explanation})
-                + ',location.origin);}</script></body></html>',
+                + ',"*");}</script></body></html>',
                 status_code=400,
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
