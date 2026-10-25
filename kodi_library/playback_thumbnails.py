@@ -68,44 +68,32 @@ def _jpeg_thumbnail(source: bytes, extension: str) -> bytes | None:
     # Fallback for providers unable to offer a seekable Range source:
     # decode the initial stream progressively. Network shares normally use
     # the Kodi one-third position via extract_video_frame() below.
-    try:
-        child = subprocess.run(
-            [
-                "ffmpeg",
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-nostdin",
-                "-analyzeduration",
-                "3000000",
-                "-probesize",
-                "6000000",
-                "-i",
-                "pipe:0",
-                "-map",
-                "0:v:0",
-                "-frames:v",
-                "1",
-                "-vf",
-                "scale=360:256:force_original_aspect_ratio=decrease",
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "mjpeg",
-                "-q:v",
-                "5",
-                "pipe:1",
-            ],
-            input=source,
-            capture_output=True,
-            timeout=14,
-            check=False,
-        )
-    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
-        return None
-    if child.returncode or not child.stdout or len(child.stdout) > MAX_OUTPUT:
-        return None
-    return child.stdout
+    # Cloud providers without arbitrary byte-range support still give us a
+    # bounded prefix. Prefer a frame several seconds in (rather than black
+    # intro frames), falling back to the first decodable frame for short clips.
+    for skip in (5, 0):
+        command = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
+            "-analyzeduration", "3000000", "-probesize", "6000000",
+            "-i", "pipe:0",
+        ]
+        if skip:
+            # Output-side -ss can advance on non-seekable stdin.
+            command.extend(["-ss", str(skip)])
+        command.extend([
+            "-map", "0:v:0", "-frames:v", "1",
+            "-vf", "scale=360:256:force_original_aspect_ratio=decrease",
+            "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "pipe:1",
+        ])
+        try:
+            child = subprocess.run(
+                command, input=source, capture_output=True, timeout=14, check=False
+            )
+        except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+            continue
+        if child.returncode == 0 and 0 < len(child.stdout) <= MAX_OUTPUT:
+            return child.stdout
+    return None
 
 
 def _read_limited(generator, limit: int) -> bytes:
