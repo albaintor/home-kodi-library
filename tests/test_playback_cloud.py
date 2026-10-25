@@ -110,7 +110,7 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
     settings.validate()
     store = FakeStore()
     manager = CloudOAuth(settings, store)
-    url = manager.start("a", "dropbox")
+    url = manager.start("a", "dropbox", return_to="ios")
     parsed = urlsplit(url)
     query = parse_qs(parsed.query)
     state = query["state"][0]
@@ -143,7 +143,8 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
     import asyncio
 
     with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
-        asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
+        result = asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
+    assert result == "ios"
     assert len(store.saved) == 1
     assert "private-cloud-token" not in store.saved[0][2]
     assert "refresh-private" not in store.saved[0][2]
@@ -174,3 +175,63 @@ def test_cloud_oauth_configuration_diagnostics(tmp_path):
     assert manager.configured("onedrive")
     with pytest.raises(CloudOAuthError):
         manager.start("id", "unknown")
+
+
+def test_cloud_token_auto_refresh(tmp_path):
+    import asyncio
+    import json
+
+    class FakeStore:
+        def __init__(self):
+            self.cipher = None
+
+        def playback_oauth_app(self, provider):
+            return None
+
+        def playback_cloud_credentials(self, location_id):
+            return {"provider": "onedrive", "token_cipher": self.cipher}
+
+        def set_playback_cloud_token(self, location_id, provider, cipher):
+            assert location_id == "onedrive-1"
+            assert provider == "onedrive"
+            self.cipher = cipher
+
+    settings = Settings(
+        data_dir=tmp_path, api_token=ADMIN,
+        cloud_oauth_redirect_url="https://example.org/api/v1/playback/cloud/callback",
+        cloud_oauth_clients={
+            "onedrive": {"client_id": "test-client", "client_secret": "server-secret"}
+        },
+    )
+    store = FakeStore()
+    oauth = CloudOAuth(settings, store)
+    store.cipher = oauth.encrypt_password(json.dumps({
+        "access_token": "expired", "refresh_token": "rotating-refresh", "expires_at": 1
+    }))
+
+    class FakeReply:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"access_token": "new-token", "expires_in": 3600}
+
+    class FakeHttp:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def post(self, url, data):
+            assert url.endswith("/token")
+            assert data["refresh_token"] == "rotating-refresh"
+            assert data["client_secret"] == "server-secret"
+            return FakeReply()
+
+    with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
+        credential = asyncio.run(oauth.credentials("onedrive-1", "onedrive"))
+    assert credential["access_token"] == "new-token"
+    assert credential["refresh_token"] == "rotating-refresh"
+    assert "new-token" not in store.cipher
+    assert json.loads(oauth.decrypt_secret(store.cipher))["access_token"] == "new-token"
