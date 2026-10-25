@@ -258,7 +258,8 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     import json
     from unittest.mock import patch
     from kodi_library.playback_cloud import (
-        MICROSOFT_DEVICE_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT
+        MICROSOFT_DEVICE_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT,
+        MICROSOFT_DEVICE_VERIFICATION_URL,
     )
 
     class Store:
@@ -303,7 +304,9 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
                 assert data["scope"] == "offline_access Files.Read"
                 return Reply(200, {
                     "device_code": "a-private-code", "user_code": "QWER-1234",
-                    "verification_uri": "https://microsoft.com/devicelogin",
+                    # Microsoft may return a different verification domain.
+                    # No provider-supplied URL may become a user-facing link.
+                    "verification_uri": "https://aka.ms/devicelogin",
                     "expires_in": 900, "interval": 5
                 })
             assert url == MICROSOFT_TOKEN_ENDPOINT
@@ -323,6 +326,8 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
         with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=transport):
             started = await oauth.start_device("test-location", "onedrive")
             assert started["user_code"] == "QWER-1234"
+            assert started["verification_uri"] == MICROSOFT_DEVICE_VERIFICATION_URL
+            assert "aka.ms" not in started["verification_uri"]
             assert "device_code" not in started
             assert "access_token" not in json.dumps(started)
             request_id = started["request_id"]
