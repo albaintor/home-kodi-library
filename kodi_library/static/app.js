@@ -1704,8 +1704,13 @@ async function renderPlaybackCloudSettings() {
   const form=section.querySelector('#playback-cloud-app-form');
   const developerList=section.querySelector('#playback-cloud-developer-list');
   let locations=[],statuses=[],apps=[],providers=[];
+  // The UI may be served at http://nas.local while the OAuth callback is at
+  // https://media.example.org. Trust ONLY the redirect origin returned by
+  // our authenticated authorization API, never arbitrary popup senders.
+  const allowedCallbackOrigins=new Set([window.location.origin]);
   const onCloudAuthorized=event=>{
-    if(event.origin!==window.location.origin||event.data?.type!=='homekodi-cloud-oauth')return;
+    if(!allowedCallbackOrigins.has(event.origin)||
+       event.data?.type!=='homekodi-cloud-oauth')return;
     if(!section.isConnected){window.removeEventListener('message',onCloudAuthorized);return;}
     // Reload the server-side connected state; do not erase the outcome while
     // refreshing the list, and retain provider errors for diagnosis.
@@ -1815,6 +1820,11 @@ async function renderPlaybackCloudSettings() {
       const auth=await api('playback/cloud/'+encodeURIComponent(place.id)+'/authorize',{method:'POST'});
       const target=new URL(auth.authorization_url);
       if(target.protocol!=='https:')throw new Error('URL OAuth non sécurisée.');
+      const callbackURL=target.searchParams.get('redirect_uri');
+      const callback=callbackURL?new URL(callbackURL):null;
+      if(!callback||callback.protocol!=='https:')
+        throw new Error('URL HTTPS de retour OAuth absente ou incorrecte.');
+      allowedCallbackOrigins.add(callback.origin);
       if(popup && !popup.closed) {
         popup.location.replace(target.href);
         message.textContent='Autorisez votre compte dans la fenêtre '+label+'. La connexion sera détectée automatiquement.';
