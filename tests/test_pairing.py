@@ -25,6 +25,10 @@ def test_public_discovery_is_minimal_and_pairing_is_admin_only(client, admin):
             "bulk_list_add",
             "ai_refine_results",
             "kodi_local_stream",
+            "playback_locations",
+            "playback_discovery",
+            "playback_cloud_oauth",
+            "kodi_clean",
         ],
     }
     assert client.post("/api/v1/pairing/start", json={}).status_code == 401
