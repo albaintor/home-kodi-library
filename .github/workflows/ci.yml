@@ -42,6 +42,7 @@ jobs:
         run: |
           chmod -R go-rwx kodi_library
           docker build -t home-kodi-library:test .
+          docker run --rm home-kodi-library:test python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
       - name: Start and probe the container
         run: |
           sudo install -d -m 0700 -o ${{ matrix.uid }} -g ${{ matrix.gid }} "$RUNNER_TEMP/kodi-library-data"
@@ -66,6 +67,7 @@ jobs:
       - name: Build and start with host networking
         run: |
           docker build -t home-kodi-library:local .
+          docker run --rm home-kodi-library:local python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
           sudo install -d -m 0700 -o 1000 -g 1000 data
           cat > .env <<'EOF'
           API_TOKEN=ci-test-token-00000000000000000000
