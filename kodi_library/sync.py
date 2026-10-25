@@ -436,9 +436,7 @@ class SyncManager:
                 )
                 if last_attempt:
                     try:
-                        attempt = datetime.fromisoformat(
-                            last_attempt.replace("Z", "+00:00")
-                        )
+                        attempt = datetime.fromisoformat(last_attempt.replace("Z", "+00:00"))
                         if attempt.tzinfo is None:
                             attempt = attempt.replace(tzinfo=UTC)
                         if (datetime.now(UTC) - attempt).total_seconds() < 24 * 60 * 60:
