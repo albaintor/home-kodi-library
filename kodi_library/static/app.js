@@ -1787,15 +1787,17 @@ async function renderPlaybackCloudSettings() {
     // Browsers block windows opened after an awaited API request. Open now,
     // with meaningful progress instead of a blank page, then redirect when
     // the authorization URL has been validated by the backend.
-    const popup=kind?window.open('','homekodi-cloud-login',
+    const popup=kind?window.open('about:blank','_blank',
       'popup,width=620,height=760'):null;
     if(popup){
-      popup.document.open();
-      popup.document.write('<!doctype html><html lang="fr"><meta charset="utf-8">'+
-        '<title>Connexion cloud</title><body style="font:16px system-ui;padding:2rem">'+
-        '<h2>Connexion sécurisée</h2><p>Préparation de la page du fournisseur…</p>'+
-        '<p>Cette fenêtre affichera le site de connexion officiel.</p></body></html>');
-      popup.document.close();
+      try {
+        popup.document.open();
+        popup.document.write('<!doctype html><html lang="fr"><meta charset="utf-8">'+
+          '<title>Connexion cloud</title><body style="font:16px system-ui;padding:2rem">'+
+          '<h2>Connexion sécurisée</h2><p>Préparation de la page du fournisseur…</p>'+
+          '<p>Cette fenêtre affichera le site de connexion officiel.</p></body></html>');
+        popup.document.close();
+      } catch(_) { /* Never abort OAuth because the opener is cross-origin. */ }
     }
     try {
       if(disconnect){
