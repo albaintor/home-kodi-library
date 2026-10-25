@@ -272,6 +272,37 @@ class ReplayResponse(BaseModel):
     pending_count: int
 
 
+class PlaybackLocationInput(StrictModel):
+    """Share/provider descriptor; never send SMB, FTP or OAuth credentials."""
+    name: str = Field(min_length=1, max_length=120)
+    kind: Literal["smb", "nfs", "ftp", "onedrive", "google_drive",
+                  "dropbox", "icloud", "http", "local"]
+    target: str = Field(default="", max_length=2048)
+
+    @field_validator("name")
+    @classmethod
+    def clean_name(cls, name: str) -> str:
+        name = name.strip()
+        if not name:
+            raise ValueError("Name must not be blank.")
+        return name
+
+    @field_validator("target")
+    @classmethod
+    def no_embedded_credentials(cls, target: str) -> str:
+        from urllib.parse import urlsplit
+        candidate = urlsplit(target.strip())
+        if candidate.username is not None or candidate.password is not None:
+            raise ValueError("Credentials must not be embedded in the location.")
+        return target.strip()
+
+
+class PlaybackLocationView(PlaybackLocationInput):
+    id: str
+    created_at: str
+    updated_at: str
+
+
 class ListInput(StrictModel):
     name: str = Field(min_length=1, max_length=120)
     description: str = Field(default="", max_length=1000)

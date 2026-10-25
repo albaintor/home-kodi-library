@@ -100,6 +100,10 @@ CREATE TABLE IF NOT EXISTS enrichment (
  work_id TEXT PRIMARY KEY REFERENCES works(id) ON DELETE CASCADE,
  payload TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS playback_locations (
+ id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,
+ target TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS lists (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
@@ -383,6 +387,50 @@ class Store:
                 yield conn
         finally:
             conn.close()
+
+    def playback_locations(self) -> list[dict[str, str]]:
+        """Connection descriptors only. Authentication is managed by the OS/File Provider."""
+        with self.connect() as conn:
+            return [dict(row) for row in conn.execute(
+                "SELECT id,name,kind,target,created_at,updated_at "
+                "FROM playback_locations ORDER BY name COLLATE NOCASE,id"
+            )]
+
+    def save_playback_location(
+        self, data: dict[str, str], location_id: str | None = None
+    ) -> dict[str, str]:
+        timestamp = now()
+        with self.connect() as conn:
+            if location_id is None:
+                location_id = str(uuid4())
+                conn.execute(
+                    "INSERT INTO playback_locations "
+                    "(id,name,kind,target,created_at,updated_at) VALUES(?,?,?,?,?,?)",
+                    (location_id, data["name"], data["kind"], data["target"], timestamp, timestamp),
+                )
+            else:
+                current = conn.execute(
+                    "SELECT id FROM playback_locations WHERE id=?", (location_id,)
+                ).fetchone()
+                if current is None:
+                    raise KeyError(location_id)
+                conn.execute(
+                    "UPDATE playback_locations SET name=?,kind=?,target=?,updated_at=? WHERE id=?",
+                    (data["name"], data["kind"], data["target"], timestamp, location_id),
+                )
+            row = conn.execute(
+                "SELECT id,name,kind,target,created_at,updated_at "
+                "FROM playback_locations WHERE id=?", (location_id,)
+            ).fetchone()
+            return dict(row)
+
+    def delete_playback_location(self, location_id: str) -> None:
+        with self.connect() as conn:
+            deleted = conn.execute(
+                "DELETE FROM playback_locations WHERE id=?", (location_id,)
+            )
+            if deleted.rowcount == 0:
+                raise KeyError(location_id)
 
     def device_tokens(self) -> list[dict[str, str]]:
         with self.connect() as conn:

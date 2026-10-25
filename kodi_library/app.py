@@ -75,6 +75,8 @@ from .models import (
     MediaDetail,
     MediaPage,
     PairingRedeem,
+    PlaybackLocationInput,
+    PlaybackLocationView,
     PairingRequest,
     PairingResult,
     PersonalInput,
@@ -283,6 +285,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "bulk_list_add",
                 "ai_refine_results",
                 "kodi_local_stream",
+                "playback_locations",
             ],
         }
 
@@ -1225,6 +1228,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "lists": len(restored),
             "media": len(document["tables"]["works"]),
         }
+
+    @app.get(
+        API + "/playback/locations",
+        response_model=list[PlaybackLocationView],
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    def playback_locations():
+        return store.playback_locations()
+
+    @app.post(
+        API + "/playback/locations",
+        response_model=PlaybackLocationView,
+        status_code=201,
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def create_playback_location(data: PlaybackLocationInput):
+        return store.save_playback_location(data.model_dump())
+
+    @app.put(
+        API + "/playback/locations/{location_id}",
+        response_model=PlaybackLocationView,
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def update_playback_location(location_id: str, data: PlaybackLocationInput):
+        try:
+            return store.save_playback_location(data.model_dump(), location_id)
+        except KeyError:
+            raise HTTPException(404, "Unknown playback location.") from None
+
+    @app.delete(
+        API + "/playback/locations/{location_id}",
+        status_code=204,
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def delete_playback_location(location_id: str):
+        try:
+            store.delete_playback_location(location_id)
+        except KeyError:
+            raise HTTPException(404, "Unknown playback location.") from None
 
     @app.get(
         API + "/lists",
