@@ -1383,9 +1383,18 @@ async function renderPlaybackCloudSettings() {
   section.className='metadata-status';
   section.id='playback-cloud-web-settings';
   section.innerHTML='<h3>Services cloud · navigateur web</h3>'+
-    '<p class="hint">Autorisations propres au serveur web. Aucun jeton transmis à l’application iOS.</p>'+
-    '<p class="hint">Une application OAuth et une URL de retour HTTPS doivent être enregistrées auprès de chaque fournisseur, une seule fois par déploiement.</p>'+
+    '<p class="hint">Identifiants OAuth du serveur web uniquement. Aucun jeton n’est synchronisé avec iOS.</p>'+
+    '<p class="hint">Chaque fournisseur impose d’enregistrer une application OAuth sur son portail développeur. Saisissez ici le client ID, le secret si requis et l’URL HTTPS de retour autorisée. L’application est enregistrée ensuite sur le serveur ; pas besoin de modifier le conteneur.</p>'+
     '<div id="playback-cloud-web-list"></div>'+
+    '<form id="playback-cloud-app-form" class="connection-form" hidden>'+
+    '<strong class="wide" id="playback-cloud-app-title"></strong>'+
+    '<input name="provider" type="hidden">'+
+    '<label class="wide">Client ID<input name="client_id" required autocomplete="off"></label>'+
+    '<label class="wide">Client secret<input name="client_secret" type="password" autocomplete="new-password" placeholder="Laisser vide pour conserver"></label>'+
+    '<label class="wide">URL de retour HTTPS<input name="redirect_url" required type="url"></label>'+
+    '<button class="primary" type="submit">Enregistrer l’application OAuth</button>'+
+    '<button type="button" class="secondary" data-cloud-app-cancel>Annuler</button>'+
+    '</form>'+
     '<p id="playback-cloud-web-status" role="status" aria-live="polite"></p>'+
     '<p id="playback-cloud-web-link"></p>';
   $('playback-cloud-web-settings')?.remove();
@@ -1393,26 +1402,33 @@ async function renderPlaybackCloudSettings() {
   const message=section.querySelector('#playback-cloud-web-status');
   const link=section.querySelector('#playback-cloud-web-link');
   const list=section.querySelector('#playback-cloud-web-list');
-  let locations=[],statuses=[];
+  const form=section.querySelector('#playback-cloud-app-form');
+  let locations=[],statuses=[],apps=[];
   async function load() {
     message.textContent='';
     link.replaceChildren();
     try {
-      [locations,statuses]=await Promise.all([
-        api('playback/locations'),
-        api('playback/cloud/status')
+      const outputs=await Promise.all([
+        api('playback/locations'),api('playback/cloud/status'),
+        state.role==='admin'?api('playback/cloud/apps'):Promise.resolve([])
       ]);
+      [locations,statuses,apps]=outputs;
     } catch(e) {message.textContent=e.message;return;}
     const byId=new Map(statuses.map(row=>[row.id,row]));
+    const appByProvider=new Map(apps.map(row=>[row.provider,row]));
     list.innerHTML=playbackCloudProviders.map(([kind,label])=>{
       const place=locations.find(row=>row.kind===kind);
       const status=place?byId.get(place.id):null;
-      const note=status?.connected?'Connecté':status?.configured?'Compte non connecté':'Application OAuth à configurer';
-      const disabled=state.role!=='admin'||!status?.configured;
+      const app=appByProvider.get(kind);
+      const configured=Boolean(status?.configured||app?.client_id);
+      const note=status?.connected?'Connecté':configured?'Autorisation du compte requise':'Application OAuth non enregistrée';
+      const disabled=state.role!=='admin';
       return '<div class="connection-card"><div><strong>'+esc(label)+'</strong>'+
         '<p class="hint">'+esc(note)+'</p></div><div class="connection-actions">'+
+        '<button type="button" class="secondary" data-cloud-app-edit="'+esc(kind)+'"'+
+        (disabled?' disabled':'')+'>Configurer OAuth</button>'+
         '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
-        (disabled?' disabled':'')+'>'+(status?.connected?'Reconnecter':'Connecter')+'</button>'+
+        (disabled||!configured?' disabled':'')+'>'+(status?.connected?'Reconnecter':'Connecter')+'</button>'+
         (status?.connected&&state.role==='admin'
           ? '<button class="secondary" type="button" data-web-cloud-disconnect="'+
           esc(place.id)+'">Déconnecter</button>':'')+'</div></div>';
@@ -1421,6 +1437,22 @@ async function renderPlaybackCloudSettings() {
   section.addEventListener('click',async event=>{
     const button=event.target.closest('button');
     if(!button||button.disabled)return;
+    if(button.hasAttribute('data-cloud-app-cancel')){form.hidden=true;return;}
+    const edit=button.dataset.cloudAppEdit;
+    if(edit){
+      const app=apps.find(row=>row.provider===edit);
+      form.hidden=false;
+      form.elements.provider.value=edit;
+      form.elements.client_id.value=app?.client_id||'';
+      form.elements.client_secret.value='';
+      const origin=location.origin==='null'?'':location.origin;
+      form.elements.redirect_url.value=app?.redirect_url||
+        origin+baseURL.pathname+'api/v1/playback/cloud/callback';
+      section.querySelector('#playback-cloud-app-title').textContent=
+        'Application OAuth · '+(playbackCloudProviders.find(x=>x[0]===edit)?.[1]||edit);
+      form.scrollIntoView({block:'nearest'});
+      return;
+    }
     if(button.hasAttribute('data-web-cloud-refresh')){await load();return;}
     const kind=button.dataset.webCloudConnect;
     const disconnect=button.dataset.webCloudDisconnect;
@@ -1454,9 +1486,25 @@ async function renderPlaybackCloudSettings() {
     } catch(e) {message.textContent=e.message;}
     finally {button.disabled=false;}
   });
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();
+    const data=new FormData(form),provider=String(data.get('provider')||'');
+    const payload={
+      client_id:String(data.get('client_id')||'').trim(),
+      client_secret:String(data.get('client_secret')||''),
+      redirect_url:String(data.get('redirect_url')||'').trim()
+    };
+    try{
+      await api('playback/cloud/apps/'+encodeURIComponent(provider),{
+        method:'PUT',body:JSON.stringify(payload)
+      });
+      form.hidden=true;
+      await load();
+      message.textContent='Application OAuth enregistrée. Vous pouvez maintenant connecter votre compte.';
+    }catch(e){message.textContent=e.message;}
+  });
   await load();
 }
-
 
 // Preserve the existing settings forms and their event handlers while presenting
 // them in four accessible panes. A rerender keeps the currently selected pane.
