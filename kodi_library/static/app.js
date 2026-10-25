@@ -1821,10 +1821,11 @@ async function renderPlaybackCloudSettings() {
           method:'POST'
         });
         if(run!==deviceRun||!section.isConnected)return;
-        const verification=new URL(auth.verification_uri);
-        if(verification.protocol!=='https:'||
-           !['microsoft.com','www.microsoft.com','login.microsoftonline.com'].includes(verification.hostname))
-          throw new Error('Adresse de vérification Microsoft inattendue.');
+        // Microsoft documents a stable device-code entry point. The server
+        // owns the device_code, so opening this fixed URL with user_code
+        // avoids rejecting valid Microsoft regional verification_uri hosts
+        // and prevents redirecting the user to arbitrary response URLs.
+        const verification=new URL('https://microsoft.com/devicelogin');
         activeDeviceCode=auth.user_code;
         devicePanel.innerHTML='<div class="connection-card"><div>'+
           '<strong>Autorisation Microsoft OneDrive</strong>'+
