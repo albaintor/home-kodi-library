@@ -1261,8 +1261,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not relative:
             raise HTTPException(422, "A file path is required.")
         extension = PurePosixPath(relative).suffix.lower().lstrip(".")
-        if extension not in {"mp4", "m4v", "mov", "mkv", "avi", "ts", "m2ts",
-                             "webm", "mp3", "m4a", "wav"}:
+        if extension not in {
+            "mp4",
+            "m4v",
+            "mov",
+            "mkv",
+            "avi",
+            "ts",
+            "m2ts",
+            "webm",
+            "mp3",
+            "m4a",
+            "wav",
+        }:
             raise HTTPException(422, "File type is not supported by the media player.")
         now = time.monotonic()
         for key, value in list(playback_tickets.items()):
@@ -1270,14 +1281,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 del playback_tickets[key]
         ticket = secrets.token_urlsafe(40)
         playback_tickets[ticket] = {
-            "location": location_id, "path": relative,
-            "extension": extension, "expires": now + 4 * 3600,
+            "location": location_id,
+            "path": relative,
+            "extension": extension,
+            "expires": now + 4 * 3600,
         }
         if len(playback_tickets) > 128:
             oldest = next(iter(playback_tickets))
             del playback_tickets[oldest]
-        return {"path": f"/api/v1/playback/ticket/{ticket}/video.{extension}",
-                "expires_in": 14400}
+        return {"path": f"/api/v1/playback/ticket/{ticket}/video.{extension}", "expires_in": 14400}
 
     @app.api_route(
         API + "/playback/ticket/{ticket}/{filename}",
@@ -1288,21 +1300,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import time
 
         data = playback_tickets.get(ticket)
-        if (not data or data["expires"] <= time.monotonic()
-                or filename != "video." + data["extension"]):
+        if (
+            not data
+            or data["expires"] <= time.monotonic()
+            or filename != "video." + data["extension"]
+        ):
             raise HTTPException(403, "Playback ticket expired or invalid.")
         location = await asyncio.to_thread(store.playback_location, data["location"])
         if not location:
             raise HTTPException(404, "Playback location no longer exists.")
         response = await stream_location(
-            location, data["path"], request.headers.get("Range"), store,
-            cloud_auth, settings.playback_nfs_mounts,
+            location,
+            data["path"],
+            request.headers.get("Range"),
+            store,
+            cloud_auth,
+            settings.playback_nfs_mounts,
         )
         if request.method == "HEAD":
             # File size is known without starting the streaming iterator.
-            return Response(
-                status_code=response.status_code, headers=dict(response.headers)
-            )
+            return Response(status_code=response.status_code, headers=dict(response.headers))
         return response
 
     @app.get(
@@ -1328,7 +1345,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not location:
             raise HTTPException(404, "Unknown playback location.")
         return await stream_location(
-            location, path, request.headers.get("Range"), store, cloud_auth,
+            location,
+            path,
+            request.headers.get("Range"),
+            store,
+            cloud_auth,
             settings.playback_nfs_mounts,
         )
 
@@ -1415,11 +1436,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         redirect = str(payload.get("redirect_url") or "").strip()
         secret = str(payload.get("client_secret") or "")
         parsed = urlsplit(redirect)
-        if (not client_id or len(client_id) > 1024
-                or len(secret) > 4096 or parsed.scheme != "https"
-                or not parsed.hostname or parsed.username
-                or parsed.path != "/api/v1/playback/cloud/callback"
-                or parsed.fragment or parsed.query):
+        if (
+            not client_id
+            or len(client_id) > 1024
+            or len(secret) > 4096
+            or parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.path != "/api/v1/playback/cloud/callback"
+            or parsed.fragment
+            or parsed.query
+        ):
             raise HTTPException(422, "A client ID and exact HTTPS OAuth callback URL are required.")
         encrypted = cloud_auth.encrypt_password(secret) if secret else None
         store.set_playback_oauth_app(provider, client_id, redirect, encrypted)

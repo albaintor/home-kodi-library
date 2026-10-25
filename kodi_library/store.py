@@ -488,11 +488,14 @@ class Store:
 
     def playback_oauth_apps(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
-            return [dict(row) for row in conn.execute(
-                "SELECT provider,client_id,redirect_url,"
-                "(secret_cipher IS NOT NULL) AS has_secret,updated_at "
-                "FROM playback_oauth_apps ORDER BY provider"
-            )]
+            return [
+                dict(row)
+                for row in conn.execute(
+                    "SELECT provider,client_id,redirect_url,"
+                    "(secret_cipher IS NOT NULL) AS has_secret,updated_at "
+                    "FROM playback_oauth_apps ORDER BY provider"
+                )
+            ]
 
     def playback_oauth_app(self, provider: str) -> dict[str, Any] | None:
         with self.connect() as conn:
@@ -502,7 +505,10 @@ class Store:
             return dict(row) if row else None
 
     def set_playback_oauth_app(
-        self, provider: str, client_id: str, redirect_url: str,
+        self,
+        provider: str,
+        client_id: str,
+        redirect_url: str,
         secret_cipher: str | None = None,
     ) -> None:
         with self.connect() as conn:
@@ -521,8 +527,8 @@ class Store:
     def playback_cloud_credentials(self, location_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             row = conn.execute(
-                "SELECT provider,token_cipher FROM playback_cloud_credentials "
-                "WHERE location_id=?", (location_id,)
+                "SELECT provider,token_cipher FROM playback_cloud_credentials WHERE location_id=?",
+                (location_id,),
             ).fetchone()
             return dict(row) if row else None
 

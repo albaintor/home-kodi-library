@@ -85,14 +85,14 @@ class CloudOAuth:
             secret = None
             if saved.get("secret_cipher"):
                 try:
-                    secret = self.fernet.decrypt(
-                        saved["secret_cipher"].encode("ascii")
-                    ).decode("utf-8")
+                    secret = self.fernet.decrypt(saved["secret_cipher"].encode("ascii")).decode(
+                        "utf-8"
+                    )
                 except Exception:
                     LOG.warning("Cannot decrypt OAuth app secret for %s", provider)
-            return {
-                "client_id": saved["client_id"], "client_secret": secret or ""
-            }, saved["redirect_url"]
+            return {"client_id": saved["client_id"], "client_secret": secret or ""}, saved[
+                "redirect_url"
+            ]
         return self.clients.get(provider, {}), self.redirect
 
     def configured(self, provider: str) -> bool:
@@ -101,8 +101,9 @@ class CloudOAuth:
             provider in PROVIDERS
             and bool(redirect)
             and bool(item.get("client_id"))
-            and (provider not in {"google_drive", "box", "pcloud"}
-                 or bool(item.get("client_secret")))
+            and (
+                provider not in {"google_drive", "box", "pcloud"} or bool(item.get("client_secret"))
+            )
         )
 
     def start(self, location_id: str, provider: str) -> str:

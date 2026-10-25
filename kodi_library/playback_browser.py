@@ -3,6 +3,7 @@
 Only admin-created locations are read. End-user paths are relative and strictly
 validated. Credentials never leave the server. No file modification API.
 """
+
 from __future__ import annotations
 
 import ftplib
@@ -16,9 +17,12 @@ from fastapi.responses import StreamingResponse
 
 
 def safe_path(path: str) -> str:
-    if (not isinstance(path, str) or len(path) > 2048
-            or any(ord(char) < 32 or ord(char) == 127 for char in path)
-            or "\\" in path):
+    if (
+        not isinstance(path, str)
+        or len(path) > 2048
+        or any(ord(char) < 32 or ord(char) == 127 for char in path)
+        or "\\" in path
+    ):
         raise HTTPException(422, "Invalid media path.")
     parts = path.split("/")
     if any(p in (".", "..") for p in parts) or path.startswith("/"):
@@ -64,9 +68,14 @@ def _sftp_connection(location: dict, password: str):
     ssh.load_system_host_keys()
     ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
     ssh.connect(
-        hostname=host, port=int(location.get("port") or 22),
-        username=location.get("username") or None, password=password or None,
-        timeout=8, auth_timeout=8, allow_agent=False, look_for_keys=False,
+        hostname=host,
+        port=int(location.get("port") or 22),
+        username=location.get("username") or None,
+        password=password or None,
+        timeout=8,
+        auth_timeout=8,
+        allow_agent=False,
+        look_for_keys=False,
     )
     return ssh, ssh.open_sftp()
 
@@ -75,8 +84,9 @@ def _local_root(location: dict, mounts: dict[str, str]) -> Path:
     configured = mounts.get(location["id"])
     if not configured:
         raise HTTPException(
-            501, "NFS browsing requires a read-only mount on the web server "
-            "and PLAYBACK_NFS_MOUNTS configuration."
+            501,
+            "NFS browsing requires a read-only mount on the web server "
+            "and PLAYBACK_NFS_MOUNTS configuration.",
         )
     root = Path(configured).resolve()
     if not root.is_dir():
@@ -92,7 +102,10 @@ def _full_path(root: Path, relative: str) -> Path:
 
 
 def _sync_browse(
-    location: dict, relative: str, password: str, mounts: dict[str, str],
+    location: dict,
+    relative: str,
+    password: str,
+    mounts: dict[str, str],
 ) -> list[dict]:
     kind = location["kind"]
     host, prefix = _root(location) if kind != "nfs" else ("", "")
@@ -101,8 +114,11 @@ def _sync_browse(
         if not folder.is_dir():
             raise HTTPException(404, "Directory not found.")
         return [
-            {"name": child.name, "is_dir": child.is_dir(),
-             "size": child.stat().st_size if child.is_file() else 0}
+            {
+                "name": child.name,
+                "is_dir": child.is_dir(),
+                "size": child.stat().st_size if child.is_file() else 0,
+            }
             for child in folder.iterdir()
             if not child.is_symlink() and not child.name.startswith(".")
         ][:2000]
@@ -117,10 +133,13 @@ def _sync_browse(
                 if item.filename.startswith("."):
                     continue
                 directory = stat.S_ISDIR(item.st_mode)
-                rows.append({
-                    "name": item.filename, "is_dir": directory,
-                    "size": 0 if directory else int(item.st_size),
-                })
+                rows.append(
+                    {
+                        "name": item.filename,
+                        "is_dir": directory,
+                        "size": 0 if directory else int(item.st_size),
+                    }
+                )
                 if len(rows) >= 2000:
                     break
             return rows
@@ -135,10 +154,13 @@ def _sync_browse(
             for name, info in conn.mlsd(folder):
                 if name in (".", "..") or name.startswith("."):
                     continue
-                rows.append({
-                    "name": name, "is_dir": info.get("type") == "dir",
-                    "size": int(info.get("size") or 0),
-                })
+                rows.append(
+                    {
+                        "name": name,
+                        "is_dir": info.get("type") == "dir",
+                        "size": int(info.get("size") or 0),
+                    }
+                )
                 if len(rows) >= 2000:
                     break
             return rows
@@ -150,8 +172,10 @@ def _sync_browse(
         username = location.get("username") or ""
         domain = location.get("workgroup") or ""
         smbclient.register_session(
-            host, username=domain + "\\" + username if domain and username else username,
-            password=password, port=int(location.get("port") or 445),
+            host,
+            username=domain + "\\" + username if domain and username else username,
+            password=password,
+            port=int(location.get("port") or 445),
             connection_timeout=8,
         )
         sections = [s for s in (prefix + "/" + relative).split("/") if s]
@@ -164,11 +188,13 @@ def _sync_browse(
                 if entry.name.startswith("."):
                     continue
                 is_dir = entry.is_dir()
-                rows.append({
-                    "name": entry.name,
-                    "is_dir": is_dir,
-                    "size": 0 if is_dir else entry.stat().st_size,
-                })
+                rows.append(
+                    {
+                        "name": entry.name,
+                        "is_dir": is_dir,
+                        "size": 0 if is_dir else entry.stat().st_size,
+                    }
+                )
                 if len(rows) >= 2000:
                     break
         return rows
@@ -176,8 +202,12 @@ def _sync_browse(
 
 
 def _sync_stream(
-    location: dict, relative: str, password: str, mounts: dict[str, str],
-    start: int, end: int | None,
+    location: dict,
+    relative: str,
+    password: str,
+    mounts: dict[str, str],
+    start: int,
+    end: int | None,
 ):
     kind = location["kind"]
     chunk = 512 * 1024
@@ -186,6 +216,7 @@ def _sync_stream(
         if not file.is_file():
             raise HTTPException(404, "File not found.")
         size = file.stat().st_size
+
         def content():
             with file.open("rb") as stream:
                 stream.seek(start)
@@ -196,20 +227,25 @@ def _sync_stream(
                         break
                     left -= len(data)
                     yield data
+
         return size, content
     host, prefix = _root(location)
     remote = "/".join(filter(None, (prefix, relative)))
     if kind == "smb":
         import smbclient
+
         username = location.get("username") or ""
         domain = location.get("workgroup") or ""
         smbclient.register_session(
-            host, username=domain + "\\" + username if domain and username else username,
-            password=password, port=int(location.get("port") or 445),
+            host,
+            username=domain + "\\" + username if domain and username else username,
+            password=password,
+            port=int(location.get("port") or 445),
             connection_timeout=8,
         )
         file = "\\\\" + host + "\\" + remote.replace("/", "\\")
         size = smbclient.stat(file).st_size
+
         def content():
             with smbclient.open_file(file, mode="rb") as stream:
                 stream.seek(start)
@@ -220,6 +256,7 @@ def _sync_stream(
                         break
                     left -= len(data)
                     yield data
+
         return size, content
     if kind == "sftp":
         ssh, sftp = _sftp_connection(location, password)
@@ -244,6 +281,7 @@ def _sync_stream(
             finally:
                 client.close()
                 session.close()
+
         return size, content
     if kind == "ftp":
         conn = _ftp_connection(location, password)
@@ -253,6 +291,7 @@ def _sync_stream(
             conn.quit()
         if size is None:
             raise HTTPException(404, "FTP file size unavailable.")
+
         def content():
             connection = _ftp_connection(location, password)
             try:
@@ -266,6 +305,7 @@ def _sync_stream(
                         yield data
             finally:
                 connection.close()
+
         return size, content
     raise HTTPException(501, "Streaming for this protocol is not implemented.")
 
@@ -312,50 +352,70 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                     raise HTTPException(422, "Invalid Google Drive folder ID.")
                 response = await client.get(
                     "https://www.googleapis.com/drive/v3/files",
-                    headers=headers, params={
+                    headers=headers,
+                    params={
                         "q": f"'{parent}' in parents and trashed = false",
                         "fields": "nextPageToken,files(id,name,mimeType,size)",
                         "page_size": 200,
-                    }
+                    },
                 )
                 response.raise_for_status()
                 nodes = response.json().get("files", [])
                 return [
-                    {"name": x["name"], "path": x["id"],
-                     "is_dir": x.get("mimeType") == "application/vnd.google-apps.folder",
-                     "size": int(x.get("size") or 0)} for x in nodes
+                    {
+                        "name": x["name"],
+                        "path": x["id"],
+                        "is_dir": x.get("mimeType") == "application/vnd.google-apps.folder",
+                        "size": int(x.get("size") or 0),
+                    }
+                    for x in nodes
                 ]
             if kind == "onedrive":
                 base = "https://graph.microsoft.com/v1.0/me/drive/"
-                endpoint = base + ("root/children" if not path else
-                                   "items/" + quote(path, safe="") + "/children")
+                endpoint = base + (
+                    "root/children" if not path else "items/" + quote(path, safe="") + "/children"
+                )
                 response = await client.get(endpoint, headers=headers)
                 response.raise_for_status()
                 return [
-                    {"name": x["name"], "path": x["id"],
-                     "is_dir": "folder" in x, "size": int(x.get("size") or 0)}
+                    {
+                        "name": x["name"],
+                        "path": x["id"],
+                        "is_dir": "folder" in x,
+                        "size": int(x.get("size") or 0),
+                    }
                     for x in response.json().get("value", [])
                 ]
             if kind == "dropbox":
                 response = await client.post(
                     "https://api.dropboxapi.com/2/files/list_folder",
-                    headers=headers, json={"path": "/" + path if path else "", "limit": 200}
+                    headers=headers,
+                    json={"path": "/" + path if path else "", "limit": 200},
                 )
                 response.raise_for_status()
                 return [
-                    {"name": x["name"], "path": x.get("path_display", "").lstrip("/"),
-                     "is_dir": x.get(".tag") == "folder", "size": x.get("size", 0)}
+                    {
+                        "name": x["name"],
+                        "path": x.get("path_display", "").lstrip("/"),
+                        "is_dir": x.get(".tag") == "folder",
+                        "size": x.get("size", 0),
+                    }
                     for x in response.json().get("entries", [])
                 ]
             if kind == "box":
                 response = await client.get(
                     "https://api.box.com/2.0/folders/" + quote(path or "0", safe="") + "/items",
-                    headers=headers, params={"limit": 200, "fields": "id,name,size,type"}
+                    headers=headers,
+                    params={"limit": 200, "fields": "id,name,size,type"},
                 )
                 response.raise_for_status()
                 return [
-                    {"name": x["name"], "path": x["id"],
-                     "is_dir": x["type"] == "folder", "size": int(x.get("size") or 0)}
+                    {
+                        "name": x["name"],
+                        "path": x["id"],
+                        "is_dir": x["type"] == "folder",
+                        "size": int(x.get("size") or 0),
+                    }
                     for x in response.json().get("entries", [])
                 ]
             if kind == "pcloud":
@@ -372,15 +432,21 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                 if data.get("result") != 0:
                     raise HTTPException(502, "pCloud refused folder listing.")
                 return [
-                    {"name": x["name"], "path": str(x.get("folderid") or x.get("fileid")),
-                     "is_dir": bool(x.get("isfolder")), "size": int(x.get("size") or 0)}
+                    {
+                        "name": x["name"],
+                        "path": str(x.get("folderid") or x.get("fileid")),
+                        "is_dir": bool(x.get("isfolder")),
+                        "size": int(x.get("size") or 0),
+                    }
                     for x in data.get("metadata", {}).get("contents", [])
                 ]
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         raise HTTPException(
             409 if status in (401, 403) else 502,
-            "Cloud authorization expired." if status in (401, 403) else "Cloud provider unavailable.",
+            "Cloud authorization expired."
+            if status in (401, 403)
+            else "Cloud provider unavailable.",
         ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Cloud network request failed.") from exc
@@ -388,7 +454,12 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
 
 
 async def stream_location(
-    location: dict, path: str, range_header: str | None, store, encryption, mounts: dict,
+    location: dict,
+    path: str,
+    range_header: str | None,
+    store,
+    encryption,
+    mounts: dict,
 ):
     import asyncio
     import re
@@ -422,6 +493,5 @@ async def stream_location(
     if range_header:
         headers["Content-Range"] = f"bytes {start}-{finish}/{size}"
     return StreamingResponse(
-        content(), status_code=206 if range_header else 200,
-        media_type=mime, headers=headers
+        content(), status_code=206 if range_header else 200, media_type=mime, headers=headers
     )
