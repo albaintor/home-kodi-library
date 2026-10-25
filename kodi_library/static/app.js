@@ -1372,6 +1372,195 @@ async function pollJob(job) {
   }
   toast('L’import continue en arrière-plan. Consultez les paramètres pour son résultat.');
 }
+// Shared explorer UI: the same folder/back/list/grid conventions apply to
+// SMB, NFS, FTP and cloud connectors. Only adapters that can stream expose Play.
+const networkExplorer={
+  locations:[],selected:null,stack:[],entries:[],shown:0,
+  view:'grid',busy:false,revision:0
+};
+function networkPathLabel() {
+  if(!networkExplorer.selected)return 'Sources enregistrées';
+  const nodes=networkExplorer.stack;
+  return networkExplorer.selected.name+
+    (nodes.length?' / '+nodes.map(x=>x.name).join(' / '):'');
+}
+function networkHomeMarkup(locations) {
+  const allowed=locations.filter(l=>['smb','nfs','ftp','sftp','onedrive',
+    'google_drive','dropbox','box','pcloud','icloud'].includes(l.kind));
+  return allowed.slice(0,12).map(loc=>
+    '<button class="network-home-entry" type="button" data-network-home-open="'+esc(loc.id)+'">'+
+      '<span aria-hidden="true">'+(['onedrive','google_drive','dropbox','box','pcloud','icloud']
+        .includes(loc.kind)?'☁':'▣')+'</span>'+
+      '<strong>'+esc(loc.name)+'</strong>'+
+      '<small>'+esc(loc.kind.toUpperCase())+'</small>'+
+    '</button>'
+  ).join('')||'<span class="hint">Aucune source enregistrée. Ajoutez un emplacement dans Paramètres → Réseau et cloud.</span>';
+}
+async function refreshNetworkHome() {
+  try {
+    networkExplorer.locations=await api('playback/locations');
+    $('network-home-locations').innerHTML=networkHomeMarkup(networkExplorer.locations);
+  }catch(e){
+    $('network-home-locations').textContent='Sources indisponibles : '+e.message;
+  }
+}
+function networkBrowseError(message) {
+  $('network-browser-feedback').textContent=message||'';
+}
+function networkMedia(filename) {
+  return /\.(mp4|m4v|mov|mkv|webm|avi|ts|m2ts|mp3|m4a|wav)$/i.test(filename||'');
+}
+function networkCurrentPath(){
+  return networkExplorer.stack.at(-1)?.path||'';
+}
+function renderNetworkBrowser() {
+  const browser=networkExplorer;
+  const box=$('network-browser-items');
+  const count=Math.min(browser.shown,browser.entries.length);
+  box.className='network-browser-items '+(browser.view==='grid'?'is-grid':'is-list');
+  $('network-browser-path').textContent=networkPathLabel();
+  $('network-browser-back').disabled=!browser.selected;
+  $('network-browser-grid').setAttribute('aria-pressed',String(browser.view==='grid'));
+  $('network-browser-list').setAttribute('aria-pressed',String(browser.view==='list'));
+  if(!browser.selected){
+    box.innerHTML=browser.locations.map(loc=>
+      '<button type="button" class="network-browser-tile" data-network-source="'+esc(loc.id)+'">'+
+      '<span class="network-browser-tile-icon">'+
+      (['onedrive','google_drive','dropbox','box','pcloud','icloud'].includes(loc.kind)?'☁':'▣')+
+      '</span><strong>'+esc(loc.name)+'</strong><small>'+esc(loc.kind.toUpperCase())+
+      '</small></button>'
+    ).join('')||'<p class="hint">Aucune source enregistrée.</p>';
+  }else{
+    box.innerHTML=browser.entries.slice(0,count).map((item,i)=>
+      '<div class="network-browser-tile" data-entry="'+i+'">'+
+      '<button class="network-browser-item-main" data-network-entry="'+i+'" type="button">'+
+      '<span class="network-browser-tile-icon">'+(item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄')+'</span>'+
+      '<span class="network-browser-item-name">'+esc(item.name)+'</span>'+
+      '<small>'+(item.is_dir?'Dossier':formatBytes(item.size||0))+'</small></button>'+
+      '<button type="button" class="network-browser-more-actions" data-network-menu="'+i+
+      '" aria-label="Actions '+esc(item.name)+'">···</button></div>'
+    ).join('')||(!browser.busy?'<p class="hint">Aucun élément dans ce dossier.</p>':'');
+  }
+  $('network-browser-more').hidden=browser.entries.length<=count||!browser.selected;
+}
+function formatBytes(bytes){
+  const n=Number(bytes)||0;
+  if(n<1024)return n+' o';
+  if(n<1048576)return (n/1024).toFixed(0)+' Ko';
+  if(n<1073741824)return (n/1048576).toFixed(1)+' Mo';
+  return (n/1073741824).toFixed(2)+' Go';
+}
+async function networkOpenRoot(id=null){
+  networkExplorer.selected=id?networkExplorer.locations.find(x=>x.id===id)||null:null;
+  networkExplorer.stack=[];
+  networkExplorer.entries=[];
+  networkExplorer.shown=0;
+  renderNetworkBrowser();
+  if(networkExplorer.selected)await networkOpenFolder('',networkExplorer.selected.name);
+}
+async function networkOpenFolder(path,name){
+  const browser=networkExplorer;
+  if(!browser.selected)return;
+  const revision=++browser.revision;
+  browser.busy=true;
+  networkBrowseError('Ouverture du dossier…');
+  const target=path||'';
+  try {
+    const items=await api('playback/browse/'+encodeURIComponent(browser.selected.id)+
+      '?path='+encodeURIComponent(target));
+    if(revision!==browser.revision)return;
+    browser.stack.push({path:target,name});
+    browser.entries=items;
+    browser.shown=Math.min(80,items.length);
+    networkBrowseError(items.length>=2000?'Affichage limité aux 2 000 premiers éléments.':'');
+  }catch(e) {
+    if(revision!==browser.revision)return;
+    const detail=e.status===501?'Ce protocole nécessite un connecteur ou un montage disponible sur le serveur.':e.message;
+    networkBrowseError(detail);
+  }finally{
+    if(revision===browser.revision){browser.busy=false;renderNetworkBrowser();}
+  }
+}
+async function networkGoBack(){
+  const browser=networkExplorer;
+  if(!browser.selected)return;
+  if(browser.stack.length<=1){await networkOpenRoot();return;}
+  const parent=browser.stack.at(-2);
+  browser.stack.pop();
+  browser.stack.pop();
+  await networkOpenFolder(parent.path,parent.name);
+}
+function networkPlay(entry){
+  const browser=networkExplorer;
+  if(!browser.selected || !networkMedia(entry.name))return;
+  const kind=browser.selected.kind;
+  if(!['smb','ftp','nfs'].includes(kind)) {
+    networkBrowseError('Navigation disponible, mais le streaming direct de ce fournisseur n’est pas encore pris en charge.');
+    return;
+  }
+  const video=$('network-browser-video');
+  video.pause();
+  video.src=url('api/v1/playback/stream/'+encodeURIComponent(browser.selected.id)+
+    '?path='+encodeURIComponent(entry.path));
+  $('network-browser-player').hidden=false;
+  video.load();
+  void video.play().catch(()=>networkBrowseError(
+    'Lecture indisponible. Vérifiez l’accès au partage et la compatibilité du format avec le navigateur.'
+  ));
+}
+async function openNetworkBrowser(id=null){
+  showDialog('network-browser-dialog');
+  $('network-browser-player').hidden=true;
+  $('network-browser-video').pause();
+  if(networkExplorer.locations.length===0)await refreshNetworkHome();
+  await networkOpenRoot(id);
+}
+$('network-explorer-button').addEventListener('click',()=>void openNetworkBrowser());
+$('network-home-locations').addEventListener('click',event=>{
+  const button=event.target.closest('[data-network-home-open]');
+  if(button)void openNetworkBrowser(button.dataset.networkHomeOpen);
+});
+$('network-browser-back').addEventListener('click',()=>void networkGoBack());
+$('network-browser-grid').addEventListener('click',()=>{
+  networkExplorer.view='grid';renderNetworkBrowser();
+});
+$('network-browser-list').addEventListener('click',()=>{
+  networkExplorer.view='list';renderNetworkBrowser();
+});
+$('network-browser-more').addEventListener('click',()=>{
+  networkExplorer.shown+=80;renderNetworkBrowser();
+});
+$('network-browser-close-video').addEventListener('click',()=>{
+  const player=$('network-browser-video');
+  player.pause();player.removeAttribute('src');player.load();
+  $('network-browser-player').hidden=true;
+});
+$('network-browser-dialog').addEventListener('close',()=>{
+  const player=$('network-browser-video');
+  player.pause();player.removeAttribute('src');player.load();
+});
+$('network-browser-items').addEventListener('click',event=>{
+  const source=event.target.closest('[data-network-source]');
+  if(source){void networkOpenRoot(source.dataset.networkSource);return;}
+  const button=event.target.closest('[data-network-entry],[data-network-menu]');
+  if(!button)return;
+  const index=Number(button.dataset.networkEntry??button.dataset.networkMenu);
+  const item=networkExplorer.entries[index];
+  if(!item)return;
+  if(button.hasAttribute('data-network-menu')) {
+    const action=networkMedia(item.name)&&!item.is_dir?'Lire le média ou copier son chemin ?':'Copier le chemin de cet élément ?';
+    if(networkMedia(item.name)&&!item.is_dir&&localizedConfirm(action)){
+      networkPlay(item);
+    } else if(navigator.clipboard?.writeText) {
+      void navigator.clipboard.writeText(item.path);
+    }
+    return;
+  }
+  if(item.is_dir)void networkOpenFolder(item.path,item.name);
+  else networkPlay(item);
+});
+void refreshNetworkHome();
+
 const playbackCloudProviders=[
   ['dropbox','Dropbox'],['google_drive','Google Drive'],['box','Box'],
   ['onedrive','OneDrive'],['pcloud','pCloud']
