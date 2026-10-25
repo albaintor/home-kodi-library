@@ -26,6 +26,9 @@ ONEDRIVE_PUBLIC_CLIENT_ID = "145e06bb-b35b-4d96-8cf8-4077cd5e5528"
 MICROSOFT_DEVICE_ENDPOINT = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode"
 MICROSOFT_TOKEN_ENDPOINT = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
 MICROSOFT_DEVICE_SCOPE = "offline_access Files.Read"
+# Microsoft documents this canonical device-code verification page for the
+# /common public-client flow. Do not send clients an arbitrary provider URL.
+MICROSOFT_DEVICE_VERIFICATION_URL = "https://microsoft.com/devicelogin"
 
 
 class CloudOAuthError(Exception):
@@ -190,7 +193,9 @@ class CloudOAuth:
         return {
             "request_id": request_id,
             "user_code": user_code,
-            "verification_uri": verification_uri,
+            # Use the Microsoft-documented canonical page regardless of
+            # region-specific or alternate verification_uri hostnames.
+            "verification_uri": MICROSOFT_DEVICE_VERIFICATION_URL,
             "expires_in": expires_in,
             "interval": interval,
         }
