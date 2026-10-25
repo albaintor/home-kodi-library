@@ -53,6 +53,11 @@
     <section class="catalogue">
       <div class="heading-row"><p id="catalogue-status" class="muted">Chargement du catalogue…</p><div class="view-switch" aria-label="Mode d’affichage"><button id="grid-view" aria-label="Vue pochettes" aria-pressed="true">▦</button><button id="list-view" aria-label="Vue liste" aria-pressed="false">☷</button></div></div>
       <section class="catalogue-list-actions" aria-labelledby="custom-lists-title"><div class="list-home-heading"><h2 id="custom-lists-title">Listes personnalisées</h2><p>Films à voir, séries à suivre… organisez vos sélections.</p></div><div id="home-list-thumbnails" class="home-list-thumbnails" aria-label="Vos listes"></div><div class="list-entry-buttons"><button class="secondary" data-action="lists">Ouvrir mes listes</button><button id="create-list-button" class="primary" hidden>+ Créer une liste</button></div></section>
+      <section class="network-home" aria-labelledby="network-home-title">
+        <div class="list-home-heading"><h2 id="network-home-title">Explorateur réseau et cloud</h2><p>Parcourir vos emplacements enregistrés sans quitter la bibliothèque.</p></div>
+        <div id="network-home-locations" class="network-home-locations"></div>
+        <button class="secondary" type="button" id="network-explorer-button">Ouvrir l’explorateur</button>
+      </section>
       <section class="remote-scan-dashboard" aria-label="Actualisation Kodi" hidden>
          <div id="remote-scan-progress" class="remote-scan-progress" role="status" aria-live="polite" hidden></div>
       </section>
@@ -107,6 +112,25 @@
   <dialog id="connections-dialog" class="connections-dialog"><button class="dialog-close" data-close="connections-dialog" aria-label="Fermer les paramètres">×</button><p class="eyebrow">VOTRE CATALOGUE</p><h2>Paramètres</h2><p class="muted">Importez une collection ou connectez la base Kodi. Les lecteurs sont facultatifs.</p><div id="connection-content"></div></dialog>
   <div id="media-actions-popover" class="media-actions-popover" popover="auto" role="dialog" aria-label="Actions du média"></div>
   <div id="toast" class="toast" role="status" hidden></div>
+  <dialog id="network-browser-dialog" class="connections-dialog network-browser-dialog" aria-labelledby="network-browser-title">
+    <button class="dialog-close" data-close="network-browser-dialog" aria-label="Fermer l’explorateur">×</button>
+    <h2 id="network-browser-title">Explorateur réseau et cloud</h2>
+    <div class="network-browser-topbar">
+      <button id="network-browser-back" class="secondary" type="button" disabled>‹ Retour</button>
+      <span id="network-browser-path" class="hint"></span>
+      <div class="view-switch" role="group" aria-label="Mode d’affichage réseau">
+        <button id="network-browser-grid" type="button" aria-pressed="true">▦</button>
+        <button id="network-browser-list" type="button" aria-pressed="false">☷</button>
+      </div>
+    </div>
+    <p id="network-browser-feedback" role="status" aria-live="polite"></p>
+    <div id="network-browser-items" class="network-browser-items"></div>
+    <button id="network-browser-more" class="secondary" type="button" hidden>Afficher la suite</button>
+    <div id="network-browser-player" class="network-browser-player" hidden>
+      <video id="network-browser-video" controls playsinline preload="metadata"></video>
+      <button id="network-browser-close-video" class="secondary" type="button">Fermer la lecture</button>
+    </div>
+  </dialog>
   <dialog id="lists-dialog" class="lists-dialog"><button class="dialog-close" data-close="lists-dialog" aria-label="Fermer les listes">×</button><p class="eyebrow">VOTRE SÉLECTION</p><h2>Mes listes</h2><div id="lists-content"></div></dialog>
   <dialog id="choose-list-dialog" class="small-dialog"><button class="dialog-close" data-close="choose-list-dialog" aria-label="Fermer l’ajout aux listes">×</button><h2>Ajouter à une liste</h2><div id="choose-list-content"></div></dialog>
   <dialog id="play-dialog" class="small-dialog playback-dialog" aria-labelledby="play-title"><button class="dialog-close" data-close="play-dialog" aria-label="Fermer les options de lecture">×</button><h2 id="play-title"><img src="static/kodi-logo.svg" alt="" width="28" height="28">Lire sur Kodi</h2><div id="play-content"></div></dialog>
