@@ -140,3 +140,57 @@ def test_reject_invalid_or_unsatisfiable_ranges(monkeypatch, requested):
             )
         )
     assert error.value.status_code == 416
+
+
+def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
+    import asyncio
+    import httpx
+
+    from kodi_library import playback_browser
+
+    seen = []
+
+    def handle(request):
+        seen.append(request)
+        if request.url.host == "graph.microsoft.com":
+            assert request.headers.get("Authorization") == "Bearer private-access"
+            return httpx.Response(
+                200, json={
+                    "@microsoft.graph.downloadUrl": "https://cdn.example.org/video.mkv"
+                }
+            )
+        assert request.url.host == "cdn.example.org"
+        assert request.headers.get("Authorization") is None
+        assert request.headers.get("Range") == "bytes=4-7"
+        return httpx.Response(
+            206, headers={
+                "Content-Range": "bytes 4-7/100",
+                "Content-Length": "4",
+                "Content-Type": "video/x-matroska",
+            }, content=b"abcd"
+        )
+
+    original_client = httpx.AsyncClient
+    transport = httpx.MockTransport(handle)
+    monkeypatch.setattr(
+        playback_browser.httpx, "AsyncClient",
+        lambda **options: original_client(transport=transport, **options)
+    )
+
+    class OAuth:
+        async def credentials(self, location_id, provider):
+            assert location_id == "cloud-1"
+            assert provider == "onedrive"
+            return {"access_token": "private-access"}
+
+    async def read():
+        response = await playback_browser.cloud_stream_location(
+            {"id": "cloud-1", "kind": "onedrive"},
+            "opaque-file-id", "bytes=4-7", OAuth(),
+        )
+        assert response.status_code == 206
+        assert response.headers["content-range"] == "bytes 4-7/100"
+        return b"".join([part async for part in response.body_iterator])
+
+    assert asyncio.run(read()) == b"abcd"
+    assert len(seen) == 2
