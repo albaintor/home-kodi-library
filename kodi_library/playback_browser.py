@@ -15,7 +15,7 @@ from urllib.parse import quote
 import httpx
 from cryptography.fernet import InvalidToken
 from fastapi import HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 LOG = logging.getLogger(__name__)
 
@@ -498,12 +498,19 @@ async def stream_location(
     store,
     encryption,
     mounts: dict,
+    method: str = "GET",
 ):
     import asyncio
     import re
 
     relative = safe_path(path)
-    if not relative or location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
+    if not relative:
+        raise HTTPException(422, "Specify a remote file.")
+    if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
+        return await cloud_stream_location(
+            location, relative, range_header, encryption, method
+        )
+    if location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
         raise HTTPException(501, "Direct streaming is not enabled for this source.")
     start, end = 0, None
     if range_header:
@@ -553,3 +560,160 @@ async def stream_location(
     return StreamingResponse(
         content(), status_code=206 if range_header else 200, media_type=mime, headers=headers
     )
+
+
+async def cloud_stream_location(location, file_id, range_header, oauth, method="GET"):
+    """Relay authenticated cloud media without exposing bearer tokens to iOS.
+
+    Each HTTP Range gets its own upstream request and connection. A ticket
+    alone cannot fetch arbitrary URLs: provider endpoints and the saved
+    playback location select every upstream resource.
+    """
+    import mimetypes
+    import re
+    from urllib.parse import urlsplit
+    from .playback_cloud import CloudOAuthError
+
+    if range_header:
+        if not re.fullmatch(r"bytes=(?:[0-9]+-[0-9]*|-[0-9]+)", range_header):
+            raise HTTPException(416, "Invalid cloud media range.")
+
+    kind = location["kind"]
+    try:
+        credentials = await oauth.credentials(location["id"], kind)
+    except CloudOAuthError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+    headers = {
+        "Authorization": "Bearer " + credentials["access_token"],
+        "Accept-Encoding": "identity",
+    }
+    client = httpx.AsyncClient(timeout=httpx.Timeout(60, connect=15), follow_redirects=True)
+    upstream = None
+    try:
+        target_headers = dict(headers)
+        if kind == "onedrive":
+            if "/" in file_id:
+                raise HTTPException(422, "Invalid OneDrive item identifier.")
+            metadata = await client.get(
+                "https://graph.microsoft.com/v1.0/me/drive/items/" + quote(file_id, safe=""),
+                headers=headers,
+            )
+            metadata.raise_for_status()
+            url = metadata.json().get("@microsoft.graph.downloadUrl")
+            if not url:
+                raise HTTPException(404, "OneDrive did not return a media download URL.")
+            target_headers.pop("Authorization")
+        elif kind == "dropbox":
+            response = await client.post(
+                "https://api.dropboxapi.com/2/files/get_temporary_link",
+                headers=headers,
+                json={"path": "/" + file_id.lstrip("/")},
+            )
+            response.raise_for_status()
+            url = response.json().get("link")
+            if not url:
+                raise HTTPException(404, "Dropbox did not return a media download URL.")
+            target_headers.pop("Authorization")
+        elif kind == "google_drive":
+            if "/" in file_id:
+                raise HTTPException(422, "Invalid Google Drive item identifier.")
+            url = (
+                "https://www.googleapis.com/drive/v3/files/" +
+                quote(file_id, safe="") + "?alt=media"
+            )
+        elif kind == "box":
+            if "/" in file_id:
+                raise HTTPException(422, "Invalid Box item identifier.")
+            url = "https://api.box.com/2.0/files/" + quote(file_id, safe="") + "/content"
+        elif kind == "pcloud":
+            if not file_id.isdigit():
+                raise HTTPException(422, "Invalid pCloud file identifier.")
+            host = credentials.get("api_hostname") or "api.pcloud.com"
+            if host not in {"api.pcloud.com", "eapi.pcloud.com"}:
+                raise HTTPException(422, "Untrusted pCloud endpoint.")
+            result = await client.get(
+                "https://" + host + "/getfilelink",
+                headers=headers,
+                params={"fileid": file_id},
+            )
+            result.raise_for_status()
+            data = result.json()
+            if data.get("result") != 0 or not data.get("hosts") or not data.get("path"):
+                raise HTTPException(502, "pCloud could not prepare this file.")
+            url = "https://" + data["hosts"][0] + data["path"]
+            target_headers.pop("Authorization")
+        else:
+            raise HTTPException(501, "Cloud streaming is unsupported.")
+
+        parsed = urlsplit(url)
+        if (
+            parsed.scheme != "https" or not parsed.hostname
+            or parsed.username or parsed.password or parsed.fragment
+            or parsed.hostname in {"localhost", "localhost.localdomain"}
+        ):
+            raise HTTPException(502, "Unsafe cloud media URL.")
+        # Remote links are supplied by the authenticated provider, not the
+        # user. Do not relay access tokens when following a pre-signed link.
+        if range_header:
+            target_headers["Range"] = range_header
+        if method == "HEAD" and not range_header:
+            target_headers["Range"] = "bytes=0-0"
+        request = client.build_request("GET", url, headers=target_headers)
+        upstream = await client.send(request, stream=True)
+        if upstream.status_code in {401, 403}:
+            raise HTTPException(409, "Cloud authorization expired; reconnect your account.")
+        if upstream.status_code not in {200, 206}:
+            raise HTTPException(
+                416 if upstream.status_code == 416 else 502,
+                "Cloud provider refused the media request.",
+            )
+        if range_header and upstream.status_code != 206:
+            # Seeking cannot use a 200 response to a byte-range request.
+            raise HTTPException(502, "Cloud provider does not support byte-range reads.")
+        out_headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "private, no-store",
+        }
+        for key in ("Content-Length", "Content-Range", "ETag", "Last-Modified"):
+            if upstream.headers.get(key):
+                out_headers[key] = upstream.headers[key]
+        mime = upstream.headers.get("Content-Type") or (
+            mimetypes.guess_type(file_id)[0] or "application/octet-stream"
+        )
+        if method == "HEAD":
+            total = re.fullmatch(
+                r"bytes [0-9]+-[0-9]+/([0-9]+)",
+                upstream.headers.get("Content-Range", ""),
+            )
+            if total:
+                out_headers["Content-Length"] = total.group(1)
+            out_headers.pop("Content-Range", None)
+            await upstream.aclose()
+            await client.aclose()
+            return Response(status_code=200, media_type=mime, headers=out_headers)
+
+        async def content():
+            try:
+                async for piece in upstream.aiter_raw(chunk_size=256 * 1024):
+                    if piece:
+                        yield piece
+            finally:
+                await upstream.aclose()
+                await client.aclose()
+
+        return StreamingResponse(
+            content(), status_code=upstream.status_code,
+            media_type=mime, headers=out_headers,
+        )
+    except HTTPException:
+        if upstream is not None:
+            await upstream.aclose()
+        await client.aclose()
+        raise
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, IndexError) as exc:
+        if upstream is not None:
+            await upstream.aclose()
+        await client.aclose()
+        LOG.warning("Cloud streaming failed for %s: %s", kind, type(exc).__name__)
+        raise HTTPException(502, "Cannot access the cloud media file.") from exc
