@@ -218,6 +218,8 @@ class CloudOAuth:
             raise CloudOAuthError("Réponse d'authentification non valide.")
         if provider == "pcloud":
             token["api_hostname"] = hostname or "api.pcloud.com"
+        if token.get("expires_in") is not None:
+            token["expires_at"] = time.time() + max(0, float(token["expires_in"]))
         location = self.store.playback_location(info["location_id"])
         if not location or location["kind"] != provider:
             raise CloudOAuthError("L'emplacement a été supprimé ou modifié.")
@@ -225,3 +227,52 @@ class CloudOAuth:
         encrypted = self.fernet.encrypt(serialized.encode("utf-8")).decode("ascii")
         self.store.set_playback_cloud_token(info["location_id"], provider, encrypted)
         return info.get("return_to", "web")
+
+
+    async def credentials(self, location_id: str, provider: str) -> dict:
+        """Return a live provider token server-side; refresh without exposing it."""
+        saved = self.store.playback_cloud_credentials(location_id)
+        if not saved or saved["provider"] != provider:
+            raise CloudOAuthError("Connectez ce compte cloud dans les réglages.")
+        try:
+            token = json.loads(self.decrypt_secret(saved["token_cipher"]))
+        except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+            raise CloudOAuthError("Jeton cloud illisible. Reconnectez ce compte.") from exc
+        if not isinstance(token, dict) or not token.get("access_token"):
+            raise CloudOAuthError("Jeton cloud absent. Reconnectez ce compte.")
+        expires_at = float(token.get("expires_at") or 0)
+        refresh = token.get("refresh_token")
+        if not refresh or provider == "pcloud":
+            return token
+        if expires_at > time.time() + 90:
+            return token
+        client, _ = self.provider_options(provider)
+        if not client.get("client_id"):
+            raise CloudOAuthError("Application OAuth supprimée. Reconfigurez ce fournisseur.")
+        payload = {
+            "grant_type": "refresh_token",
+            "refresh_token": refresh,
+            "client_id": client["client_id"],
+        }
+        if client.get("client_secret"):
+            payload["client_secret"] = client["client_secret"]
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client_http:
+                response = await client_http.post(PROVIDERS[provider][1], data=payload)
+                response.raise_for_status()
+                fresh = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            LOG.warning("Cloud OAuth refresh failed for %s (%s)", provider, type(exc).__name__)
+            raise CloudOAuthError(
+                "La session cloud a expiré et son renouvellement a échoué. Reconnectez ce compte."
+            ) from exc
+        if not isinstance(fresh, dict) or not fresh.get("access_token"):
+            raise CloudOAuthError("Le fournisseur a refusé le renouvellement du jeton.")
+        token.update(fresh)
+        if not token.get("refresh_token"):
+            token["refresh_token"] = refresh
+        # Fall back to a short-lived expiry if a provider omits expires_in.
+        token["expires_at"] = time.time() + max(0, float(fresh.get("expires_in") or 3600))
+        encrypted = self.encrypt_password(json.dumps(token, separators=(",", ":")))
+        self.store.set_playback_cloud_token(location_id, provider, encrypted)
+        return token
