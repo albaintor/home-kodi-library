@@ -369,19 +369,14 @@ async def browse_location(location: dict, path: str, store, encryption, mounts: 
 
 
 async def cloud_browse(location: dict, path: str, store, encryption) -> list[dict]:
-    import json
+    from .playback_cloud import CloudOAuthError
 
-    saved = store.playback_cloud_credentials(location["id"])
-    if not saved or saved["provider"] != location["kind"]:
-        raise HTTPException(409, "Connect this cloud account first in web settings.")
-    try:
-        token = json.loads(encryption.decrypt_secret(saved["token_cipher"]))
-        access = token["access_token"]
-    except (ValueError, KeyError, TypeError, InvalidToken, UnicodeError) as exc:
-        raise HTTPException(
-            409, "Cloud authentication needs renewing. Reconnect this provider in Network settings."
-        ) from exc
     kind = location["kind"]
+    try:
+        token = await encryption.credentials(location["id"], kind)
+        access = token["access_token"]
+    except CloudOAuthError as exc:
+        raise HTTPException(409, str(exc)) from exc
     headers = {"Authorization": "Bearer " + access}
     try:
         async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client:
