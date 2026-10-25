@@ -1493,6 +1493,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"provider": provider, "configured": cloud_auth.configured(provider)}
 
     @app.get(
+        API + "/playback/cloud/providers",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    def playback_cloud_providers():
+        # A public (non-secret) readiness view for the web and native clients.
+        # Configured providers can exist even before a playback location does.
+        return [
+            {
+                "provider": provider,
+                "configured": cloud_auth.configured(provider),
+                "reason": cloud_auth.configuration_error(provider),
+            }
+            for provider in sorted(cloud_auth.supported)
+        ]
+
+    @app.get(
         API + "/playback/cloud/status",
         dependencies=[Depends(authenticated)],
         tags=["Playback"],
@@ -1540,14 +1557,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 'window.close();}</script></body></html>',
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
-        except CloudOAuthError:
+        except CloudOAuthError as exc:
+            import html
+            import json
+
+            # Keep the error visible: the browser must never silently close a
+            # failed login. The parent receives the same safe error message.
+            explanation = str(exc) or "Connexion refusée ou expirée."
             return HTMLResponse(
                 '<!doctype html><html lang="fr"><meta charset="utf-8">'
                 '<title>Connexion refusée</title><body>'
-                '<h2>Connexion refusée ou expirée.</h2>'
+                '<h2>Connexion cloud non effectuée</h2>'
+                '<p>' + html.escape(explanation) + '</p>'
+                '<p>Vous pouvez fermer cette fenêtre et corriger le problème.</p>'
                 '<script>if(window.opener){window.opener.postMessage('
-                '{type:"homekodi-cloud-oauth",success:false},location.origin);}'
-                '</script></body></html>',
+                + json.dumps({"type": "homekodi-cloud-oauth", "success": False,
+                              "error": explanation})
+                + ',location.origin);}</script></body></html>',
                 status_code=400,
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
