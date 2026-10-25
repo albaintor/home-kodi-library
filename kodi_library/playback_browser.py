@@ -68,6 +68,8 @@ def _ftp_connection(location: dict, password: str) -> ftplib.FTP:
     conn = ftplib.FTP()
     conn.connect(host, int(location.get("port") or 21), timeout=8)
     conn.login(location.get("username") or "anonymous", password)
+    # REST and SIZE require binary transfer mode on many FTP servers.
+    conn.voidcmd("TYPE I")
     return conn
 
 
@@ -228,6 +230,8 @@ def _sync_stream(
         if not file.is_file():
             raise HTTPException(404, "File not found.")
         size = file.stat().st_size
+        if start < 0:
+            start = max(0, size + start)
 
         def content():
             with file.open("rb") as stream:
@@ -257,6 +261,8 @@ def _sync_stream(
         )
         file = "\\\\" + host + "\\" + remote.replace("/", "\\")
         size = smbclient.stat(file).st_size
+        if start < 0:
+            start = max(0, size + start)
 
         def content():
             with smbclient.open_file(file, mode="rb") as stream:
@@ -274,6 +280,8 @@ def _sync_stream(
         ssh, sftp = _sftp_connection(location, password)
         try:
             size = sftp.stat(remote).st_size
+            if start < 0:
+                start = max(0, size + start)
         finally:
             sftp.close()
             ssh.close()
@@ -303,6 +311,8 @@ def _sync_stream(
             conn.quit()
         if size is None:
             raise HTTPException(404, "FTP file size unavailable.")
+        if start < 0:
+            start = max(0, size + start)
 
         def content():
             connection = _ftp_connection(location, password)
@@ -502,11 +512,18 @@ async def stream_location(
         raise HTTPException(501, "Direct streaming is not enabled for this source.")
     start, end = 0, None
     if range_header:
-        match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)
-        if not match:
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if not match or (not match.group(1) and not match.group(2)):
             raise HTTPException(416, "Unsupported byte range.")
-        start = int(match.group(1))
-        end = int(match.group(2)) if match.group(2) else None
+        if not match.group(1):
+            suffix = int(match.group(2))
+            if suffix <= 0:
+                raise HTTPException(416, "Invalid suffix byte range.")
+            # Negative start means suffix-length until _sync_stream knows size.
+            start = -suffix
+        else:
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else None
     password = _credentials(store, encryption, location["id"])
     try:
         size, content = await asyncio.wait_for(
@@ -525,7 +542,9 @@ async def stream_location(
         raise HTTPException(
             502, "Cannot open the remote file. Check the network and credentials."
         ) from exc
-    if start >= size or (end is not None and end < start):
+    if start < 0:
+        start = max(0, size + start)
+    if size <= 0 or start >= size or (end is not None and end < start):
         raise HTTPException(416, "Requested range out of bounds.")
     finish = size - 1 if end is None else min(end, size - 1)
     mime = mimetypes.guess_type(relative)[0] or "application/octet-stream"
