@@ -1680,9 +1680,11 @@ async function renderPlaybackCloudSettings() {
   section.className='metadata-status';
   section.id='playback-cloud-web-settings';
   section.innerHTML='<h3>Services cloud · navigateur web</h3>'+
-    '<p class="hint">Identifiants OAuth du serveur web uniquement. Aucun jeton n’est synchronisé avec iOS.</p>'+
-    '<p class="hint">Chaque fournisseur impose d’enregistrer une application OAuth sur son portail développeur. Saisissez ici le client ID, le secret si requis et l’URL HTTPS de retour autorisée. L’application est enregistrée ensuite sur le serveur ; pas besoin de modifier le conteneur.</p>'+
+    '<p class="hint">Sélectionnez Connecter : le fournisseur ouvre son site sécurisé, puis le serveur enregistre automatiquement l’autorisation. Les jetons web et iOS restent séparés.</p>'+
     '<div id="playback-cloud-web-list"></div>'+
+    '<details id="playback-cloud-developer-options"><summary>Configuration développeur des applications cloud (avancé)</summary>'+
+    '<p class="hint">Une application OAuth enregistrée auprès du fournisseur est nécessaire. Le client ID et une URL de retour HTTPS publique doivent être configurés une seule fois par un administrateur.</p>'+
+    '<div id="playback-cloud-developer-list"></div>'+
     '<form id="playback-cloud-app-form" class="connection-form" hidden>'+
     '<strong class="wide" id="playback-cloud-app-title"></strong>'+
     '<input name="provider" type="hidden">'+
@@ -1691,7 +1693,7 @@ async function renderPlaybackCloudSettings() {
     '<label class="wide">URL de retour HTTPS<input name="redirect_url" required type="url"></label>'+
     '<button class="primary" type="submit">Enregistrer l’application OAuth</button>'+
     '<button type="button" class="secondary" data-cloud-app-cancel>Annuler</button>'+
-    '</form>'+
+    '</form></details>'+
     '<p id="playback-cloud-web-status" role="status" aria-live="polite"></p>'+
     '<p id="playback-cloud-web-link"></p>';
   $('playback-cloud-web-settings')?.remove();
@@ -1700,7 +1702,15 @@ async function renderPlaybackCloudSettings() {
   const link=section.querySelector('#playback-cloud-web-link');
   const list=section.querySelector('#playback-cloud-web-list');
   const form=section.querySelector('#playback-cloud-app-form');
+  const developerList=section.querySelector('#playback-cloud-developer-list');
   let locations=[],statuses=[],apps=[];
+  const onCloudAuthorized=event=>{
+    if(event.origin!==window.location.origin||event.data?.type!=='homekodi-cloud-oauth')return;
+    if(!section.isConnected){window.removeEventListener('message',onCloudAuthorized);return;}
+    message.textContent=event.data.success?'Compte connecté.':'L’autorisation a échoué.';
+    void load();
+  };
+  window.addEventListener('message',onCloudAuthorized);
   async function load() {
     message.textContent='';
     link.replaceChildren();
@@ -1718,18 +1728,20 @@ async function renderPlaybackCloudSettings() {
       const status=place?byId.get(place.id):null;
       const app=appByProvider.get(kind);
       const configured=Boolean(status?.configured||app?.client_id);
-      const note=status?.connected?'Connecté':configured?'Autorisation du compte requise':'Application OAuth non enregistrée';
+      const note=status?.connected?'Connecté':configured?'Autorisation nécessaire':'Configuration administrateur requise';
       const disabled=state.role!=='admin';
       return '<div class="connection-card"><div><strong>'+esc(label)+'</strong>'+
         '<p class="hint">'+esc(note)+'</p></div><div class="connection-actions">'+
-        '<button type="button" class="secondary" data-cloud-app-edit="'+esc(kind)+'"'+
-        (disabled?' disabled':'')+'>Configurer OAuth</button>'+
         '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
-        (disabled||!configured?' disabled':'')+'>'+(status?.connected?'Reconnecter':'Connecter')+'</button>'+
+        (disabled?' disabled':'')+'>Connecter</button>'+
         (status?.connected&&state.role==='admin'
           ? '<button class="secondary" type="button" data-web-cloud-disconnect="'+
           esc(place.id)+'">Déconnecter</button>':'')+'</div></div>';
     }).join('')+'<p><button class="secondary" type="button" data-web-cloud-refresh>Actualiser les connexions</button></p>';
+    developerList.innerHTML=state.role==='admin'
+      ? playbackCloudProviders.map(([kind,label])=>'<button type="button" class="secondary" data-cloud-app-edit="'+
+        esc(kind)+'">Configurer '+esc(label)+'</button>').join(' ')
+      : '';
   }
   section.addEventListener('click',async event=>{
     const button=event.target.closest('button');
@@ -1757,6 +1769,10 @@ async function renderPlaybackCloudSettings() {
     button.disabled=true;
     message.textContent='Connexion au fournisseur…';
     link.replaceChildren();
+    // Open synchronously from the click to avoid popup blockers. The OAuth
+    // code and refresh token are exchanged/stored by the server, never JS.
+    const popup=kind?window.open('about:blank','homekodi-cloud-login',
+      'popup,width=620,height=760'):null;
     try {
       if(disconnect){
         await api('playback/cloud/'+encodeURIComponent(disconnect),{method:'DELETE'});
@@ -1773,14 +1789,25 @@ async function renderPlaybackCloudSettings() {
       const auth=await api('playback/cloud/'+encodeURIComponent(place.id)+'/authorize',{method:'POST'});
       const target=new URL(auth.authorization_url);
       if(target.protocol!=='https:')throw new Error('URL OAuth non sécurisée.');
-      const anchor=document.createElement('a');
-      anchor.href=target.href;
-      anchor.target='_blank';
-      anchor.rel='noopener noreferrer';
-      anchor.textContent='Ouvrir la connexion '+label;
-      link.replaceChildren(anchor);
-      message.textContent='Autorisez le compte dans le nouvel onglet, puis actualisez les connexions ici.';
-    } catch(e) {message.textContent=e.message;}
+      if(popup && !popup.closed) {
+        popup.location.replace(target.href);
+        message.textContent='Autorisez votre compte dans la fenêtre '+label+'. La connexion sera détectée automatiquement.';
+      } else {
+        const anchor=document.createElement('a');
+        anchor.href=target.href;
+        anchor.target='_blank';
+        anchor.rel='noopener noreferrer';
+        anchor.textContent='Ouvrir la connexion '+label;
+        link.replaceChildren(anchor);
+        message.textContent='Autorisez le compte, puis actualisez les connexions.';
+      }
+    } catch(e) {
+      popup?.close();
+      message.textContent=e.message;
+      if(String(e.message).includes('OAuth')) {
+        section.querySelector('#playback-cloud-developer-options').open=true;
+      }
+    }
     finally {button.disabled=false;}
   });
   form.addEventListener('submit',async event=>{
