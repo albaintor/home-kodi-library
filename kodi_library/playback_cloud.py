@@ -95,20 +95,39 @@ class CloudOAuth:
             ]
         return self.clients.get(provider, {}), self.redirect
 
-    def configured(self, provider: str) -> bool:
-        item, redirect = self.provider_options(provider)
-        return (
-            provider in PROVIDERS
-            and bool(redirect)
-            and bool(item.get("client_id"))
-            and (
-                provider not in {"google_drive", "box", "pcloud"} or bool(item.get("client_secret"))
+    def configuration_error(self, provider: str) -> str | None:
+        """Return a safe actionable explanation, never an OAuth app secret."""
+        from urllib.parse import urlsplit
+
+        if provider not in PROVIDERS:
+            return "Fournisseur cloud non pris en charge."
+        client, redirect = self.provider_options(provider)
+        if not client.get("client_id"):
+            return (
+                "Aucune application OAuth n’est enregistrée pour ce fournisseur sur le serveur. "
+                "La configuration est à effectuer une seule fois par l’administrateur."
             )
-        )
+        if provider in {"google_drive", "box", "pcloud"} and not client.get("client_secret"):
+            return "Le secret de l’application OAuth manque dans la configuration du serveur."
+        parsed = urlsplit(redirect or "")
+        if (
+            parsed.scheme != "https" or not parsed.hostname
+            or parsed.path != "/api/v1/playback/cloud/callback"
+            or parsed.username or parsed.password or parsed.query or parsed.fragment
+        ):
+            return (
+                "L’URL de retour OAuth doit être une adresse HTTPS publique "
+                "se terminant par /api/v1/playback/cloud/callback."
+            )
+        return None
+
+    def configured(self, provider: str) -> bool:
+        return self.configuration_error(provider) is None
 
     def start(self, location_id: str, provider: str) -> str:
-        if not self.configured(provider):
-            raise CloudOAuthError("OAuth non configuré sur le serveur pour ce fournisseur.")
+        problem = self.configuration_error(provider)
+        if problem:
+            raise CloudOAuthError(problem)
         # Expire old one-time CSRF states on each attempt.
         now = time.monotonic()
         self.pending = {k: v for k, v in self.pending.items() if now - v["at"] < 600}
