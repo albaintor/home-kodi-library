@@ -1680,10 +1680,10 @@ async function renderPlaybackCloudSettings() {
   section.className='metadata-status';
   section.id='playback-cloud-web-settings';
   section.innerHTML='<h3>Services cloud · navigateur web</h3>'+
-    '<p class="hint">Sélectionnez Connecter : le fournisseur ouvre son site sécurisé, puis le serveur enregistre automatiquement l’autorisation. Les jetons web et iOS restent séparés.</p>'+
+    '<p class="hint">Pour OneDrive, le code de connexion Microsoft fonctionne sur réseau local, sans domaine ni popup OAuth. Le serveur conserve les jetons chiffrés pour la navigation et la lecture.</p>'+
     '<div id="playback-cloud-web-list"></div>'+
     '<details id="playback-cloud-developer-options"><summary>Configuration développeur des applications cloud (avancé)</summary>'+
-    '<p class="hint">Une application OAuth enregistrée auprès du fournisseur est nécessaire. Le client ID et une URL de retour HTTPS publique doivent être configurés une seule fois par un administrateur.</p>'+
+    '<p class="hint">OneDrive : seul un identifiant public Entra est nécessaire avec le code de connexion ; activez les flux de clients publics. Les autres fournisseurs utilisent encore un retour HTTPS OAuth.</p>'+
     '<div id="playback-cloud-developer-list"></div>'+
     '<form id="playback-cloud-app-form" class="connection-form" hidden>'+
     '<strong class="wide" id="playback-cloud-app-title"></strong>'+
@@ -1694,6 +1694,7 @@ async function renderPlaybackCloudSettings() {
     '<button class="primary" type="submit">Enregistrer l’application OAuth</button>'+
     '<button type="button" class="secondary" data-cloud-app-cancel>Annuler</button>'+
     '</form></details>'+
+    '<div id="playback-cloud-device-panel" role="region" aria-live="polite"></div>'+
     '<p id="playback-cloud-web-status" role="status" aria-live="polite"></p>'+
     '<p id="playback-cloud-web-link"></p>';
   $('playback-cloud-web-settings')?.remove();
@@ -1703,7 +1704,10 @@ async function renderPlaybackCloudSettings() {
   const list=section.querySelector('#playback-cloud-web-list');
   const form=section.querySelector('#playback-cloud-app-form');
   const developerList=section.querySelector('#playback-cloud-developer-list');
+  const devicePanel=section.querySelector('#playback-cloud-device-panel');
   let locations=[],statuses=[],apps=[],providers=[];
+  let deviceRun=0;
+  let activeDeviceCode='';
   // The UI may be served at http://nas.local while the OAuth callback is at
   // https://media.example.org. Trust ONLY the redirect origin returned by
   // our authenticated authorization API, never arbitrary popup senders.
@@ -1738,13 +1742,20 @@ async function renderPlaybackCloudSettings() {
       const status=place?byId.get(place.id):null;
       const provider=providerByKind.get(kind);
       const configured=provider?.configured===true;
-      const note=status?.connected?'Connecté':configured?'Autorisation nécessaire':
-        (provider?.reason||'Configuration administrateur requise');
+      const deviceReady=kind==='onedrive'&&provider?.device_configured===true;
+      const note=status?.connected?'Connecté':deviceReady?'Connexion sans domaine disponible':
+        configured?'Autorisation nécessaire':
+        (provider?.device_reason||provider?.reason||'Configuration administrateur requise');
       const disabled=state.role!=='admin';
       return '<div class="connection-card"><div><strong>'+esc(label)+'</strong>'+
         '<p class="hint">'+esc(note)+'</p></div><div class="connection-actions">'+
-        '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
-        (disabled?' disabled':'')+'>Connecter</button>'+
+        (kind==='onedrive'
+          ? '<button type="button" data-web-cloud-device="onedrive"'+
+            (disabled||!deviceReady?' disabled':'')+'>Connecter sans domaine</button>'+
+            (configured?'<button type="button" class="secondary" data-web-cloud-connect="onedrive"'+
+              (disabled?' disabled':'')+'>OAuth HTTPS</button>':'')
+          : '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
+            (disabled?' disabled':'')+'>Connecter</button>')+
         (status?.connected&&state.role==='admin'
           ? '<button class="secondary" type="button" data-web-cloud-disconnect="'+
           esc(place.id)+'">Déconnecter</button>':'')+'</div></div>';
@@ -1763,17 +1774,95 @@ async function renderPlaybackCloudSettings() {
       const app=apps.find(row=>row.provider===edit);
       form.hidden=false;
       form.elements.provider.value=edit;
-      form.elements.client_id.value=app?.client_id||'';
+      form.elements.client_id.value=app?.client_id||
+        providers.find(row=>row.provider===edit)?.device_client_id||'';
       form.elements.client_secret.value='';
       const origin=location.origin==='null'?'':location.origin;
       form.elements.redirect_url.value=app?.redirect_url||
-        origin+baseURL.pathname+'api/v1/playback/cloud/callback';
+        (edit==='onedrive'?'':origin+baseURL.pathname+'api/v1/playback/cloud/callback');
+      form.elements.redirect_url.required=edit!=='onedrive';
       section.querySelector('#playback-cloud-app-title').textContent=
         'Application OAuth · '+(playbackCloudProviders.find(x=>x[0]===edit)?.[1]||edit);
       form.scrollIntoView({block:'nearest'});
       return;
     }
     if(button.hasAttribute('data-web-cloud-refresh')){await load();return;}
+    if(button.hasAttribute('data-cloud-device-copy')){
+      if(!activeDeviceCode)return;
+      try{
+        await navigator.clipboard.writeText(activeDeviceCode);
+        message.textContent='Code copié.';
+      }catch(_){message.textContent='Sélectionnez le code affiché pour le copier.';}
+      return;
+    }
+    if(button.hasAttribute('data-cloud-device-cancel')){
+      ++deviceRun;
+      activeDeviceCode='';
+      devicePanel.replaceChildren();
+      message.textContent='Connexion OneDrive annulée dans cette interface.';
+      return;
+    }
+    const deviceKind=button.dataset.webCloudDevice;
+    if(deviceKind==='onedrive'){
+      const run=++deviceRun;
+      activeDeviceCode='';
+      devicePanel.replaceChildren();
+      button.disabled=true;
+      message.textContent='Demande du code de connexion Microsoft…';
+      try{
+        let place=locations.find(row=>row.kind==='onedrive');
+        if(!place){
+          place=await api('playback/locations',{
+            method:'POST',body:JSON.stringify({name:'OneDrive',kind:'onedrive',target:''})
+          });
+        }
+        const auth=await api('playback/cloud/'+encodeURIComponent(place.id)+'/device/start',{
+          method:'POST'
+        });
+        if(run!==deviceRun||!section.isConnected)return;
+        const verification=new URL(auth.verification_uri);
+        if(verification.protocol!=='https:'||
+           !['microsoft.com','www.microsoft.com','login.microsoftonline.com'].includes(verification.hostname))
+          throw new Error('Adresse de vérification Microsoft inattendue.');
+        activeDeviceCode=auth.user_code;
+        devicePanel.innerHTML='<div class="connection-card"><div>'+
+          '<strong>Autorisation Microsoft OneDrive</strong>'+
+          '<p>1. Ouvrez le site Microsoft, puis connectez-vous.</p>'+
+          '<p>2. Saisissez ce code : <strong class="pairing-code">'+esc(auth.user_code)+'</strong></p>'+
+          '<p>3. Acceptez l’accès en lecture à vos fichiers OneDrive.</p>'+
+          '<p><a href="'+esc(verification.href)+'" target="_blank" rel="noopener noreferrer">'+
+            'Ouvrir microsoft.com/devicelogin</a></p>'+
+          '</div><div class="connection-actions">'+
+          '<button type="button" data-cloud-device-copy>Copier le code</button>'+
+          '<button type="button" class="secondary" data-cloud-device-cancel>Annuler</button>'+
+          '</div></div>';
+        message.textContent='En attente de la validation sur Microsoft…';
+        const deadline=Date.now()+Number(auth.expires_in||900)*1000;
+        let retry=Math.max(5,Number(auth.interval)||5);
+        while(run===deviceRun&&section.isConnected&&Date.now()<deadline){
+          await new Promise(resolve=>setTimeout(resolve,retry*1000));
+          if(run!==deviceRun||!section.isConnected)return;
+          const state=await api('playback/cloud/'+encodeURIComponent(place.id)+'/device/poll',{
+            method:'POST',body:JSON.stringify({request_id:auth.request_id})
+          });
+          if(run!==deviceRun||!section.isConnected)return;
+          if(state.status==='connected'){
+            devicePanel.replaceChildren();
+            activeDeviceCode='';
+            await load({preserveMessage:true});
+            message.textContent='OneDrive connecté. Vous pouvez parcourir vos fichiers.';
+            return;
+          }
+          if(state.status!=='pending')
+            throw new Error(state.message||'Autorisation OneDrive interrompue.');
+          retry=Math.max(2,Math.min(120,Number(state.retry_after)||5));
+        }
+        if(run===deviceRun)throw new Error('Code OneDrive expiré. Recommencez.');
+      }catch(e){
+        if(run===deviceRun)message.textContent=e.message||String(e);
+      }finally{button.disabled=false;}
+      return;
+    }
     const kind=button.dataset.webCloudConnect;
     const disconnect=button.dataset.webCloudDisconnect;
     if(!kind&&!disconnect)return;
