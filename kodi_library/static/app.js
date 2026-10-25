@@ -1441,19 +1441,47 @@ function networkMedia(filename) {
 // Never launch dozens of remote FFmpeg thumbnail extractions together:
 // a folder may contain hundreds of MKVs on the same SMB session.
 let networkThumbnailBusy=0;
+let networkThumbnailWarningShown=false;
 const networkThumbnailQueue=[];
+async function fetchNetworkThumbnail(image){
+  const controller=new AbortController();
+  const timeout=setTimeout(()=>controller.abort(),15000);
+  try{
+    const response=await fetch(image.dataset.thumbnailUrl,{
+      credentials:'same-origin',signal:controller.signal
+    });
+    if(!response.ok)throw new Error('HTTP '+response.status);
+    const blob=await response.blob();
+    if(!blob.type.startsWith('image/'))throw new Error('Type de réponse non image');
+    if(!image.isConnected)return;
+    const object=URL.createObjectURL(blob);
+    image.addEventListener('load',()=>URL.revokeObjectURL(object),{once:true});
+    image.addEventListener('error',()=>URL.revokeObjectURL(object),{once:true});
+    image.src=object;
+  }catch(error){
+    if(!image.isConnected)return;
+    const parent=image.parentElement;
+    if(parent){
+      parent.title='Vignette indisponible : '+error.message;
+      parent.textContent='🎞';
+    }
+    if(!networkThumbnailWarningShown){
+      networkThumbnailWarningShown=true;
+      networkBrowseError('Certaines vignettes ne peuvent pas être extraites ('+
+        error.message+'). Consultez les journaux serveur si toutes sont absentes.');
+    }
+  }finally{
+    clearTimeout(timeout);
+    networkThumbnailBusy--;
+    runNetworkThumbnailQueue();
+  }
+}
 function runNetworkThumbnailQueue(){
   while(networkThumbnailBusy<2 && networkThumbnailQueue.length){
     const image=networkThumbnailQueue.shift();
     if(!image.isConnected)continue;
     networkThumbnailBusy++;
-    image.addEventListener('load',()=>{
-      networkThumbnailBusy--;runNetworkThumbnailQueue();
-    },{once:true});
-    image.addEventListener('error',()=>{
-      networkThumbnailBusy--;runNetworkThumbnailQueue();
-    },{once:true});
-    image.src=image.dataset.thumbnailUrl;
+    void fetchNetworkThumbnail(image);
   }
 }
 const networkThumbnailObserver=new IntersectionObserver(entries=>{
@@ -1530,6 +1558,7 @@ async function networkOpenFolder(path,name){
   if(!browser.selected)return;
   const revision=++browser.revision;
   browser.busy=true;
+  networkThumbnailWarningShown=false;
   networkBrowseError('Ouverture du dossier…');
   const target=path||'';
   try {
