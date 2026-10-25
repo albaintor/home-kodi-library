@@ -67,6 +67,14 @@ def test_cloud_not_configured_and_icloud_uses_files(client, admin):
     state = client.get("/api/v1/playback/cloud/status", headers=admin).json()
     assert state[0]["id"] == cloud["id"]
     assert state[0]["configured"] is False and state[0]["connected"] is False
+    # Readiness is available BEFORE a location is added and never leaks IDs
+    # or OAuth secrets. The browser can avoid opening a useless blank popup.
+    readiness = client.get("/api/v1/playback/cloud/providers", headers=admin)
+    assert readiness.status_code == 200
+    dropbox = next(p for p in readiness.json() if p["provider"] == "dropbox")
+    assert dropbox["configured"] is False
+    assert "application OAuth" in dropbox["reason"]
+    assert "client_secret" not in readiness.text
     result = client.post(f"/api/v1/playback/cloud/{cloud['id']}/authorize", headers=admin)
     assert result.status_code == 422
     assert client.post("/api/v1/playback/cloud/bad/authorize", headers=admin).status_code == 404
@@ -145,3 +153,22 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
 
     with pytest.raises(CloudOAuthError):
         asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
+
+
+def test_cloud_oauth_configuration_diagnostics(tmp_path):
+    class FakeStore:
+        def playback_oauth_app(self, provider):
+            return None
+
+    settings = Settings(
+        data_dir=tmp_path, api_token=ADMIN,
+        cloud_oauth_clients={"onedrive": {"client_id": "1234"}},
+        cloud_oauth_redirect_url="",
+    )
+    manager = CloudOAuth(settings, FakeStore())
+    assert "HTTPS" in manager.configuration_error("onedrive")
+    manager.redirect = "https://example.org/api/v1/playback/cloud/callback"
+    assert manager.configuration_error("onedrive") is None
+    assert manager.configured("onedrive")
+    with pytest.raises(CloudOAuthError):
+        manager.start("id", "unknown")
