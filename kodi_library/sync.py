@@ -288,13 +288,14 @@ class SyncManager:
             result = await asyncio.to_thread(self.store.apply_snapshot, source["id"], records)
             result["sqlite_publish_ms"] = round((monotonic() - publish_started) * 1000)
             if scan_info is not None:
-                result["kodi_scan"] = (
-                    "finished"
-                    if scan_triggered
-                    else "sql_only"
-                    if result.get("import_method") == "mariadb"
-                    else "jsonrpc_only"
-                )
+                if "kodi_clean" not in scan_info:
+                    result["kodi_scan"] = (
+                        "finished"
+                        if scan_triggered
+                        else "sql_only"
+                        if result.get("import_method") == "mariadb"
+                        else "jsonrpc_only"
+                    )
                 result.update(scan_info)
             if xml is None:
                 result["import_method"] = transport
