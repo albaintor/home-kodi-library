@@ -64,8 +64,7 @@ def _jpeg_thumbnail(source: bytes, extension: str) -> bytes | None:
                 "-vf", "scale=360:256:force_original_aspect_ratio=decrease",
                 "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "pipe:1",
             ],
-            input=source, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            timeout=14, check=False,
+            input=source, capture_output=True, timeout=14, check=False,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return None

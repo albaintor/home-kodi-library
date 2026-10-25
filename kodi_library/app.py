@@ -95,9 +95,9 @@ from .models import (
     WritebackStatus,
 )
 from .playback_browser import browse_location, stream_location
-from .playback_thumbnails import thumbnail_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
+from .playback_thumbnails import thumbnail_location
 from .players import play
 from .players import probe as probe_player
 from .settings import Settings
