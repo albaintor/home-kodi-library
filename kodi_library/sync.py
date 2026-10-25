@@ -83,9 +83,7 @@ class SyncManager:
     async def _run_clean(self, job: dict, source: dict, player: dict) -> None:
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
-            await asyncio.to_thread(
-                self.store.update_job_progress, job["id"], "kodi_cleaning"
-            )
+            await asyncio.to_thread(self.store.update_job_progress, job["id"], "kodi_cleaning")
             method = await clean_until_finished(player["config"])
             await asyncio.to_thread(
                 self.store.update_job_progress, job["id"], "kodi_clean_finished"
@@ -93,24 +91,31 @@ class SyncManager:
             # _run will not replace the catalogue when its follow-up import
             # fails: the existing atomic snapshot guard remains in effect.
             await self._run(
-                job, source, None,
+                job,
+                source,
+                None,
                 scan_triggered=True,
-                scan_info={"kodi_clean": "finished", "kodi_clean_method": method,
-                           "kodi_clean_player": player["name"]},
+                scan_info={
+                    "kodi_clean": "finished",
+                    "kodi_clean_method": method,
+                    "kodi_clean_player": player["name"],
+                },
             )
         except (KodiScanUnavailable, ConnectorError) as exc:
             await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
         except asyncio.CancelledError:
             await asyncio.to_thread(
-                self.store.finish_job, job["id"],
-                error="Nettoyage Kodi interrompu avant confirmation de fin."
+                self.store.finish_job,
+                job["id"],
+                error="Nettoyage Kodi interrompu avant confirmation de fin.",
             )
             raise
         except Exception:
             LOGGER.exception("Unexpected Kodi cleanup failure")
             await asyncio.to_thread(
-                self.store.finish_job, job["id"],
-                error="Nettoyage Kodi non confirmé ; catalogue local inchangé."
+                self.store.finish_job,
+                job["id"],
+                error="Nettoyage Kodi non confirmé ; catalogue local inchangé.",
             )
         finally:
             self.active.discard(source["id"])
@@ -236,7 +241,7 @@ class SyncManager:
                     )
                 )
                 deadline = monotonic() + 1.0
-                for player in ([] if prefer_sql else candidates):
+                for player in [] if prefer_sql else candidates:
                     if player["id"] in (offline_player_ids or set()):
                         continue
                     remaining = deadline - monotonic()

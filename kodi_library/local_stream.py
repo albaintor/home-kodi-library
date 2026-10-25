@@ -66,7 +66,12 @@ async def _resolve_video(request, player, data):
     # Skipping another JSON-RPC lookup avoids an extra Kodi connection before
     # every remote SMB/NFS media open, which is noticeable for large files.
     known_path = edition["metadata"].get("file")
-    if isinstance(known_path, str) and known_path and len(known_path) <= 8192 and all(ord(c) >= 32 for c in known_path):
+    if (
+        isinstance(known_path, str)
+        and known_path
+        and len(known_path) <= 8192
+        and all(ord(c) >= 32 for c in known_path)
+    ):
         return known_path, edition
 
     # Backward compatibility for older imports without a persisted file path.
@@ -121,17 +126,17 @@ async def kodi_local_file_size(
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     vfs_url = f"{base}/vfs/{quote(path, safe='')}"
     config = player["config"]
-    auth = (
-        (config["username"], config.get("password") or "")
-        if config.get("username") else None
-    )
+    auth = (config["username"], config.get("password") or "") if config.get("username") else None
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(connect=8, read=12, write=8, pool=8),
-            auth=auth, follow_redirects=False, trust_env=False,
+            auth=auth,
+            follow_redirects=False,
+            trust_env=False,
         ) as client:
             async with client.stream(
-                "GET", vfs_url,
+                "GET",
+                vfs_url,
                 headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
             ) as upstream:
                 if upstream.status_code == 206:
@@ -144,9 +149,7 @@ async def kodi_local_file_size(
                     length = upstream.headers.get("content-length", "")
                     byte_count = int(length) if length.isdigit() else None
                 else:
-                    raise HTTPException(
-                        502, f"Kodi VFS returned HTTP {upstream.status_code}."
-                    )
+                    raise HTTPException(502, f"Kodi VFS returned HTTP {upstream.status_code}.")
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Cannot read Kodi VFS file size.") from exc
     if byte_count is None or byte_count <= 0:
@@ -255,7 +258,9 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     kodi_header_ms = round((time.monotonic() - start) * 1000, 1)
     LOG.info(
         "Kodi VFS opened player=%s upstream_status=%d response_headers_ms=%.1f range=%s",
-        player_id, upstream.status_code, kodi_header_ms,
+        player_id,
+        upstream.status_code,
+        kodi_header_ms,
         "present" if range_header else "absent",
     )
     exposed["Server-Timing"] = f"kodi_vfs;dur={kodi_header_ms}"
@@ -284,7 +289,8 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
                     first_chunk = False
                     LOG.info(
                         "Kodi VFS first chunk player=%s first_byte_ms=%.1f",
-                        player_id, (time.monotonic() - start) * 1000,
+                        player_id,
+                        (time.monotonic() - start) * 1000,
                     )
                 sent += len(chunk)
                 yield chunk

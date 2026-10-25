@@ -201,11 +201,16 @@ async def clean_until_finished(config: dict) -> str:
                 heartbeat=30,
                 max_msg_size=256_000,
             ) as ws:
+
                 async def rpc(method, rpc_id, params=None):
-                    await ws.send_json({
-                        "jsonrpc": "2.0", "id": rpc_id, "method": method,
-                        "params": params or {},
-                    })
+                    await ws.send_json(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": rpc_id,
+                            "method": method,
+                            "params": params or {},
+                        }
+                    )
 
                 async def read():
                     message = await ws.receive()
@@ -225,8 +230,10 @@ async def clean_until_finished(config: dict) -> str:
                         response = await read()
                         if response.get("id") == 1:
                             permissions = response.get("result")
-                            if not isinstance(permissions, dict) or not (
-                                permissions.get("RemoveData", permissions.get("removedata")) is True
+                            if (
+                                not isinstance(permissions, dict)
+                                or permissions.get("RemoveData", permissions.get("removedata"))
+                                is not True
                             ):
                                 raise KodiScanUnavailable("Kodi WebSocket sans droit RemoveData.")
                             break

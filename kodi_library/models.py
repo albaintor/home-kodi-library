@@ -274,9 +274,23 @@ class ReplayResponse(BaseModel):
 
 class PlaybackLocationInput(StrictModel):
     """Share/provider descriptor; never send SMB, FTP or OAuth credentials."""
+
     name: str = Field(min_length=1, max_length=120)
-    kind: Literal["smb", "nfs", "ftp", "onedrive", "google_drive",
-                  "dropbox", "box", "pcloud", "icloud", "upnp", "sftp", "http", "local"]
+    kind: Literal[
+        "smb",
+        "nfs",
+        "ftp",
+        "onedrive",
+        "google_drive",
+        "dropbox",
+        "box",
+        "pcloud",
+        "icloud",
+        "upnp",
+        "sftp",
+        "http",
+        "local",
+    ]
     target: str = Field(default="", max_length=2048)
     host: str = Field(default="", max_length=255)
     port: int | None = Field(default=None, ge=1, le=65535)
@@ -297,6 +311,7 @@ class PlaybackLocationInput(StrictModel):
     @classmethod
     def no_embedded_credentials(cls, target: str) -> str:
         from urllib.parse import urlsplit
+
         candidate = urlsplit(target.strip())
         if candidate.username is not None or candidate.password is not None:
             raise ValueError("Credentials must not be embedded in the location.")

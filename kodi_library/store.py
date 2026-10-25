@@ -401,7 +401,8 @@ class Store:
         value = dict(row)
         option = conn.execute(
             "SELECT public_config,password_cipher FROM playback_location_options "
-            "WHERE location_id=?", (value["id"],)
+            "WHERE location_id=?",
+            (value["id"],),
         ).fetchone()
         value.update(json.loads(option["public_config"]) if option else {})
         value["has_password"] = bool(option and option["password_cipher"])
@@ -422,7 +423,9 @@ class Store:
             return self._playback_location_view(conn, row) if row else None
 
     def save_playback_location(
-        self, data: dict[str, Any], location_id: str | None = None,
+        self,
+        data: dict[str, Any],
+        location_id: str | None = None,
         password_cipher: str | None = None,
     ) -> dict[str, Any]:
         public = {k: data.get(k) for k in ("host", "port", "share", "username", "workgroup")}
@@ -465,9 +468,7 @@ class Store:
 
     def delete_playback_location(self, location_id: str) -> None:
         with self.connect() as conn:
-            deleted = conn.execute(
-                "DELETE FROM playback_locations WHERE id=?", (location_id,)
-            )
+            deleted = conn.execute("DELETE FROM playback_locations WHERE id=?", (location_id,))
             if deleted.rowcount == 0:
                 raise KeyError(location_id)
 
@@ -483,14 +484,19 @@ class Store:
 
     def playback_cloud_status(self, location_id: str) -> bool:
         with self.connect() as conn:
-            return conn.execute(
-                "SELECT 1 FROM playback_cloud_credentials WHERE location_id=?",
-                (location_id,),
-            ).fetchone() is not None
+            return (
+                conn.execute(
+                    "SELECT 1 FROM playback_cloud_credentials WHERE location_id=?",
+                    (location_id,),
+                ).fetchone()
+                is not None
+            )
 
     def delete_playback_cloud_token(self, location_id: str):
         with self.connect() as conn:
-            conn.execute("DELETE FROM playback_cloud_credentials WHERE location_id=?", (location_id,))
+            conn.execute(
+                "DELETE FROM playback_cloud_credentials WHERE location_id=?", (location_id,)
+            )
 
     def device_tokens(self) -> list[dict[str, str]]:
         with self.connect() as conn:

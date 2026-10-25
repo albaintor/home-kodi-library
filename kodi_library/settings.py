@@ -49,10 +49,16 @@ class Settings:
             raise ValueError("Invalid Bonjour discovery name or port.")
         if self.cloud_oauth_redirect_url:
             from urllib.parse import urlsplit
+
             address = urlsplit(self.cloud_oauth_redirect_url)
-            if (address.scheme != "https" or not address.hostname or
-                    address.path != "/api/v1/playback/cloud/callback" or
-                    address.query or address.fragment or address.username):
+            if (
+                address.scheme != "https"
+                or not address.hostname
+                or address.path != "/api/v1/playback/cloud/callback"
+                or address.query
+                or address.fragment
+                or address.username
+            ):
                 raise ValueError(
                     "CLOUD_OAUTH_REDIRECT_URL must be an HTTPS callback URL ending "
                     "with /api/v1/playback/cloud/callback"
@@ -62,7 +68,9 @@ class Settings:
         for provider, options in self.cloud_oauth_clients.items():
             if not isinstance(options, dict) or not isinstance(options.get("client_id"), str):
                 raise ValueError("CLOUD_OAUTH_CLIENTS entries require a client_id.")
-            if options.get("client_secret") is not None and not isinstance(options["client_secret"], str):
+            if options.get("client_secret") is not None and not isinstance(
+                options["client_secret"], str
+            ):
                 raise ValueError("CLOUD_OAUTH_CLIENTS client_secret must be a string.")
         for name, networks in (
             ("LOCAL_AUTH_NETWORKS", self.local_auth_networks),

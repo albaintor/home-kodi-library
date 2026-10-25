@@ -1,4 +1,5 @@
 """Best-effort LAN SSDP/UPnP discovery without probing arbitrary URLs."""
+
 import asyncio
 import ipaddress
 import socket
@@ -7,11 +8,11 @@ from urllib.parse import urlsplit
 
 def _ssdp_probe() -> list[dict]:
     request = (
-        b'M-SEARCH * HTTP/1.1\r\n'
-        b'HOST: 239.255.255.250:1900\r\n'
+        b"M-SEARCH * HTTP/1.1\r\n"
+        b"HOST: 239.255.255.250:1900\r\n"
         b'MAN: "ssdp:discover"\r\n'
-        b'MX: 1\r\n'
-        b'ST: upnp:rootdevice\r\n\r\n'
+        b"MX: 1\r\n"
+        b"ST: upnp:rootdevice\r\n\r\n"
     )
     found = {}
     try:
@@ -19,11 +20,12 @@ def _ssdp_probe() -> list[dict]:
             sock.settimeout(0.3)
             sock.sendto(request, ("239.255.255.250", 1900))
             import time
+
             until = time.monotonic() + 1.8
             while time.monotonic() < until and len(found) < 40:
                 try:
                     data, address = sock.recvfrom(8192)
-                except socket.timeout:
+                except TimeoutError:
                     continue
                 try:
                     ip = ipaddress.ip_address(address[0])

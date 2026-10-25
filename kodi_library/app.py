@@ -48,8 +48,6 @@ from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
-from .playback_cloud import CloudOAuth, CloudOAuthError
-from .playback_discovery import discover_upnp
 from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
@@ -77,11 +75,11 @@ from .models import (
     MediaDetail,
     MediaPage,
     PairingRedeem,
-    PlaybackLocationInput,
-    PlaybackLocationView,
     PairingRequest,
     PairingResult,
     PersonalInput,
+    PlaybackLocationInput,
+    PlaybackLocationView,
     PlayerInput,
     PlayerView,
     PlayInput,
@@ -96,6 +94,8 @@ from .models import (
     WatchStatus,
     WritebackStatus,
 )
+from .playback_cloud import CloudOAuth, CloudOAuthError
+from .playback_discovery import discover_upnp
 from .players import play
 from .players import probe as probe_player
 from .settings import Settings
@@ -1253,7 +1253,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def create_playback_location(data: PlaybackLocationInput):
         payload = data.model_dump(exclude={"password"})
-        encrypted = cloud_auth.encrypt_password(data.password.get_secret_value()) if data.password else None
+        encrypted = (
+            cloud_auth.encrypt_password(data.password.get_secret_value()) if data.password else None
+        )
         return store.save_playback_location(payload, password_cipher=encrypted)
 
     @app.put(
@@ -1265,7 +1267,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def update_playback_location(location_id: str, data: PlaybackLocationInput):
         try:
             payload = data.model_dump(exclude={"password"})
-            encrypted = cloud_auth.encrypt_password(data.password.get_secret_value()) if data.password else None
+            encrypted = (
+                cloud_auth.encrypt_password(data.password.get_secret_value())
+                if data.password
+                else None
+            )
             return store.save_playback_location(payload, location_id, encrypted)
         except KeyError:
             raise HTTPException(404, "Unknown playback location.") from None
@@ -1298,7 +1304,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def playback_cloud_status():
         return [
             {
-                "id": loc["id"], "provider": loc["kind"],
+                "id": loc["id"],
+                "provider": loc["kind"],
                 "configured": cloud_auth.configured(loc["kind"]),
                 "connected": store.playback_cloud_status(loc["id"]),
             }
@@ -1321,19 +1328,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, str(exc)) from exc
 
     @app.get(API + "/playback/cloud/callback", include_in_schema=False)
-    async def playback_cloud_callback(state: str = "", code: str = "", error: str = "",
-                                      hostname: str = ""):
+    async def playback_cloud_callback(
+        state: str = "", code: str = "", error: str = "", hostname: str = ""
+    ):
         from fastapi.responses import HTMLResponse
+
         try:
-            await cloud_auth.complete(state=state, code=code, error=error,
-                                      hostname=hostname)
+            await cloud_auth.complete(state=state, code=code, error=error, hostname=hostname)
             message = "Compte connecté. Vous pouvez revenir à l'application."
-            return HTMLResponse("<html><body><h2>" + message + "</h2></body></html>",
-                                headers={"Cache-Control": "no-store"})
+            return HTMLResponse(
+                "<html><body><h2>" + message + "</h2></body></html>",
+                headers={"Cache-Control": "no-store"},
+            )
         except CloudOAuthError:
             return HTMLResponse(
                 "<html><body><h2>Connexion refusée ou expirée.</h2></body></html>",
-                status_code=400, headers={"Cache-Control": "no-store"},
+                status_code=400,
+                headers={"Cache-Control": "no-store"},
             )
 
     @app.delete(

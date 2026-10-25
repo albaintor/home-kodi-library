@@ -3,6 +3,7 @@
 OAuth secrets and access/refresh tokens never enter the iOS configuration cache.
 This component registers accounts; cloud directory browsing is a separate layer.
 """
+
 import base64
 import hashlib
 import json
@@ -77,10 +78,15 @@ class CloudOAuth:
 
     def configured(self, provider: str) -> bool:
         item = self.clients.get(provider)
-        return (provider in PROVIDERS and bool(self.redirect)
-                and isinstance(item, dict) and bool(item.get("client_id"))
-                and (provider not in {"google_drive", "box", "pcloud"} or
-                     bool(item.get("client_secret"))))
+        return (
+            provider in PROVIDERS
+            and bool(self.redirect)
+            and isinstance(item, dict)
+            and bool(item.get("client_id"))
+            and (
+                provider not in {"google_drive", "box", "pcloud"} or bool(item.get("client_secret"))
+            )
+        )
 
     def start(self, location_id: str, provider: str) -> str:
         if not self.configured(provider):
@@ -90,12 +96,16 @@ class CloudOAuth:
         self.pending = {k: v for k, v in self.pending.items() if now - v["at"] < 600}
         state = secrets.token_urlsafe(32)
         verifier = secrets.token_urlsafe(48)
-        challenge = base64.urlsafe_b64encode(
-            hashlib.sha256(verifier.encode("ascii")).digest()
-        ).rstrip(b"=").decode("ascii")
+        challenge = (
+            base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest())
+            .rstrip(b"=")
+            .decode("ascii")
+        )
         self.pending[state] = {
-            "at": now, "location_id": location_id,
-            "provider": provider, "verifier": verifier,
+            "at": now,
+            "location_id": location_id,
+            "provider": provider,
+            "verifier": verifier,
         }
         client = self.clients[provider]
         params = {
@@ -105,10 +115,12 @@ class CloudOAuth:
             "state": state,
         }
         if provider != "pcloud":
-            params.update({
-                "code_challenge": challenge,
-                "code_challenge_method": "S256",
-            })
+            params.update(
+                {
+                    "code_challenge": challenge,
+                    "code_challenge_method": "S256",
+                }
+            )
         if PROVIDERS[provider][2]:
             params["scope"] = PROVIDERS[provider][2]
         if provider == "google_drive":
@@ -118,8 +130,7 @@ class CloudOAuth:
             params["token_access_type"] = "offline"
         return PROVIDERS[provider][0] + "?" + urlencode(params)
 
-    async def complete(self, *, state: str, code: str, error: str,
-                       hostname: str = "") -> None:
+    async def complete(self, *, state: str, code: str, error: str, hostname: str = "") -> None:
         info = self.pending.pop(state, None)
         if info is None or time.monotonic() - info["at"] > 600 or error or not code:
             raise CloudOAuthError("Autorisation expirée ou refusée.")
@@ -132,11 +143,13 @@ class CloudOAuth:
         if client.get("client_secret"):
             payload["client_secret"] = client["client_secret"]
         if provider != "pcloud":
-            payload.update({
-                "grant_type": "authorization_code",
-                "redirect_uri": self.redirect,
-                "code_verifier": info["verifier"],
-            })
+            payload.update(
+                {
+                    "grant_type": "authorization_code",
+                    "redirect_uri": self.redirect,
+                    "code_verifier": info["verifier"],
+                }
+            )
         token_url = PROVIDERS[provider][1]
         # pCloud returns the trusted data-center hostname from the callback;
         # accept only documented hosts, never arbitrary attacker URLs.
@@ -151,13 +164,16 @@ class CloudOAuth:
                 response.raise_for_status()
                 token = response.json()
         except (httpx.HTTPError, ValueError) as exc:
-            LOG.warning("Cloud OAuth token exchange failed for %s (%s)",
-                        provider, type(exc).__name__)
+            LOG.warning(
+                "Cloud OAuth token exchange failed for %s (%s)", provider, type(exc).__name__
+            )
             raise CloudOAuthError("Impossible de valider le compte auprès du fournisseur.") from exc
-        if (not isinstance(token, dict) or
-                not isinstance(token.get("access_token"), str) or
-                not token["access_token"] or
-                (provider == "pcloud" and token.get("result") != 0)):
+        if (
+            not isinstance(token, dict)
+            or not isinstance(token.get("access_token"), str)
+            or not token["access_token"]
+            or (provider == "pcloud" and token.get("result") != 0)
+        ):
             raise CloudOAuthError("Réponse d'authentification non valide.")
         if provider == "pcloud":
             token["api_hostname"] = hostname or "api.pcloud.com"

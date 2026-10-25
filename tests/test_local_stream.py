@@ -67,7 +67,6 @@ def test_catalogue_path_is_used_without_extra_kodi_jsonrpc():
 
 
 def test_stream_range_header_accepts_suffix_but_not_multi_ranges():
-    import re
 
     assert local_stream._RANGE.fullmatch("bytes=0-1")
     assert local_stream._RANGE.fullmatch("bytes=100-")
@@ -119,9 +118,9 @@ def test_kodi_file_size_uses_full_file_length(monkeypatch, status, headers, expe
     monkeypatch.setattr(local_stream, "_resolve_video", resolve)
     monkeypatch.setattr(local_stream, "endpoint", lambda _: "http://kodi:8080/jsonrpc")
     monkeypatch.setattr(local_stream.httpx, "AsyncClient", Client)
-    answer = asyncio.run(local_stream.kodi_local_file_size(
-        "player", "movie-1", "edition-1", SimpleNamespace(), None
-    ))
+    answer = asyncio.run(
+        local_stream.kodi_local_file_size("player", "movie-1", "edition-1", SimpleNamespace(), None)
+    )
     assert answer == {"edition_id": "edition-1", "bytes": expected}
 
 
@@ -159,7 +158,9 @@ def test_file_size_never_mistakes_single_range_byte_for_movie_size(monkeypatch):
     monkeypatch.setattr(local_stream, "endpoint", lambda _: "http://kodi:8080/jsonrpc")
     monkeypatch.setattr(local_stream.httpx, "AsyncClient", Client)
     with pytest.raises(HTTPException) as exc:
-        asyncio.run(local_stream.kodi_local_file_size(
-            "player", "movie-1", "edition-1", SimpleNamespace(), None
-        ))
+        asyncio.run(
+            local_stream.kodi_local_file_size(
+                "player", "movie-1", "edition-1", SimpleNamespace(), None
+            )
+        )
     assert exc.value.status_code == 404
