@@ -1367,8 +1367,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         dependencies=[Depends(authenticated)],
         tags=["Playback"],
     )
-    async def playback_thumbnail(location_id: str, path: str):
-        """On-demand artwork of remote images and video frames; JPEG cache."""
+    async def playback_thumbnail(location_id: str, path: str, filename: str = ""):
+        """On-demand artwork; filename carries the suffix for opaque cloud IDs."""
         location = await asyncio.to_thread(store.playback_location, location_id)
         if not location:
             raise HTTPException(404, "Unknown playback location.")
@@ -1379,6 +1379,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             cloud_auth,
             settings.playback_nfs_mounts,
             settings.data_dir,
+            filename=filename,
         )
         return Response(
             content=binary,
