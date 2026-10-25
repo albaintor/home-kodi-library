@@ -13,7 +13,7 @@ import time
 from urllib.parse import urlencode
 
 import httpx
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 LOG = logging.getLogger(__name__)
 
@@ -236,11 +236,14 @@ class CloudOAuth:
             raise CloudOAuthError("Connectez ce compte cloud dans les réglages.")
         try:
             token = json.loads(self.decrypt_secret(saved["token_cipher"]))
-        except (ValueError, TypeError, KeyError, UnicodeError) as exc:
+        except (InvalidToken, ValueError, TypeError, KeyError, UnicodeError) as exc:
             raise CloudOAuthError("Jeton cloud illisible. Reconnectez ce compte.") from exc
         if not isinstance(token, dict) or not token.get("access_token"):
             raise CloudOAuthError("Jeton cloud absent. Reconnectez ce compte.")
-        expires_at = float(token.get("expires_at") or 0)
+        try:
+            expires_at = float(token.get("expires_at") or 0)
+        except (ValueError, TypeError) as exc:
+            raise CloudOAuthError("Date d’expiration du jeton cloud invalide.") from exc
         refresh = token.get("refresh_token")
         if not refresh or provider == "pcloud":
             return token
