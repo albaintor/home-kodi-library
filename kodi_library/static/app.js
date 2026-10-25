@@ -1494,7 +1494,7 @@ function networkPlay(entry){
   const browser=networkExplorer;
   if(!browser.selected || !networkMedia(entry.name))return;
   const kind=browser.selected.kind;
-  if(!['smb','ftp','nfs'].includes(kind)) {
+  if(!['smb','ftp','sftp','nfs'].includes(kind)) {
     networkBrowseError('Navigation disponible, mais le streaming direct de ce fournisseur n’est pas encore pris en charge.');
     return;
   }
