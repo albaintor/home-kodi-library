@@ -1703,32 +1703,38 @@ async function renderPlaybackCloudSettings() {
   const list=section.querySelector('#playback-cloud-web-list');
   const form=section.querySelector('#playback-cloud-app-form');
   const developerList=section.querySelector('#playback-cloud-developer-list');
-  let locations=[],statuses=[],apps=[];
+  let locations=[],statuses=[],apps=[],providers=[];
   const onCloudAuthorized=event=>{
     if(event.origin!==window.location.origin||event.data?.type!=='homekodi-cloud-oauth')return;
     if(!section.isConnected){window.removeEventListener('message',onCloudAuthorized);return;}
-    message.textContent=event.data.success?'Compte connecté.':'L’autorisation a échoué.';
-    void load();
+    // Reload the server-side connected state; do not erase the outcome while
+    // refreshing the list, and retain provider errors for diagnosis.
+    void load({preserveMessage:true}).then(()=>{
+      message.textContent=event.data.success?'Compte connecté.':
+        (event.data.error||'L’autorisation a échoué.');
+    });
   };
   window.addEventListener('message',onCloudAuthorized);
-  async function load() {
-    message.textContent='';
+  async function load({preserveMessage=false}={}) {
+    if(!preserveMessage)message.textContent='';
     link.replaceChildren();
     try {
       const outputs=await Promise.all([
         api('playback/locations'),api('playback/cloud/status'),
-        state.role==='admin'?api('playback/cloud/apps'):Promise.resolve([])
+        state.role==='admin'?api('playback/cloud/apps'):Promise.resolve([]),
+        api('playback/cloud/providers')
       ]);
-      [locations,statuses,apps]=outputs;
+      [locations,statuses,apps,providers]=outputs;
     } catch(e) {message.textContent=e.message;return;}
     const byId=new Map(statuses.map(row=>[row.id,row]));
-    const appByProvider=new Map(apps.map(row=>[row.provider,row]));
+    const providerByKind=new Map(providers.map(row=>[row.provider,row]));
     list.innerHTML=playbackCloudProviders.map(([kind,label])=>{
       const place=locations.find(row=>row.kind===kind);
       const status=place?byId.get(place.id):null;
-      const app=appByProvider.get(kind);
-      const configured=Boolean(status?.configured||app?.client_id);
-      const note=status?.connected?'Connecté':configured?'Autorisation nécessaire':'Configuration administrateur requise';
+      const provider=providerByKind.get(kind);
+      const configured=provider?.configured===true;
+      const note=status?.connected?'Connecté':configured?'Autorisation nécessaire':
+        (provider?.reason||'Configuration administrateur requise');
       const disabled=state.role!=='admin';
       return '<div class="connection-card"><div><strong>'+esc(label)+'</strong>'+
         '<p class="hint">'+esc(note)+'</p></div><div class="connection-actions">'+
@@ -1769,10 +1775,28 @@ async function renderPlaybackCloudSettings() {
     button.disabled=true;
     message.textContent='Connexion au fournisseur…';
     link.replaceChildren();
-    // Open synchronously from the click to avoid popup blockers. The OAuth
-    // code and refresh token are exchanged/stored by the server, never JS.
-    const popup=kind?window.open('about:blank','homekodi-cloud-login',
+    const readiness=providers.find(row=>row.provider===kind);
+    // Do not display a meaningless white window when the OAuth application
+    // has not even been registered (the most common failure).
+    if(kind && readiness?.configured!==true){
+      message.textContent=readiness?.reason||'Connecteur cloud non configuré sur le serveur.';
+      section.querySelector('#playback-cloud-developer-options').open=true;
+      button.disabled=false;
+      return;
+    }
+    // Browsers block windows opened after an awaited API request. Open now,
+    // with meaningful progress instead of a blank page, then redirect when
+    // the authorization URL has been validated by the backend.
+    const popup=kind?window.open('','homekodi-cloud-login',
       'popup,width=620,height=760'):null;
+    if(popup){
+      popup.document.open();
+      popup.document.write('<!doctype html><html lang="fr"><meta charset="utf-8">'+
+        '<title>Connexion cloud</title><body style="font:16px system-ui;padding:2rem">'+
+        '<h2>Connexion sécurisée</h2><p>Préparation de la page du fournisseur…</p>'+
+        '<p>Cette fenêtre affichera le site de connexion officiel.</p></body></html>');
+      popup.document.close();
+    }
     try {
       if(disconnect){
         await api('playback/cloud/'+encodeURIComponent(disconnect),{method:'DELETE'});
@@ -1802,9 +1826,21 @@ async function renderPlaybackCloudSettings() {
         message.textContent='Autorisez le compte, puis actualisez les connexions.';
       }
     } catch(e) {
-      popup?.close();
-      message.textContent=e.message;
-      if(String(e.message).includes('OAuth')) {
+      const explanation=e.message||String(e);
+      message.textContent=explanation;
+      // A failed login is actionable. Keep the popup open with the error,
+      // rather than closing it so fast that the user sees only a flash.
+      if(popup && !popup.closed){
+        try {
+          popup.document.open();
+          popup.document.write('<!doctype html><html lang="fr"><meta charset="utf-8">'+
+            '<title>Connexion impossible</title><body style="font:16px system-ui;padding:2rem">'+
+            '<h2>Connexion impossible</h2><p>'+esc(explanation)+'</p>'+
+            '<p>Corrigez la configuration, puis réessayez.</p></body></html>');
+          popup.document.close();
+        } catch(_) { /* A cross-origin provider page may deny access. */ }
+      }
+      if(/OAuth|configuration|client|retour/i.test(explanation)) {
         section.querySelector('#playback-cloud-developer-options').open=true;
       }
     }
