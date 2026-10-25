@@ -1294,14 +1294,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         location = await asyncio.to_thread(store.playback_location, data["location"])
         if not location:
             raise HTTPException(404, "Playback location no longer exists.")
-        if request.method == "HEAD":
-            # A full-file transfer is never needed to answer HEAD.
-            from fastapi import Response
-            return Response(status_code=200, headers={"Accept-Ranges": "bytes"})
-        return await stream_location(
+        response = await stream_location(
             location, data["path"], request.headers.get("Range"), store,
             cloud_auth, settings.playback_nfs_mounts,
         )
+        if request.method == "HEAD":
+            # File size is known without starting the streaming iterator.
+            return Response(
+                status_code=response.status_code, headers=dict(response.headers)
+            )
+        return response
 
     @app.get(
         API + "/playback/browse/{location_id}",
