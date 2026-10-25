@@ -51,6 +51,7 @@ def test_thumb_reads_remote_bytes_once_and_reuses_disk_cache(tmp_path, monkeypat
 
 def test_large_stream_is_bounded():
     length = 32 * 1024
+
     def source():
         yield b"A" * length
         yield b"B" * length
