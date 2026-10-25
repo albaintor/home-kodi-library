@@ -1255,7 +1255,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         location = await asyncio.to_thread(store.playback_location, location_id)
         if not location:
             raise HTTPException(404, "Unknown playback location.")
-        if location["kind"] not in {"smb", "ftp", "nfs"}:
+        if location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
             raise HTTPException(501, "Native streaming is unavailable for this protocol.")
         relative = safe_path(payload.get("path", ""))
         if not relative:
