@@ -1257,12 +1257,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         location = await asyncio.to_thread(store.playback_location, location_id)
         if not location:
             raise HTTPException(404, "Unknown playback location.")
-        if location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
+        if location["kind"] not in {
+            "smb", "ftp", "sftp", "nfs",
+            "onedrive", "google_drive", "dropbox", "box", "pcloud",
+        }:
             raise HTTPException(501, "Native streaming is unavailable for this protocol.")
         relative = safe_path(payload.get("path", ""))
         if not relative:
             raise HTTPException(422, "A file path is required.")
-        extension = PurePosixPath(relative).suffix.lower().lstrip(".")
+        # Cloud paths often contain opaque IDs without an extension. iOS also
+        # supplies the visible filename to select a safe media content type.
+        filename = payload.get("filename", "") if location["kind"] in {
+            "onedrive", "google_drive", "dropbox", "box", "pcloud"
+        } else relative
+        if not isinstance(filename, str) or len(filename) > 1024:
+            raise HTTPException(422, "Invalid media filename.")
+        extension = PurePosixPath(filename).suffix.lower().lstrip(".")
         if extension not in {
             "mp4",
             "m4v",
@@ -1318,6 +1328,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store,
             cloud_auth,
             settings.playback_nfs_mounts,
+            method=request.method,
         )
         if request.method == "HEAD":
             # File size is known without starting the streaming iterator.
