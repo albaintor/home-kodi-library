@@ -1438,6 +1438,12 @@ function networkBrowseError(message) {
 function networkMedia(filename) {
   return /\.(mp4|m4v|mov|mkv|webm|avi|ts|m2ts|mp3|m4a|wav)$/i.test(filename||'');
 }
+function networkThumbnail(entry){
+  const loc=networkExplorer.selected;
+  if(!loc || entry.is_dir || !/\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|heic|heif|avif|mp4|m4v|mov|mkv|avi|ts|m2ts|webm|mpg|mpeg)$/i.test(entry.name||''))return '';
+  const src=url('api/v1/playback/thumbnail/'+encodeURIComponent(loc.id)+'?path='+encodeURIComponent(entry.path)).href;
+  return '<img class="network-browser-thumbnail" loading="lazy" decoding="async" src="'+esc(src)+'" alt="">';
+}
 function networkCurrentPath(){
   return networkExplorer.stack.at(-1)?.path||'';
 }
@@ -1462,7 +1468,7 @@ function renderNetworkBrowser() {
     box.innerHTML=browser.entries.slice(0,count).map((item,i)=>
       '<div class="network-browser-tile" data-entry="'+i+'">'+
       '<button class="network-browser-item-main" data-network-entry="'+i+'" type="button">'+
-      '<span class="network-browser-tile-icon">'+(item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄')+'</span>'+
+      '<span class="network-browser-tile-icon">'+(networkThumbnail(item)|| (item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄'))+'</span>'+
       '<span class="network-browser-item-name">'+esc(item.name)+'</span>'+
       '<small>'+(item.is_dir?'Dossier':formatBytes(item.size||0))+'</small></button>'+
       '<button type="button" class="network-browser-more-actions" data-network-menu="'+i+
@@ -1567,6 +1573,13 @@ $('network-browser-dialog').addEventListener('close',()=>{
   const player=$('network-browser-video');
   player.pause();player.removeAttribute('src');player.load();
 });
+// Missing/unsupported frames retain a normal file icon; do not display a broken image.
+$('network-browser-items').addEventListener('error',event=>{
+  const image=event.target.closest?.('.network-browser-thumbnail');
+  if(!image)return;
+  const parent=image.parentElement;
+  if(parent)parent.textContent='🎞';
+},true);
 $('network-browser-items').addEventListener('click',event=>{
   const source=event.target.closest('[data-network-source]');
   if(source){void networkOpenRoot(source.dataset.networkSource);return;}
