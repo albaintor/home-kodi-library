@@ -1347,11 +1347,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not location:
             raise HTTPException(404, "Unknown playback location.")
         binary = await thumbnail_location(
-            location, path, store, cloud_auth, settings.playback_nfs_mounts,
+            location,
+            path,
+            store,
+            cloud_auth,
+            settings.playback_nfs_mounts,
             settings.data_dir,
         )
         return Response(
-            content=binary, media_type="image/jpeg",
+            content=binary,
+            media_type="image/jpeg",
             headers={"Cache-Control": "private, max-age=86400"},
         )
 

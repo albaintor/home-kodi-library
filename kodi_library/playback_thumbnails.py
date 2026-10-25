@@ -25,7 +25,19 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from .playback_browser import _credentials, _sync_stream, safe_path
 
 LOG = logging.getLogger(__name__)
-IMAGE_TYPES = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".heic", ".heif", ".avif"}
+IMAGE_TYPES = {
+    ".jpg",
+    ".jpeg",
+    ".png",
+    ".webp",
+    ".gif",
+    ".bmp",
+    ".tif",
+    ".tiff",
+    ".heic",
+    ".heif",
+    ".avif",
+}
 VIDEO_TYPES = {".mp4", ".m4v", ".mov", ".mkv", ".avi", ".ts", ".m2ts", ".webm", ".mpg", ".mpeg"}
 MAX_IMAGE = 12 * 1024 * 1024
 MAX_VIDEO = 28 * 1024 * 1024
@@ -58,13 +70,35 @@ def _jpeg_thumbnail(source: bytes, extension: str) -> bytes | None:
     try:
         child = subprocess.run(
             [
-                "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-                "-analyzeduration", "3000000", "-probesize", "6000000",
-                "-i", "pipe:0", "-map", "0:v:0", "-frames:v", "1",
-                "-vf", "scale=360:256:force_original_aspect_ratio=decrease",
-                "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "pipe:1",
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-nostdin",
+                "-analyzeduration",
+                "3000000",
+                "-probesize",
+                "6000000",
+                "-i",
+                "pipe:0",
+                "-map",
+                "0:v:0",
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=360:256:force_original_aspect_ratio=decrease",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "mjpeg",
+                "-q:v",
+                "5",
+                "pipe:1",
             ],
-            input=source, capture_output=True, timeout=14, check=False,
+            input=source,
+            capture_output=True,
+            timeout=14,
+            check=False,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return None
@@ -107,7 +141,11 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
     headers = {"Authorization": "Bearer " + access, "Range": f"bytes=0-{limit - 1}"}
     with httpx.Client(timeout=18, follow_redirects=True) as client:
         if provider == "onedrive":
-            url = "https://graph.microsoft.com/v1.0/me/drive/items/" + quote(path, safe="") + "/content"
+            url = (
+                "https://graph.microsoft.com/v1.0/me/drive/items/"
+                + quote(path, safe="")
+                + "/content"
+            )
             method, kwargs = "GET", {"headers": headers}
         elif provider == "google_drive":
             url = "https://www.googleapis.com/drive/v3/files/" + quote(path, safe="")
@@ -155,7 +193,9 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
             return bytes(chunks)
 
 
-def _thumbnail_sync(location: dict, path: str, store, encryption, mounts: dict, cache: Path) -> bytes:
+def _thumbnail_sync(
+    location: dict, path: str, store, encryption, mounts: dict, cache: Path
+) -> bytes:
     path = safe_path(path)
     extension = PurePosixPath(path).suffix.lower()
     if extension not in IMAGE_TYPES | VIDEO_TYPES or not path:
@@ -177,8 +217,9 @@ def _thumbnail_sync(location: dict, path: str, store, encryption, mounts: dict, 
     result = _jpeg_thumbnail(raw, extension)
     if result is None:
         raise HTTPException(
-            422, "No thumbnail could be extracted from this file. "
-            "For videos, the container may need bytes beyond the bounded preview."
+            422,
+            "No thumbnail could be extracted from this file. "
+            "For videos, the container may need bytes beyond the bounded preview.",
         )
     temporary = target.with_suffix(".tmp-" + str(os.getpid()))
     try:
@@ -189,11 +230,18 @@ def _thumbnail_sync(location: dict, path: str, store, encryption, mounts: dict, 
     return result
 
 
-async def thumbnail_location(location: dict, path: str, store, encryption, mounts: dict, data_dir: Path) -> bytes:
+async def thumbnail_location(
+    location: dict, path: str, store, encryption, mounts: dict, data_dir: Path
+) -> bytes:
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(
-                _thumbnail_sync, location, path, store, encryption, mounts,
+                _thumbnail_sync,
+                location,
+                path,
+                store,
+                encryption,
+                mounts,
                 data_dir / "playback-thumbnails",
             ),
             timeout=42,
