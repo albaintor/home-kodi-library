@@ -1516,6 +1516,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "provider": provider,
                 "configured": cloud_auth.configured(provider),
                 "reason": cloud_auth.configuration_error(provider),
+                "device_supported": provider == "onedrive",
+                "device_configured": provider == "onedrive" and
+                    cloud_auth.device_configuration_error(provider) is None,
+                "device_reason": cloud_auth.device_configuration_error(provider)
+                    if provider == "onedrive" else None,
+                "device_client_id": cloud_auth.device_client_id(provider)
+                    if provider == "onedrive" else None,
             }
             for provider in sorted(cloud_auth.supported)
         ]
@@ -1536,6 +1543,34 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for loc in store.playback_locations()
             if loc["kind"] in cloud_auth.supported or loc["kind"] == "icloud"
         ]
+
+    @app.post(
+        API + "/playback/cloud/{location_id}/device/start",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    async def start_playback_cloud_device(location_id: str):
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        try:
+            return await cloud_auth.start_device(location_id, location["kind"])
+        except CloudOAuthError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post(
+        API + "/playback/cloud/{location_id}/device/poll",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    async def poll_playback_cloud_device(location_id: str, payload: dict):
+        import re
+
+        request_id = payload.get("request_id")
+        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", request_id):
+            raise HTTPException(422, "Invalid device authorization request.")
+        # Never return the Microsoft device_code, bearer or refresh token.
+        return await cloud_auth.poll_device(location_id, request_id)
 
     @app.post(
         API + "/playback/cloud/{location_id}/authorize",
