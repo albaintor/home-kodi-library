@@ -166,6 +166,8 @@ def test_cloud_oauth_configuration_diagnostics(tmp_path):
         cloud_oauth_redirect_url="",
     )
     manager = CloudOAuth(settings, FakeStore())
+    assert "secret" in manager.configuration_error("onedrive")
+    manager.clients["onedrive"]["client_secret"] = "server-only-secret"
     assert "HTTPS" in manager.configuration_error("onedrive")
     manager.redirect = "https://example.org/api/v1/playback/cloud/callback"
     assert manager.configuration_error("onedrive") is None
