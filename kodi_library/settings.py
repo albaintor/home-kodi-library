@@ -27,6 +27,7 @@ class Settings:
     cloud_oauth_clients: dict = field(default_factory=dict)
     cloud_oauth_redirect_url: str = ""
     playback_encryption_key: str = ""
+    playback_nfs_mounts: dict[str, str] = field(default_factory=dict)
 
     def validate(self) -> None:
         if len(self.api_token) < 24:
@@ -102,6 +103,7 @@ class Settings:
             cloud_oauth_clients=json.loads(os.environ.get("CLOUD_OAUTH_CLIENTS", "{}")),
             cloud_oauth_redirect_url=os.environ.get("CLOUD_OAUTH_REDIRECT_URL", ""),
             playback_encryption_key=os.environ.get("PLAYBACK_ENCRYPTION_KEY", ""),
+            playback_nfs_mounts=json.loads(os.environ.get("PLAYBACK_NFS_MOUNTS", "{}")),
             discovery_name=os.environ.get("DISCOVERY_NAME", "Home Kodi Library"),
             discovery_port=int(os.environ.get("DISCOVERY_PORT", os.environ.get("PORT", "8099"))),
         )

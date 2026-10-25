@@ -94,6 +94,7 @@ from .models import (
     WatchStatus,
     WritebackStatus,
 )
+from .playback_browser import browse_location, stream_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
 from .players import play
@@ -1234,6 +1235,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "lists": len(restored),
             "media": len(document["tables"]["works"]),
         }
+
+    @app.get(
+        API + "/playback/browse/{location_id}",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_browse(location_id: str, path: str = ""):
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        return await browse_location(
+            location, path, store, cloud_auth, settings.playback_nfs_mounts
+        )
+
+    @app.get(
+        API + "/playback/stream/{location_id}",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_stream(location_id: str, request: Request, path: str = ""):
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        return await stream_location(
+            location, path, request.headers.get("Range"), store, cloud_auth,
+            settings.playback_nfs_mounts,
+        )
 
     @app.get(
         API + "/playback/locations",

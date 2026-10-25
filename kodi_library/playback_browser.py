@@ -218,7 +218,7 @@ async def browse_location(location: dict, path: str, store, encryption, mounts: 
                 asyncio.to_thread(_sync_browse, location, relative, password, mounts),
                 timeout=25,
             )
-        except (OSError, ftplib.all_errors) as exc:
+        except (OSError, EOFError, ftplib.Error) as exc:
             raise HTTPException(502, "Cannot browse the configured network share.") from exc
         rows.sort(key=lambda row: (not row["is_dir"], row["name"].casefold()))
         return [{"path": "/".join(filter(None, (relative, row["name"]))), **row} for row in rows]
