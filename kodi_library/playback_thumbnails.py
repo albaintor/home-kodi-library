@@ -183,15 +183,21 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
 
 
 def _thumbnail_sync(
-    location: dict, path: str, store, encryption, mounts: dict, cache: Path
+    location: dict, path: str, store, encryption, mounts: dict, cache: Path,
+    filename: str = "",
 ) -> bytes:
     path = safe_path(path)
-    extension = PurePosixPath(path).suffix.lower()
+    # OneDrive uses opaque IDs; the display name supplies the extension.
+    if not isinstance(filename, str) or len(filename) > 512 or any(
+        ord(char) < 32 for char in filename
+    ):
+        raise HTTPException(422, "Invalid media filename.")
+    extension = PurePosixPath(filename or path).suffix.lower()
     if extension not in IMAGE_TYPES | VIDEO_TYPES or not path:
         raise HTTPException(415, "No thumbnail decoder for this file type.")
     limit = MAX_IMAGE if extension in IMAGE_TYPES else MAX_VIDEO
     cache.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(f"{location['id']}\0{path}\0v3".encode()).hexdigest()
+    digest = hashlib.sha256(f"{location['id']}\0{path}:{filename}\0v4".encode()).hexdigest()
     target = cache / f"{digest}.jpg"
     if target.is_file() and time.time() - target.stat().st_mtime < MAX_AGE:
         return target.read_bytes()
@@ -212,10 +218,28 @@ def _thumbnail_sync(
                 raise HTTPException(422, "The remote file is empty.")
             result = _jpeg_thumbnail(raw, extension)
     else:
-        raw = _cloud_data(location, path, store, encryption, limit)
-        if not raw:
-            raise HTTPException(422, "The remote file is empty.")
-        result = _jpeg_thumbnail(raw, extension)
+        result = None
+        if location["kind"] == "onedrive":
+            # Prefer Microsoft's own thumbnail, including for videos.
+            saved = store.playback_cloud_credentials(location["id"])
+            if saved:
+                try:
+                    auth = json.loads(encryption.decrypt_secret(saved["token_cipher"]))
+                    with httpx.Client(timeout=14, follow_redirects=True) as client:
+                        image = client.get(
+                            "https://graph.microsoft.com/v1.0/me/drive/items/"
+                            + quote(path, safe="") + "/thumbnails/0/medium/content",
+                            headers={"Authorization": "Bearer " + auth["access_token"]},
+                        )
+                        if image.status_code == 200 and len(image.content) <= MAX_IMAGE:
+                            result = _jpeg_thumbnail(image.content, ".jpg")
+                except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+                    LOG.debug("OneDrive thumbnail unavailable: %s", type(exc).__name__)
+        if result is None:
+            raw = _cloud_data(location, path, store, encryption, limit)
+            if not raw:
+                raise HTTPException(422, "The remote file is empty.")
+            result = _jpeg_thumbnail(raw, extension)
     if result is None:
         raise HTTPException(
             422,
@@ -232,9 +256,16 @@ def _thumbnail_sync(
 
 
 async def thumbnail_location(
-    location: dict, path: str, store, encryption, mounts: dict, data_dir: Path
+    location: dict, path: str, store, encryption, mounts: dict, data_dir: Path,
+    filename: str = "",
 ) -> bytes:
     try:
+        if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
+            from .playback_cloud import CloudOAuthError
+            try:
+                await encryption.credentials(location["id"], location["kind"])
+            except CloudOAuthError as exc:
+                raise HTTPException(409, str(exc)) from exc
         return await asyncio.wait_for(
             asyncio.to_thread(
                 _thumbnail_sync,
@@ -244,6 +275,7 @@ async def thumbnail_location(
                 encryption,
                 mounts,
                 data_dir / "playback-thumbnails",
+                filename,
             ),
             timeout=42,
         )
