@@ -42,24 +42,19 @@ def test_protocol_errors_are_json_http_exceptions(monkeypatch):
 def test_expired_or_unreadable_cloud_credential_returns_409():
     import asyncio
 
-    from cryptography.fernet import InvalidToken
-
     from kodi_library import playback_browser
-
-    class Store:
-        def playback_cloud_credentials(self, _location_id):
-            return {"provider": "onedrive", "token_cipher": "broken"}
+    from kodi_library.playback_cloud import CloudOAuthError
 
     class Crypto:
-        def decrypt_secret(self, _cipher):
-            raise InvalidToken
+        async def credentials(self, _location_id, _provider):
+            raise CloudOAuthError("Jeton cloud illisible.")
 
     with pytest.raises(HTTPException) as error:
         asyncio.run(
             playback_browser.cloud_browse(
                 {"kind": "onedrive", "id": "test"},
                 "",
-                Store(),
+                None,
                 Crypto(),
             )
         )
