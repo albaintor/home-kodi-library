@@ -9,6 +9,7 @@ import base64
 import hashlib
 import json
 import logging
+import os
 import secrets
 import time
 from urllib.parse import urlencode
@@ -17,6 +18,14 @@ import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 LOG = logging.getLogger(__name__)
+
+# A client ID is public (unlike a client secret). The registered Home Kodi
+# Library OneDrive application can therefore be used on LAN-only servers.
+# Override with ONEDRIVE_CLIENT_ID for a different installation/registration.
+ONEDRIVE_PUBLIC_CLIENT_ID = "145e06bb-b35b-4d96-8cf8-4077cd5e5528"
+MICROSOFT_DEVICE_ENDPOINT = "https://login.microsoftonline.com/common/oauth2/v2.0/devicecode"
+MICROSOFT_TOKEN_ENDPOINT = "https://login.microsoftonline.com/common/oauth2/v2.0/token"
+MICROSOFT_DEVICE_SCOPE = "offline_access Files.Read"
 
 
 class CloudOAuthError(Exception):
@@ -73,6 +82,7 @@ class CloudOAuth:
             )
             self.fernet = Fernet(derived)
         self.pending = {}
+        self.pending_devices: dict[str, dict] = {}
         self._refresh_locks: dict[str, asyncio.Lock] = {}
 
     def encrypt_password(self, value: str) -> str:
@@ -96,6 +106,169 @@ class CloudOAuth:
                 "redirect_url"
             ]
         return self.clients.get(provider, {}), self.redirect
+
+    def device_client_id(self, provider: str) -> str:
+        if provider != "onedrive":
+            return ""
+        from uuid import UUID
+
+        client, _ = self.provider_options("onedrive")
+        value = str(client.get("client_id") or os.environ.get(
+            "ONEDRIVE_CLIENT_ID", ONEDRIVE_PUBLIC_CLIENT_ID
+        )).strip()
+        try:
+            UUID(value)
+        except (ValueError, AttributeError, TypeError):
+            return ""
+        return value
+
+    def device_configuration_error(self, provider: str) -> str | None:
+        if provider != "onedrive":
+            return "La connexion sans domaine n’est pas encore disponible pour ce fournisseur."
+        if not self.device_client_id(provider):
+            return "Identifiant public OneDrive absent ou invalide."
+        return None
+
+    def _prune_device_sessions(self) -> None:
+        now = time.monotonic()
+        self.pending_devices = {
+            key: entry for key, entry in self.pending_devices.items()
+            if entry["deadline"] > now
+        }
+
+    async def start_device(self, location_id: str, provider: str) -> dict:
+        """Start an RFC 8628 session without redirect URI or client secret."""
+        problem = self.device_configuration_error(provider)
+        if problem:
+            raise CloudOAuthError(problem)
+        location = self.store.playback_location(location_id)
+        if not location or location["kind"] != "onedrive":
+            raise CloudOAuthError("Emplacement OneDrive introuvable.")
+        self._prune_device_sessions()
+        if len(self.pending_devices) >= 64:
+            raise CloudOAuthError("Trop de connexions en cours. Réessayez plus tard.")
+        client_id = self.device_client_id(provider)
+        try:
+            async with httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
+                response = await http.post(
+                    MICROSOFT_DEVICE_ENDPOINT,
+                    data={"client_id": client_id, "scope": MICROSOFT_DEVICE_SCOPE},
+                )
+                result = response.json()
+                response.raise_for_status()
+        except (httpx.HTTPError, ValueError) as exc:
+            LOG.warning("OneDrive device authorization failed (%s)", type(exc).__name__)
+            raise CloudOAuthError(
+                "Microsoft n’a pas démarré l’autorisation. Vérifiez dans Entra "
+                "« Autoriser les flux de clients publics = Oui » et les autorisations Files.Read."
+            ) from exc
+        if not isinstance(result, dict):
+            raise CloudOAuthError("Réponse Microsoft inattendue.")
+        try:
+            device_code = result["device_code"]
+            user_code = result["user_code"]
+            verification_uri = result["verification_uri"]
+            expires_in = max(1, min(1800, int(result["expires_in"])))
+            interval = max(5, min(60, int(result.get("interval", 5))))
+        except (ValueError, KeyError, TypeError) as exc:
+            raise CloudOAuthError("Réponse Microsoft incomplète.") from exc
+        if not all(isinstance(x, str) and x for x in (
+            device_code, user_code, verification_uri
+        )) or not verification_uri.startswith("https://"):
+            raise CloudOAuthError("Code ou adresse de validation Microsoft invalide.")
+        request_id = secrets.token_urlsafe(32)
+        now = time.monotonic()
+        self.pending_devices[request_id] = {
+            "location_id": location_id,
+            "client_id": client_id,
+            "device_code": device_code,  # stays in server RAM only
+            "deadline": now + expires_in,
+            "next_poll": now + interval,
+            "interval": interval,
+            "lock": asyncio.Lock(),
+        }
+        return {
+            "request_id": request_id,
+            "user_code": user_code,
+            "verification_uri": verification_uri,
+            "expires_in": expires_in,
+            "interval": interval,
+        }
+
+    async def poll_device(self, location_id: str, request_id: str) -> dict:
+        """One upstream poll per Microsoft interval, even across web/iOS clients."""
+        self._prune_device_sessions()
+        state = self.pending_devices.get(request_id)
+        if not state or state["location_id"] != location_id:
+            return {"status": "expired", "message": "Code expiré. Recommencez la connexion."}
+        async with state["lock"]:
+            now = time.monotonic()
+            if state["deadline"] <= now:
+                self.pending_devices.pop(request_id, None)
+                return {"status": "expired", "message": "Code expiré. Recommencez la connexion."}
+            if now < state["next_poll"]:
+                return {
+                    "status": "pending",
+                    "retry_after": max(1, int(state["next_poll"] - now + 0.99)),
+                }
+            state["next_poll"] = now + state["interval"]
+            try:
+                async with httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
+                    response = await http.post(MICROSOFT_TOKEN_ENDPOINT, data={
+                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                        "client_id": state["client_id"],
+                        "device_code": state["device_code"],
+                    })
+                    result = response.json()
+            except (httpx.HTTPError, ValueError) as exc:
+                LOG.warning("OneDrive device polling failed (%s)", type(exc).__name__)
+                return {"status": "pending", "retry_after": state["interval"]}
+            if not isinstance(result, dict):
+                return {"status": "pending", "retry_after": state["interval"]}
+            if response.status_code >= 400:
+                code = result.get("error")
+                if code == "authorization_pending":
+                    return {"status": "pending", "retry_after": state["interval"]}
+                if code == "slow_down":
+                    state["interval"] = min(120, state["interval"] + 5)
+                    state["next_poll"] = time.monotonic() + state["interval"]
+                    return {"status": "pending", "retry_after": state["interval"]}
+                self.pending_devices.pop(request_id, None)
+                if code in {"authorization_declined", "access_denied"}:
+                    return {"status": "denied", "message": "Autorisation Microsoft refusée."}
+                if code in {"expired_token", "bad_verification_code"}:
+                    return {"status": "expired", "message": "Code Microsoft expiré ou invalide."}
+                if code in {"invalid_client", "unauthorized_client"}:
+                    return {
+                        "status": "error",
+                        "message": "Activez « Autoriser les flux de clients publics » "
+                                   "dans Microsoft Entra pour cette application.",
+                    }
+                return {"status": "error", "message": "Microsoft a refusé la connexion OneDrive."}
+            access_token = result.get("access_token")
+            refresh_token = result.get("refresh_token")
+            if not isinstance(access_token, str) or not access_token:
+                self.pending_devices.pop(request_id, None)
+                return {"status": "error", "message": "Microsoft n’a pas fourni de jeton."}
+            if not isinstance(refresh_token, str) or not refresh_token:
+                self.pending_devices.pop(request_id, None)
+                return {
+                    "status": "error",
+                    "message": "Jeton de renouvellement absent : vérifiez offline_access.",
+                }
+            current = self.store.playback_location(location_id)
+            if not current or current["kind"] != "onedrive":
+                self.pending_devices.pop(request_id, None)
+                return {"status": "error", "message": "Emplacement OneDrive supprimé."}
+            result["expires_at"] = time.time() + max(
+                0, float(result.get("expires_in") or 3600)
+            )
+            # Record the exact client used to issue the rotating refresh token.
+            result["_hkl_client_id"] = state["client_id"]
+            encrypted = self.encrypt_password(json.dumps(result, separators=(",", ":")))
+            self.store.set_playback_cloud_token(location_id, "onedrive", encrypted)
+            self.pending_devices.pop(request_id, None)
+            return {"status": "connected"}
 
     def configuration_error(self, provider: str) -> str | None:
         """Return a safe actionable explanation, never an OAuth app secret."""
@@ -257,14 +430,17 @@ class CloudOAuth:
             if expires_at > time.time() + 90:
                 return token
             client, _ = self.provider_options(provider)
-            if not client.get("client_id"):
+            public_device_id = token.get("_hkl_client_id") if provider == "onedrive" else None
+            client_id = public_device_id or client.get("client_id")
+            if not client_id:
                 raise CloudOAuthError("Application OAuth supprimée. Reconfigurez ce fournisseur.")
             payload = {
                 "grant_type": "refresh_token",
                 "refresh_token": refresh,
-                "client_id": client["client_id"],
+                "client_id": client_id,
             }
-            if client.get("client_secret"):
+            # A public device-flow client cannot use a confidential client secret.
+            if client.get("client_secret") and not public_device_id:
                 payload["client_secret"] = client["client_secret"]
             try:
                 async with httpx.AsyncClient(timeout=15, follow_redirects=False) as client_http:
