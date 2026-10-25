@@ -1531,16 +1531,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         try:
             await cloud_auth.complete(state=state, code=code, error=error, hostname=hostname)
-            message = "Compte connecté. Vous pouvez revenir à l'application."
             return HTMLResponse(
-                "<html><body><h2>" + message + "</h2></body></html>",
-                headers={"Cache-Control": "no-store"},
+                '<!doctype html><html lang="fr"><meta charset="utf-8">'
+                '<title>Compte connecté</title><body><h2>Compte connecté.</h2>'
+                '<p>Cette fenêtre peut être fermée.</p>'
+                '<script>if(window.opener){window.opener.postMessage('
+                '{type:"homekodi-cloud-oauth",success:true},location.origin);'
+                'window.close();}</script></body></html>',
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
         except CloudOAuthError:
             return HTMLResponse(
-                "<html><body><h2>Connexion refusée ou expirée.</h2></body></html>",
+                '<!doctype html><html lang="fr"><meta charset="utf-8">'
+                '<title>Connexion refusée</title><body>'
+                '<h2>Connexion refusée ou expirée.</h2>'
+                '<script>if(window.opener){window.opener.postMessage('
+                '{type:"homekodi-cloud-oauth",success:false},location.origin);}'
+                '</script></body></html>',
                 status_code=400,
-                headers={"Cache-Control": "no-store"},
+                headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
 
     @app.delete(
