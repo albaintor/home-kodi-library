@@ -98,6 +98,7 @@ from .playback_browser import browse_location, stream_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
 from .playback_thumbnails import thumbnail_location
+from .playback_transcode import browser_transcode
 from .players import play
 from .players import probe as probe_player
 from .settings import Settings
@@ -1333,6 +1334,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not location:
             raise HTTPException(404, "Unknown playback location.")
         return await browse_location(
+            location, path, store, cloud_auth, settings.playback_nfs_mounts
+        )
+
+    @app.get(
+        API + "/playback/browser-video/{location_id}",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_browser_video(location_id: str, path: str):
+        """Progressive FFmpeg fragmented MP4 for browsers that cannot open MKV."""
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        return await browser_transcode(
             location, path, store, cloud_auth, settings.playback_nfs_mounts
         )
 
