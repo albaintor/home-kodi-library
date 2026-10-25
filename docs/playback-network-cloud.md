@@ -26,6 +26,36 @@ sur iOS, puis importés localement pour lecture sans serveur.
 Fournisseurs : Google Drive, OneDrive, Dropbox, Box et pCloud.
 iCloud Drive : **intégration native via Fichiers**, sans OAuth tiers.
 
+### OneDrive sans domaine public (méthode recommandée)
+
+Application Microsoft Entra déjà enregistrée pour Home Kodi Library :
+`145e06bb-b35b-4d96-8cf8-4077cd5e5528` (identifiant public, **pas un secret**).
+Le serveur l'utilise par défaut. Il est possible de le remplacer avec
+`ONEDRIVE_CLIENT_ID` ou dans les réglages avancés du fournisseur.
+
+Dans **Microsoft Entra → Inscriptions d’applications → Authentification**,
+activer **Autoriser les flux de clients publics : Oui**. Les comptes pris en
+charge doivent inclure les comptes personnels Microsoft. Dans **Autorisations
+d’API**, ajouter **Microsoft Graph → Déléguées → Files.Read**.
+Aucun client secret ni URI de redirection ni domaine Internet n’est demandé
+pour ce parcours.
+
+Depuis l’interface web ou iOS, sélectionner **OneDrive → Connecter sans
+domaine** : le serveur récupère un code temporaire auprès de Microsoft,
+l’utilisateur saisit ce code sur `https://microsoft.com/devicelogin`, et
+l’interface attend la validation au rythme demandé par Microsoft. Les jetons
+sont chiffrés sur le NAS, jamais transmis au navigateur ni au téléphone.
+L’accès à Internet **sortant** du NAS est nécessaire ; aucun port entrant ne
+doit être ouvert. Ce parcours ne survit pas à un redémarrage serveur pendant
+les quelques minutes de validation.
+
+Endpoints admin : `POST /api/v1/playback/cloud/{id}/device/start` puis
+`POST /api/v1/playback/cloud/{id}/device/poll` avec `request_id`.
+Le serveur respecte `interval` et `slow_down`, expire les demandes et ne
+retourne aucun `device_code` ni jeton Microsoft.
+
+### Autres fournisseurs et ancien retour OAuth HTTPS
+
 Configurer sur le serveur ces variables d'environnement :
 
 - \`CLOUD_OAUTH_REDIRECT_URL=https://votre-domaine/api/v1/playback/cloud/callback\`
@@ -67,14 +97,14 @@ les redirections CDN, quotas et renouvellements des jetons.
   Il n'est **pas** envoyé dans le descripteur synchronisé. Le serveur peut
   disposer d'un **autre secret**, enregistré depuis ses propres paramètres
   web dans sa base chiffrée. Ne pas confondre les deux.
-- **iOS (voie recommandée)** : l'app lance le même OAuth **côté serveur**
-  avec `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios`. Le fournisseur
-  revient sur l'URL HTTPS du serveur, qui échange et chiffre les jetons, puis
-  renvoie l'iPhone sur `homekodilibrary://oauth/server` **sans jeton ni code**.
-  iOS utilise les API authentifiées du serveur pour parcourir les dossiers,
-  produire les vignettes et obtenir des tickets de streaming par plages HTTP.
-  Un seul enregistrement d'application OAuth *web* suffit pour le navigateur
-  et les clients iOS connectés au même serveur.
+- **iOS OneDrive (voie recommandée)** : flux Device Code sur le serveur,
+  sans domaine ni redirection. Le code s'affiche dans l'app, l'utilisateur
+  ouvre Microsoft, autorise Files.Read, et l'app interroge le serveur selon
+  l'intervalle indiqué. Navigation et streaming utilisent ensuite les API
+  authentifiées et les tickets HTTP Range existants.
+- **iOS autres fournisseurs (ancien parcours)** : OAuth côté serveur avec
+  `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios` et retour
+  HTTPS enregistré chez le fournisseur.
 - **iOS (option autonome)** : la connexion directe à Microsoft Graph ou aux
   autres fournisseurs reste possible si des clients OAuth publics natifs sont
   explicitement enregistrés, et insérés dans `OAuth.local.xcconfig` au build.
@@ -83,14 +113,11 @@ les redirections CDN, quotas et renouvellements des jetons.
   Google Drive, etc., utilisent leur propre authentification. Un média choisi
   depuis Fichiers peut être importé pour lecture **hors ligne**, sans identifiant
   OAuth propre à Home Kodi Library. Ce n'est pas du streaming direct.
-- **Configuration obligatoire (une seule fois)** : pour OneDrive en mode
-  serveur, enregistrer une application Microsoft Entra autorisant les comptes
-  Microsoft personnels, choisir la plateforme **Web**, déclarer exactement
-  `https://VOTRE-DOMAINE/api/v1/playback/cloud/callback`, créer un
-  `client_secret` côté serveur et enregistrer l'ID/secret dans Paramètres →
-  Services cloud → Configuration développeur. L'URL HTTPS doit être réellement
-  joignable depuis l'iPhone. Aucun secret ne doit être incorporé à l'application
-  iOS. Les fournisseurs tiers ont leurs propres consoles OAuth.
+- **Configuration OneDrive sans domaine** : dans Microsoft Entra,
+  activer les flux de clients publics et les autorisations déléguées Files.Read.
+  L'application utilise le client ID public ; aucun secret ni URI HTTPS
+  n'est nécessaire. Les autres fournisseurs gardent pour l'instant leurs
+  propres consoles OAuth et leurs retours HTTPS.
 
 **Limite actuelle :** la présence d'un emplacement enregistré ne signifie
 pas qu'il peut être parcouru. Les adaptateurs SMB, FTP, NFS, UPnP et les APIs
