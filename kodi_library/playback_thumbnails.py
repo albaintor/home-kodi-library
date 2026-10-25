@@ -109,19 +109,18 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
     with httpx.Client(timeout=18, follow_redirects=True) as client:
         if provider == "onedrive":
             url = "https://graph.microsoft.com/v1.0/me/drive/items/" + quote(path, safe="") + "/content"
-            response = client.get(url, headers=headers, follow_redirects=True)
+            method, kwargs = "GET", {"headers": headers}
         elif provider == "google_drive":
             url = "https://www.googleapis.com/drive/v3/files/" + quote(path, safe="")
-            response = client.get(url, headers=headers, params={"alt": "media"})
+            method, kwargs = "GET", {"headers": headers, "params": {"alt": "media"}}
         elif provider == "box":
             url = "https://api.box.com/2.0/files/" + quote(path, safe="") + "/content"
-            response = client.get(url, headers=headers)
+            method, kwargs = "GET", {"headers": headers}
         elif provider == "dropbox":
             headers.pop("Range", None)
             headers["Dropbox-API-Arg"] = json.dumps({"path": "/" + path.lstrip("/")})
-            response = client.post(
-                "https://content.dropboxapi.com/2/files/download", headers=headers,
-            )
+            url = "https://content.dropboxapi.com/2/files/download"
+            method, kwargs = "POST", {"headers": headers}
         elif provider == "pcloud":
             host = token.get("api_hostname", "api.pcloud.com")
             if host not in {"api.pcloud.com", "eapi.pcloud.com"}:
@@ -137,12 +136,24 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
             remote_path = metadata.get("path", "")
             if metadata.get("result") != 0 or not hosts or not remote_path.startswith("/"):
                 raise HTTPException(502, "pCloud thumbnail link unavailable.")
-            response = client.get("https://" + hosts[0] + remote_path, headers={"Range": headers["Range"]})
+            url = "https://" + hosts[0] + remote_path
+            method, kwargs = "GET", {"headers": {"Range": headers["Range"]}}
         else:
             raise HTTPException(501, "Cloud thumbnail is unavailable.")
-        if response.status_code not in (200, 206):
-            raise HTTPException(502, "Cannot read source media for its thumbnail.")
-        return response.content[:limit]
+        # Stream the response: httpx.get() would consume an entire movie
+        # before this function could apply its thumbnail byte cap.
+        with client.stream(method, url, **kwargs) as response:
+            if response.status_code not in (200, 206):
+                raise HTTPException(502, "Cannot read source media for its thumbnail.")
+            chunks = bytearray()
+            for chunk in response.iter_bytes():
+                if not chunk:
+                    continue
+                remaining = limit - len(chunks)
+                chunks.extend(chunk[:remaining])
+                if len(chunks) >= limit:
+                    break
+            return bytes(chunks)
 
 
 def _thumbnail_sync(location: dict, path: str, store, encryption, mounts: dict, cache: Path) -> bytes:

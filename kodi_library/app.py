@@ -95,6 +95,7 @@ from .models import (
     WritebackStatus,
 )
 from .playback_browser import browse_location, stream_location
+from .playback_thumbnails import thumbnail_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
 from .players import play
@@ -1333,6 +1334,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown playback location.")
         return await browse_location(
             location, path, store, cloud_auth, settings.playback_nfs_mounts
+        )
+
+    @app.get(
+        API + "/playback/thumbnail/{location_id}",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_thumbnail(location_id: str, path: str):
+        """On-demand artwork of remote images and video frames; JPEG cache."""
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        binary = await thumbnail_location(
+            location, path, store, cloud_auth, settings.playback_nfs_mounts,
+            settings.data_dir,
+        )
+        return Response(
+            content=binary, media_type="image/jpeg",
+            headers={"Cache-Control": "private, max-age=86400"},
         )
 
     @app.get(
