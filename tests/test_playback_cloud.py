@@ -340,3 +340,63 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     token = json.loads(oauth.decrypt_secret(store.cipher))
     assert token["access_token"] == "secret-access"
     assert token["_hkl_client_id"] == oauth.device_client_id("onedrive")
+
+
+def test_onedrive_public_client_api_without_redirect(client, admin):
+    from kodi_library.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
+
+    saved = client.put(
+        "/api/v1/playback/cloud/apps/onedrive", headers=admin,
+        json={"client_id": ONEDRIVE_PUBLIC_CLIENT_ID, "redirect_url": ""},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["device_configured"] is True
+    providers = client.get("/api/v1/playback/cloud/providers", headers=admin)
+    assert providers.status_code == 200
+    one = next(row for row in providers.json() if row["provider"] == "onedrive")
+    assert one["device_supported"] is True
+    assert one["device_configured"] is True
+    assert one["configured"] is False
+    assert one["device_client_id"] == ONEDRIVE_PUBLIC_CLIENT_ID
+
+
+def test_onedrive_device_routes_do_not_expose_microsoft_secrets(client, admin, monkeypatch):
+    from kodi_library.playback_cloud import CloudOAuth
+
+    cloud = client.post(
+        "/api/v1/playback/locations", headers=admin,
+        json={"name": "OneDrive", "kind": "onedrive", "target": ""}
+    ).json()
+
+    async def mock_start(self, location_id, provider):
+        assert location_id == cloud["id"] and provider == "onedrive"
+        return {
+            "request_id": "x" * 32, "user_code": "BCDF-HJKL",
+            "verification_uri": "https://microsoft.com/devicelogin",
+            "expires_in": 900, "interval": 5
+        }
+
+    async def mock_poll(self, location_id, request_id):
+        assert location_id == cloud["id"] and request_id == "x" * 32
+        return {"status": "pending", "retry_after": 5}
+
+    monkeypatch.setattr(CloudOAuth, "start_device", mock_start)
+    monkeypatch.setattr(CloudOAuth, "poll_device", mock_poll)
+    start = client.post(
+        f"/api/v1/playback/cloud/{cloud['id']}/device/start", headers=admin
+    )
+    assert start.status_code == 200
+    assert "user_code" in start.json()
+    assert "device_code" not in start.text
+    assert "access_token" not in start.text
+    polling = client.post(
+        f"/api/v1/playback/cloud/{cloud['id']}/device/poll",
+        headers=admin, json={"request_id": "x" * 32},
+    )
+    assert polling.status_code == 200
+    assert polling.json() == {"status": "pending", "retry_after": 5}
+    invalid = client.post(
+        f"/api/v1/playback/cloud/{cloud['id']}/device/poll",
+        headers=admin, json={"request_id": "../bad"},
+    )
+    assert invalid.status_code == 422
