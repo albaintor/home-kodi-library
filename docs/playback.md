@@ -13,3 +13,24 @@ L'API `/api/v1/playback/locations` stocke dans SQLite, sur le serveur, les descr
 **Limite importante :** cette première version n'implémente pas un explorateur réseau multi-protocole ni un moteur OAuth partagé entre iOS et le serveur. Elle prépare les emplacements centralisés, l'onglet Lecture et l'accès hors ligne. Les fichiers importés sont copiés (consommation d'espace de stockage iOS).
 
 Toute future passerelle de fichiers devra valider les chemins, appliquer une liste de sources autorisées, protéger les requêtes Range et utiliser des tickets de lecture temporaires sans divulguer les secrets des partages.
+
+
+## Nettoyage de la médiathèque Kodi
+
+La commande `POST /api/v1/sources/{source_id}/clean` (administrateur requis)
+déclenche `VideoLibrary.Clean` par JSON-RPC WebSocket sur l'instance
+associée à la source Kodi. Le paramètre optionnel `player_id` sélectionne
+une instance précise. L'action est distincte de `/scan` et de `/sync`.
+
+Le serveur attend `VideoLibrary.OnCleanStarted` puis
+`VideoLibrary.OnCleanFinished` avant de synchroniser à nouveau le
+catalogue. Si la connexion WebSocket ou la confirmation échoue, le
+catalogue local reste inchangé ; aucun repli SQL n'est présenté comme
+un nettoyage réussi. Pour les bibliothèques Kodi multi-éditions, la
+synchronisation utilise MariaDB si configurée, afin de ne pas écraser les
+informations de versions absentes du JSON-RPC.
+
+**Attention :** vérifier l'accessibilité de tous les montages SMB/NFS et
+disques avant le nettoyage, sinon Kodi risque de retirer de sa médiathèque
+des entrées toujours valides. L'action ne supprime pas les fichiers vidéo
+physiques. Progression et erreurs : `GET /api/v1/jobs/{job_id}`.
