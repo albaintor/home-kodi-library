@@ -16,7 +16,9 @@ from fastapi.responses import StreamingResponse
 
 
 def safe_path(path: str) -> str:
-    if not isinstance(path, str) or len(path) > 2048 or "\x00" in path or "\\" in path:
+    if (not isinstance(path, str) or len(path) > 2048
+            or any(ord(char) < 32 or ord(char) == 127 for char in path)
+            or "\\" in path):
         raise HTTPException(422, "Invalid media path.")
     parts = path.split("/")
     if any(p in (".", "..") for p in parts) or path.startswith("/"):
@@ -51,6 +53,22 @@ def _ftp_connection(location: dict, password: str) -> ftplib.FTP:
     conn.connect(host, int(location.get("port") or 21), timeout=8)
     conn.login(location.get("username") or "anonymous", password)
     return conn
+
+
+def _sftp_connection(location: dict, password: str):
+    """SSH host keys must already be trusted by the server administrator."""
+    import paramiko
+
+    host, _ = _root(location)
+    ssh = paramiko.SSHClient()
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    ssh.connect(
+        hostname=host, port=int(location.get("port") or 22),
+        username=location.get("username") or None, password=password or None,
+        timeout=8, auth_timeout=8, allow_agent=False, look_for_keys=False,
+    )
+    return ssh, ssh.open_sftp()
 
 
 def _local_root(location: dict, mounts: dict[str, str]) -> Path:
@@ -88,6 +106,27 @@ def _sync_browse(
             for child in folder.iterdir()
             if not child.is_symlink() and not child.name.startswith(".")
         ][:2000]
+    if kind == "sftp":
+        ssh, sftp = _sftp_connection(location, password)
+        try:
+            folder = "/".join((prefix, relative)).strip("/") or "."
+            rows = []
+            for item in sftp.listdir_attr(folder):
+                import stat
+
+                if item.filename.startswith("."):
+                    continue
+                directory = stat.S_ISDIR(item.st_mode)
+                rows.append({
+                    "name": item.filename, "is_dir": directory,
+                    "size": 0 if directory else int(item.st_size),
+                })
+                if len(rows) >= 2000:
+                    break
+            return rows
+        finally:
+            sftp.close()
+            ssh.close()
     if kind == "ftp":
         conn = _ftp_connection(location, password)
         try:
@@ -182,6 +221,30 @@ def _sync_stream(
                     left -= len(data)
                     yield data
         return size, content
+    if kind == "sftp":
+        ssh, sftp = _sftp_connection(location, password)
+        try:
+            size = sftp.stat(remote).st_size
+        finally:
+            sftp.close()
+            ssh.close()
+
+        def content():
+            session, client = _sftp_connection(location, password)
+            try:
+                with client.file(remote, mode="rb") as stream:
+                    stream.seek(start)
+                    left = max(0, (size if end is None else min(size, end + 1)) - start)
+                    while left:
+                        data = stream.read(min(left, chunk))
+                        if not data:
+                            break
+                        left -= len(data)
+                        yield data
+            finally:
+                client.close()
+                session.close()
+        return size, content
     if kind == "ftp":
         conn = _ftp_connection(location, password)
         try:
@@ -211,7 +274,7 @@ async def browse_location(location: dict, path: str, store, encryption, mounts: 
     import asyncio
 
     relative = safe_path(path)
-    if location["kind"] in {"smb", "ftp", "nfs"}:
+    if location["kind"] in {"smb", "ftp", "sftp", "nfs"}:
         password = _credentials(store, encryption, location["id"])
         try:
             rows = await asyncio.wait_for(
@@ -331,7 +394,7 @@ async def stream_location(
     import re
 
     relative = safe_path(path)
-    if not relative or location["kind"] not in {"smb", "ftp", "nfs"}:
+    if not relative or location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
         raise HTTPException(501, "Direct streaming is not enabled for this source.")
     start, end = 0, None
     if range_header:
