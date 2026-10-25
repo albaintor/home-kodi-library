@@ -87,8 +87,9 @@ def test_kodi_file_size_uses_full_file_length(monkeypatch, status, headers, expe
     from types import SimpleNamespace
 
     class Response:
-        status_code = status
-        headers = headers
+        def __init__(self):
+            self.status_code = status
+            self.headers = headers
 
         async def __aenter__(self):
             return self
