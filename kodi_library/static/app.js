@@ -168,10 +168,38 @@ async function api(path, options={}) {
     }
   }
   if (response.status===204) return null;
-  const value=await response.json();
+  const contentType=response.headers.get('content-type')||'';
+  let value=null;
+  if(contentType.includes('json')){
+    try { value=await response.json(); }
+    catch {
+      const problem=new Error('Réponse JSON invalide du serveur (HTTP '+response.status+').');
+      problem.status=response.status;
+      throw problem;
+    }
+  }else{
+    // A reverse proxy or an unhandled Python exception can return plain
+    // "Internal Server Error" or an HTML error page instead of JSON.
+    // Never pass these responses to JSON.parse().
+    const body=(await response.text()).trim();
+    if(!response.ok){
+      const description=response.status===500
+        ? 'Erreur interne du serveur pendant cette opération. Consultez les journaux du conteneur.'
+        : body && !body.startsWith('<') && body.length<240 ? body
+        : 'Le serveur a répondu avec un contenu non JSON.';
+      const problem=new Error(description+' (HTTP '+response.status+').');
+      problem.status=response.status;
+      throw problem;
+    }
+    const problem=new Error('Réponse inattendue du serveur : JSON attendu.');
+    problem.status=response.status;
+    throw problem;
+  }
   if (!response.ok) {
     if (response.status===401 && path!=='auth/session') showLogin();
-    const failure=new Error(value.error?.message || `Erreur ${response.status}`);
+    const detail=typeof value?.detail==='string'?value.detail:
+      (typeof value?.error?.message==='string'?value.error.message:null);
+    const failure=new Error(detail || `Erreur HTTP ${response.status}`);
     failure.status=response.status;
     throw failure;
   }
