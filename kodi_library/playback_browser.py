@@ -7,13 +7,17 @@ validated. Credentials never leave the server. No file modification API.
 from __future__ import annotations
 
 import ftplib
+import logging
 import mimetypes
+from cryptography.fernet import InvalidToken
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import httpx
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
+
+LOG = logging.getLogger(__name__)
 
 
 def safe_path(path: str) -> str:
@@ -37,7 +41,13 @@ def _credentials(store, encryption, location_id: str) -> str:
             (location_id,),
         ).fetchone()
     cipher = row["password_cipher"] if row else None
-    return encryption.decrypt_secret(cipher) if cipher else ""
+    if not cipher:
+        return ""
+    try:
+        return encryption.decrypt_secret(cipher)
+    except (InvalidToken, ValueError, TypeError, UnicodeError) as exc:
+        LOG.warning("Cannot decrypt saved playback password for location %s", location_id)
+        raise HTTPException(409, "Saved network password could not be decrypted. Re-enter it in Network settings.") from exc
 
 
 def _root(location: dict) -> tuple[str, str]:
@@ -321,8 +331,17 @@ async def browse_location(location: dict, path: str, store, encryption, mounts: 
                 asyncio.to_thread(_sync_browse, location, relative, password, mounts),
                 timeout=25,
             )
-        except (OSError, EOFError, ftplib.Error) as exc:
-            raise HTTPException(502, "Cannot browse the configured network share.") from exc
+        except HTTPException:
+            raise
+        except ImportError as exc:
+            LOG.error("Network connector dependency missing for %s: %s", location["kind"], exc)
+            raise HTTPException(503, "Network connector unavailable on the server. Update the server image.") from exc
+        except Exception as exc:
+            # Remote protocols raise protocol-specific exceptions that do not
+            # necessarily inherit OSError (e.g. SSH authentication failures).
+            # Return JSON rather than leaking an HTML/plain-text HTTP 500.
+            LOG.warning("Playback browse failed for %s (%s): %s", location["kind"], type(exc).__name__, exc)
+            raise HTTPException(502, "Could not browse this network location. Check its host, share and credentials.") from exc
         rows.sort(key=lambda row: (not row["is_dir"], row["name"].casefold()))
         return [{"path": "/".join(filter(None, (relative, row["name"]))), **row} for row in rows]
     if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
@@ -339,8 +358,8 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
     try:
         token = json.loads(encryption.decrypt_secret(saved["token_cipher"]))
         access = token["access_token"]
-    except (ValueError, KeyError, TypeError) as exc:
-        raise HTTPException(409, "Cloud authentication needs renewing.") from exc
+    except (ValueError, KeyError, TypeError, InvalidToken, UnicodeError) as exc:
+        raise HTTPException(409, "Cloud authentication needs renewing. Reconnect this provider in Network settings.") from exc
     kind = location["kind"]
     headers = {"Authorization": "Bearer " + access}
     try:
@@ -450,6 +469,9 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
         ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(502, "Cloud network request failed.") from exc
+    except (ValueError, KeyError, TypeError) as exc:
+        LOG.warning("Unexpected cloud provider response for %s: %s", kind, type(exc).__name__)
+        raise HTTPException(502, "Cloud provider returned an invalid folder listing.") from exc
     raise HTTPException(501, "Cloud provider not implemented.")
 
 
@@ -479,8 +501,13 @@ async def stream_location(
         size, content = await asyncio.wait_for(
             asyncio.to_thread(_sync_stream, location, relative, password, mounts), timeout=18
         )
-    except OSError as exc:
-        raise HTTPException(502, "Cannot open remote media.") from exc
+    except HTTPException:
+        raise
+    except ImportError as exc:
+        raise HTTPException(503, "Network streaming connector unavailable. Update the server image.") from exc
+    except Exception as exc:
+        LOG.warning("Playback streaming failed for %s (%s): %s", location["kind"], type(exc).__name__, exc)
+        raise HTTPException(502, "Cannot open the remote file. Check the network and credentials.") from exc
     if start >= size or (end is not None and end < start):
         raise HTTPException(416, "Requested range out of bounds.")
     finish = size - 1 if end is None else min(end, size - 1)
