@@ -97,3 +97,9 @@ zeroconf==0.147.0
 
 # HNSW vector search accelerator (prebuilt CPython 3.12 wheels for amd64/arm64)
 usearch==2.26.5
+
+# Network browsing/streaming connectors (also declared in pyproject.toml).
+# Docker builds install requirements.txt, not pyproject.toml dependencies.
+smbprotocol>=1.14,<2
+paramiko>=3.5,<5
+
