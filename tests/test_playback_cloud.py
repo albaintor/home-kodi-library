@@ -235,3 +235,108 @@ def test_cloud_token_auto_refresh(tmp_path):
     assert credential["refresh_token"] == "rotating-refresh"
     assert "new-token" not in store.cipher
     assert json.loads(oauth.decrypt_secret(store.cipher))["access_token"] == "new-token"
+
+
+def test_onedrive_device_configured_without_domain(tmp_path):
+    from kodi_library.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
+
+    class Store:
+        def playback_oauth_app(self, provider):
+            return None
+
+    manager = CloudOAuth(
+        Settings(data_dir=tmp_path, api_token=ADMIN), Store()
+    )
+    assert manager.device_configuration_error("onedrive") is None
+    assert manager.device_client_id("onedrive") == ONEDRIVE_PUBLIC_CLIENT_ID
+    assert not manager.configured("onedrive")
+    assert manager.device_configuration_error("dropbox")
+
+
+def test_onedrive_device_code_start_pending_and_success(tmp_path):
+    import asyncio
+    import json
+    from unittest.mock import patch
+    from kodi_library.playback_cloud import (
+        MICROSOFT_DEVICE_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT
+    )
+
+    class Store:
+        cipher = None
+
+        def playback_oauth_app(self, provider):
+            return None
+
+        def playback_location(self, location_id):
+            return {"id": location_id, "kind": "onedrive"}
+
+        def set_playback_cloud_token(self, location_id, provider, cipher):
+            assert location_id == "test-location"
+            assert provider == "onedrive"
+            self.cipher = cipher
+
+        def playback_cloud_credentials(self, location_id):
+            return {"provider": "onedrive", "token_cipher": self.cipher}
+
+    class Reply:
+        def __init__(self, status, payload):
+            self.status_code = status
+            self.payload = payload
+
+        def json(self):
+            return self.payload
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError("bad status")
+
+    class Http:
+        attempts = 0
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def post(self, url, data):
+            if url == MICROSOFT_DEVICE_ENDPOINT:
+                assert data["scope"] == "offline_access Files.Read"
+                return Reply(200, {
+                    "device_code": "a-private-code", "user_code": "QWER-1234",
+                    "verification_uri": "https://microsoft.com/devicelogin",
+                    "expires_in": 900, "interval": 5
+                })
+            assert url == MICROSOFT_TOKEN_ENDPOINT
+            assert data["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code"
+            self.attempts += 1
+            if self.attempts == 1:
+                return Reply(400, {"error": "authorization_pending"})
+            return Reply(200, {
+                "access_token": "secret-access", "refresh_token": "secret-refresh",
+                "expires_in": 3600
+            })
+
+    store = Store()
+    oauth = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), store)
+    transport = Http()
+    async def scenario():
+        with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=transport):
+            started = await oauth.start_device("test-location", "onedrive")
+            assert started["user_code"] == "QWER-1234"
+            assert "device_code" not in started
+            assert "access_token" not in json.dumps(started)
+            request_id = started["request_id"]
+            assert (await oauth.poll_device("test-location", request_id))["status"] == "pending"
+            assert transport.attempts == 0  # obey 5s Microsoft interval
+            oauth.pending_devices[request_id]["next_poll"] = 0
+            assert (await oauth.poll_device("test-location", request_id))["status"] == "pending"
+            assert transport.attempts == 1
+            oauth.pending_devices[request_id]["next_poll"] = 0
+            assert await oauth.poll_device("test-location", request_id) == {"status": "connected"}
+            assert (await oauth.poll_device("test-location", request_id))["status"] == "expired"
+
+    asyncio.run(scenario())
+    assert "secret-access" not in store.cipher
+    token = json.loads(oauth.decrypt_secret(store.cipher))
+    assert token["access_token"] == "secret-access"
+    assert token["_hkl_client_id"] == oauth.device_client_id("onedrive")
