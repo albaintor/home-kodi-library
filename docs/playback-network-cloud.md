@@ -49,10 +49,12 @@ La fenêtre de connexion expire après 10 minutes et ne fonctionne pas après
 un redémarrage serveur avant retour du fournisseur. La déconnexion côté serveur
 ne révoque pas les autorisations externes ; elles se gèrent chez le fournisseur.
 
-**Périmètre actuel :** autorisation et enregistrement des comptes, pas encore
-exploration des répertoires cloud, renouvellement des jetons expirés, lecture
-directe cloud ou synchronisation de fichiers. Ces adaptateurs seront nécessaires
-pour offrir les fonctions de navigation et streaming de VLC.
+**Périmètre actuel :** connexion OAuth, conservation chiffrée et renouvellement
+automatique des jetons, navigation en lecture seule, récupération des vignettes
+et streaming HTTP Range par ticket temporaire pour Google Drive, OneDrive,
+Dropbox, Box et pCloud. Les fichiers cloud ne sont pas synchronisés localement.
+Le fonctionnement réel doit être testé avec chaque compte/fournisseur, notamment
+les redirections CDN, quotas et renouvellements des jetons.
 
 
 ## Modèle hybride retenu (iOS + web)
@@ -65,17 +67,30 @@ pour offrir les fonctions de navigation et streaming de VLC.
   Il n'est **pas** envoyé dans le descripteur synchronisé. Le serveur peut
   disposer d'un **autre secret**, enregistré depuis ses propres paramètres
   web dans sa base chiffrée. Ne pas confondre les deux.
-- Pour iOS, la première intégration cloud passe par les **extensions File Provider**
-  des applications tierces présentes dans Fichiers. Leur authentification se
-  fait directement avec le fournisseur et n'utilise aucune route OAuth du
-  serveur ; l'utilisateur peut importer un média, puis le lire hors ligne.
-- Une future navigation cloud directe depuis l'app nécessitera l'enregistrement
-  d'un **client OAuth iOS** spécifique à chaque fournisseur, l'échange
-  authorization code + PKCE et la conservation du token dans Keychain.
-  Le client OAuth web et ses jetons restent indépendants.
-- Pour le web, la section Paramètres / Services cloud utilise les API OAuth
-  du serveur. Le serveur conserve les jetons du navigateur web uniquement.
-  Les autorisations web ne sont jamais renvoyées à iOS.
+- **iOS (voie recommandée)** : l'app lance le même OAuth **côté serveur**
+  avec `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios`. Le fournisseur
+  revient sur l'URL HTTPS du serveur, qui échange et chiffre les jetons, puis
+  renvoie l'iPhone sur `homekodilibrary://oauth/server` **sans jeton ni code**.
+  iOS utilise les API authentifiées du serveur pour parcourir les dossiers,
+  produire les vignettes et obtenir des tickets de streaming par plages HTTP.
+  Un seul enregistrement d'application OAuth *web* suffit pour le navigateur
+  et les clients iOS connectés au même serveur.
+- **iOS (option autonome)** : la connexion directe à Microsoft Graph ou aux
+  autres fournisseurs reste possible si des clients OAuth publics natifs sont
+  explicitement enregistrés, et insérés dans `OAuth.local.xcconfig` au build.
+  Sans client natif, le bouton de connexion directe n'est pas présenté.
+- **Fichiers iOS (repli)** : les extensions File Provider d'OneDrive, Dropbox,
+  Google Drive, etc., utilisent leur propre authentification. Un média choisi
+  depuis Fichiers peut être importé pour lecture **hors ligne**, sans identifiant
+  OAuth propre à Home Kodi Library. Ce n'est pas du streaming direct.
+- **Configuration obligatoire (une seule fois)** : pour OneDrive en mode
+  serveur, enregistrer une application Microsoft Entra autorisant les comptes
+  Microsoft personnels, choisir la plateforme **Web**, déclarer exactement
+  `https://VOTRE-DOMAINE/api/v1/playback/cloud/callback`, créer un
+  `client_secret` côté serveur et enregistrer l'ID/secret dans Paramètres →
+  Services cloud → Configuration développeur. L'URL HTTPS doit être réellement
+  joignable depuis l'iPhone. Aucun secret ne doit être incorporé à l'application
+  iOS. Les fournisseurs tiers ont leurs propres consoles OAuth.
 
 **Limite actuelle :** la présence d'un emplacement enregistré ne signifie
 pas qu'il peut être parcouru. Les adaptateurs SMB, FTP, NFS, UPnP et les APIs
