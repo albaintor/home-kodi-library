@@ -286,6 +286,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "ai_refine_results",
                 "kodi_local_stream",
                 "playback_locations",
+                "kodi_clean",
             ],
         }
 
@@ -1657,6 +1658,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             player = await asyncio.to_thread(store.player, chosen["id"])
         try:
             return await sync.submit_scan(source_id, player)
+        except BusyError as exc:
+            raise HTTPException(409, str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.post(
+        API + "/sources/{source_id}/clean",
+        response_model=JobView,
+        status_code=202,
+        tags=["Sources"],
+        dependencies=[Depends(writable)],
+    )
+    async def clean_kodi_source(source_id: str, player_id: str | None = None):
+        source = await asyncio.to_thread(store.source, source_id)
+        if not source:
+            raise HTTPException(404, "Unknown source.")
+        if source["type"] != "kodi":
+            raise HTTPException(422, "Only Kodi sources can be cleaned.")
+        if player_id:
+            player = await asyncio.to_thread(store.player, player_id)
+            if not player or player["source_id"] != source_id:
+                raise HTTPException(422, "Kodi player is not associated with the selected source.")
+        else:
+            candidates = await asyncio.to_thread(store.players)
+            chosen = next((p for p in candidates if p["source_id"] == source_id), None)
+            if chosen is None:
+                raise HTTPException(422, "Configure a Kodi JSON-RPC player for this source.")
+            player = await asyncio.to_thread(store.player, chosen["id"])
+        try:
+            return await sync.submit_clean(source_id, player)
         except BusyError as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:

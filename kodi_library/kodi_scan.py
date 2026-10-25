@@ -181,3 +181,84 @@ async def scan_until_finished(config: dict) -> str:
         # connection may work perfectly when port 9090 is disabled.
         await _http_scan(config)
         return "http"
+
+
+async def clean_until_finished(config: dict) -> str:
+    """Clean Kodi only with a confirmed OnCleanFinished notification.
+
+    Unlike Scan, never fall back to a SQL-only import or assume that an HTTP
+    'OK' response means the asynchronous cleanup has finished.
+    """
+    requested = False
+    try:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=None, connect=4, sock_connect=4),
+            trust_env=False,
+        ) as client:
+            async with client.ws_connect(
+                websocket_url(config),
+                timeout=aiohttp.ClientWSTimeout(ws_close=5),
+                heartbeat=30,
+                max_msg_size=256_000,
+            ) as ws:
+                async def rpc(method, rpc_id, params=None):
+                    await ws.send_json({
+                        "jsonrpc": "2.0", "id": rpc_id, "method": method,
+                        "params": params or {},
+                    })
+
+                async def read():
+                    message = await ws.receive()
+                    if message.type != aiohttp.WSMsgType.TEXT:
+                        raise ConnectorError("Connexion Kodi WebSocket interrompue.")
+                    try:
+                        value = json.loads(message.data)
+                    except (ValueError, TypeError) as exc:
+                        raise ConnectorError("Notification Kodi WebSocket invalide.") from exc
+                    if not isinstance(value, dict):
+                        raise ConnectorError("Réponse Kodi WebSocket inattendue.")
+                    return value
+
+                await rpc("JSONRPC.Permission", 1)
+                async with asyncio.timeout(4):
+                    while True:
+                        response = await read()
+                        if response.get("id") == 1:
+                            permissions = response.get("result")
+                            if not isinstance(permissions, dict) or not (
+                                permissions.get("RemoveData", permissions.get("removedata")) is True
+                            ):
+                                raise KodiScanUnavailable("Kodi WebSocket sans droit RemoveData.")
+                            break
+
+                # Subscribe before issuing cleanup, so even fast runs are observed.
+                await rpc("VideoLibrary.Clean", 2, {"showdialogs": False})
+                requested = True
+                acknowledged = started = finished = False
+                async with asyncio.timeout(1800):
+                    while not (acknowledged and started and finished):
+                        response = await read()
+                        method = response.get("method")
+                        if method == "VideoLibrary.OnCleanStarted":
+                            started = True
+                        elif method == "VideoLibrary.OnCleanFinished" and started:
+                            finished = True
+                        elif response.get("id") == 2:
+                            if response.get("result") != "OK":
+                                raise ConnectorError("Kodi a refusé VideoLibrary.Clean.")
+                            acknowledged = True
+        return "websocket"
+    except KodiScanUnavailable:
+        raise
+    except ConnectorError as exc:
+        if not requested:
+            raise KodiScanUnavailable("WebSocket Kodi inutilisable avant nettoyage.") from exc
+        raise
+    except (TimeoutError, aiohttp.ClientError, OSError) as exc:
+        if not requested:
+            raise KodiScanUnavailable(
+                "Le nettoyage requiert Kodi WebSocket sur le port configuré (habituellement 9090)."
+            ) from exc
+        raise ConnectorError(
+            "Nettoyage Kodi déclenché mais fin non confirmée ; catalogue local inchangé."
+        ) from exc

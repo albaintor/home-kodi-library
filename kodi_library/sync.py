@@ -11,7 +11,7 @@ from .connectors.clz import parse_clz
 from .connectors.collection_xml import COLLECTION_TYPES, parse_collection
 from .connectors.kodi import KodiConnector
 from .connectors.kodi_jsonrpc import fetch_kodi_snapshot
-from .kodi_scan import KodiScanUnavailable, scan_until_finished
+from .kodi_scan import KodiScanUnavailable, clean_until_finished, scan_until_finished
 from .players import KodiUnavailable, connection
 
 LOGGER = logging.getLogger(__name__)
@@ -59,6 +59,61 @@ class SyncManager:
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         return job
+
+    async def submit_clean(self, source_id: str, player: dict) -> dict[str, Any]:
+        """Clean orphans on one Kodi instance and publish only after confirmation."""
+        if source_id in self.active:
+            raise BusyError("Une opération est déjà en cours pour cette source.")
+        source = await asyncio.to_thread(self.store.source, source_id, private=True)
+        if not source or source["type"] != "kodi" or not source["enabled"]:
+            raise ValueError("Source Kodi inconnue ou désactivée.")
+        if player["source_id"] != source_id:
+            raise ValueError("Instance Kodi non associée à cette source.")
+        self.active.add(source_id)
+        try:
+            job = await asyncio.to_thread(self.store.new_job, source_id, "kodi_clean")
+        except Exception:
+            self.active.discard(source_id)
+            raise
+        task = asyncio.create_task(self._run_clean(job, source, player))
+        self.tasks.add(task)
+        task.add_done_callback(self.tasks.discard)
+        return job
+
+    async def _run_clean(self, job: dict, source: dict, player: dict) -> None:
+        try:
+            await asyncio.to_thread(self.store.start_job, job["id"])
+            await asyncio.to_thread(
+                self.store.update_job_progress, job["id"], "kodi_cleaning"
+            )
+            method = await clean_until_finished(player["config"])
+            await asyncio.to_thread(
+                self.store.update_job_progress, job["id"], "kodi_clean_finished"
+            )
+            # _run will not replace the catalogue when its follow-up import
+            # fails: the existing atomic snapshot guard remains in effect.
+            await self._run(
+                job, source, None,
+                scan_triggered=True,
+                scan_info={"kodi_clean": "finished", "kodi_clean_method": method,
+                           "kodi_clean_player": player["name"]},
+            )
+        except (KodiScanUnavailable, ConnectorError) as exc:
+            await asyncio.to_thread(self.store.finish_job, job["id"], error=str(exc))
+        except asyncio.CancelledError:
+            await asyncio.to_thread(
+                self.store.finish_job, job["id"],
+                error="Nettoyage Kodi interrompu avant confirmation de fin."
+            )
+            raise
+        except Exception:
+            LOGGER.exception("Unexpected Kodi cleanup failure")
+            await asyncio.to_thread(
+                self.store.finish_job, job["id"],
+                error="Nettoyage Kodi non confirmé ; catalogue local inchangé."
+            )
+        finally:
+            self.active.discard(source["id"])
 
     async def submit_scan(self, source_id: str, player: dict) -> dict[str, Any]:
         return await self.submit_scans(source_id, [player])
