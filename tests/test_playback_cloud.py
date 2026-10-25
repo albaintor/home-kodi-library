@@ -87,6 +87,9 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
         def playback_location(self, location_id):
             return {"id": location_id, "kind": "dropbox"}
 
+        def playback_oauth_app(self, provider):
+            return None
+
         def set_playback_cloud_token(self, location_id, provider, cipher):
             self.saved.append((location_id, provider, cipher))
 
