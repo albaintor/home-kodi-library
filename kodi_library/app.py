@@ -48,6 +48,8 @@ from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
+from .playback_cloud import CloudOAuth, CloudOAuthError
+from .playback_discovery import discover_upnp
 from .compatibility import mobile_compatibility
 from .connectors.base import ConnectorError
 from .connectors.kodi import KodiConnector
@@ -133,6 +135,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     ai_rate_lock = asyncio.Lock()
     ai_attempts: dict[str, deque[float]] = defaultdict(deque)
     personal_edit_lock = asyncio.Lock()
+    cloud_auth = CloudOAuth(settings, store)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -286,6 +289,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "ai_refine_results",
                 "kodi_local_stream",
                 "playback_locations",
+                "playback_discovery",
+                "playback_cloud_oauth",
                 "kodi_clean",
             ],
         }
@@ -1247,7 +1252,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Playback"],
     )
     def create_playback_location(data: PlaybackLocationInput):
-        return store.save_playback_location(data.model_dump())
+        payload = data.model_dump(exclude={"password"})
+        encrypted = cloud_auth.encrypt_password(data.password.get_secret_value()) if data.password else None
+        return store.save_playback_location(payload, password_cipher=encrypted)
 
     @app.put(
         API + "/playback/locations/{location_id}",
@@ -1257,7 +1264,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     def update_playback_location(location_id: str, data: PlaybackLocationInput):
         try:
-            return store.save_playback_location(data.model_dump(), location_id)
+            payload = data.model_dump(exclude={"password"})
+            encrypted = cloud_auth.encrypt_password(data.password.get_secret_value()) if data.password else None
+            return store.save_playback_location(payload, location_id, encrypted)
         except KeyError:
             raise HTTPException(404, "Unknown playback location.") from None
 
@@ -1272,6 +1281,71 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             store.delete_playback_location(location_id)
         except KeyError:
             raise HTTPException(404, "Unknown playback location.") from None
+
+    @app.get(
+        API + "/playback/discovery",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_discovery():
+        return await discover_upnp()
+
+    @app.get(
+        API + "/playback/cloud/status",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    def playback_cloud_status():
+        return [
+            {
+                "id": loc["id"], "provider": loc["kind"],
+                "configured": cloud_auth.configured(loc["kind"]),
+                "connected": store.playback_cloud_status(loc["id"]),
+            }
+            for loc in store.playback_locations()
+            if loc["kind"] in cloud_auth.supported or loc["kind"] == "icloud"
+        ]
+
+    @app.post(
+        API + "/playback/cloud/{location_id}/authorize",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def authorize_playback_cloud(location_id: str):
+        location = store.playback_location(location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        try:
+            return {"authorization_url": cloud_auth.start(location_id, location["kind"])}
+        except CloudOAuthError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @app.get(API + "/playback/cloud/callback", include_in_schema=False)
+    async def playback_cloud_callback(state: str = "", code: str = "", error: str = "",
+                                      hostname: str = ""):
+        from fastapi.responses import HTMLResponse
+        try:
+            await cloud_auth.complete(state=state, code=code, error=error,
+                                      hostname=hostname)
+            message = "Compte connecté. Vous pouvez revenir à l'application."
+            return HTMLResponse("<html><body><h2>" + message + "</h2></body></html>",
+                                headers={"Cache-Control": "no-store"})
+        except CloudOAuthError:
+            return HTMLResponse(
+                "<html><body><h2>Connexion refusée ou expirée.</h2></body></html>",
+                status_code=400, headers={"Cache-Control": "no-store"},
+            )
+
+    @app.delete(
+        API + "/playback/cloud/{location_id}",
+        status_code=204,
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def disconnect_playback_cloud(location_id: str):
+        if not store.playback_location(location_id):
+            raise HTTPException(404, "Unknown playback location.")
+        store.delete_playback_cloud_token(location_id)
 
     @app.get(
         API + "/lists",

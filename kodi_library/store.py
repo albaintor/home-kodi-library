@@ -104,6 +104,14 @@ CREATE TABLE IF NOT EXISTS playback_locations (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, kind TEXT NOT NULL,
  target TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS playback_location_options (
+ location_id TEXT PRIMARY KEY REFERENCES playback_locations(id) ON DELETE CASCADE,
+ public_config TEXT NOT NULL DEFAULT '{}', password_cipher TEXT
+);
+CREATE TABLE IF NOT EXISTS playback_cloud_credentials (
+ location_id TEXT PRIMARY KEY REFERENCES playback_locations(id) ON DELETE CASCADE,
+ provider TEXT NOT NULL, token_cipher TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS lists (
  id TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
  revision INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL
@@ -388,17 +396,36 @@ class Store:
         finally:
             conn.close()
 
-    def playback_locations(self) -> list[dict[str, str]]:
-        """Connection descriptors only. Authentication is managed by the OS/File Provider."""
+    @staticmethod
+    def _playback_location_view(conn, row):
+        value = dict(row)
+        option = conn.execute(
+            "SELECT public_config,password_cipher FROM playback_location_options "
+            "WHERE location_id=?", (value["id"],)
+        ).fetchone()
+        value.update(json.loads(option["public_config"]) if option else {})
+        value["has_password"] = bool(option and option["password_cipher"])
+        return value
+
+    def playback_locations(self) -> list[dict[str, Any]]:
         with self.connect() as conn:
-            return [dict(row) for row in conn.execute(
-                "SELECT id,name,kind,target,created_at,updated_at "
-                "FROM playback_locations ORDER BY name COLLATE NOCASE,id"
-            )]
+            rows = conn.execute(
+                "SELECT * FROM playback_locations ORDER BY name COLLATE NOCASE,id"
+            ).fetchall()
+            return [self._playback_location_view(conn, row) for row in rows]
+
+    def playback_location(self, location_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM playback_locations WHERE id=?", (location_id,)
+            ).fetchone()
+            return self._playback_location_view(conn, row) if row else None
 
     def save_playback_location(
-        self, data: dict[str, str], location_id: str | None = None
-    ) -> dict[str, str]:
+        self, data: dict[str, Any], location_id: str | None = None,
+        password_cipher: str | None = None,
+    ) -> dict[str, Any]:
+        public = {k: data.get(k) for k in ("host", "port", "share", "username", "workgroup")}
         timestamp = now()
         with self.connect() as conn:
             if location_id is None:
@@ -410,7 +437,7 @@ class Store:
                 )
             else:
                 current = conn.execute(
-                    "SELECT id FROM playback_locations WHERE id=?", (location_id,)
+                    "SELECT kind FROM playback_locations WHERE id=?", (location_id,)
                 ).fetchone()
                 if current is None:
                     raise KeyError(location_id)
@@ -418,11 +445,23 @@ class Store:
                     "UPDATE playback_locations SET name=?,kind=?,target=?,updated_at=? WHERE id=?",
                     (data["name"], data["kind"], data["target"], timestamp, location_id),
                 )
+                if current["kind"] != data["kind"]:
+                    conn.execute(
+                        "DELETE FROM playback_cloud_credentials WHERE location_id=?",
+                        (location_id,),
+                    )
+            conn.execute(
+                "INSERT INTO playback_location_options(location_id,public_config,password_cipher) "
+                "VALUES(?,?,?) ON CONFLICT(location_id) DO UPDATE SET "
+                "public_config=excluded.public_config, "
+                "password_cipher=COALESCE(excluded.password_cipher,"
+                "playback_location_options.password_cipher)",
+                (location_id, encode(public), password_cipher),
+            )
             row = conn.execute(
-                "SELECT id,name,kind,target,created_at,updated_at "
-                "FROM playback_locations WHERE id=?", (location_id,)
+                "SELECT * FROM playback_locations WHERE id=?", (location_id,)
             ).fetchone()
-            return dict(row)
+            return self._playback_location_view(conn, row)
 
     def delete_playback_location(self, location_id: str) -> None:
         with self.connect() as conn:
@@ -431,6 +470,27 @@ class Store:
             )
             if deleted.rowcount == 0:
                 raise KeyError(location_id)
+
+    def set_playback_cloud_token(self, location_id: str, provider: str, encrypted: str):
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO playback_cloud_credentials(location_id,provider,token_cipher,updated_at) "
+                "VALUES(?,?,?,?) ON CONFLICT(location_id) DO UPDATE SET "
+                "provider=excluded.provider,token_cipher=excluded.token_cipher,"
+                "updated_at=excluded.updated_at",
+                (location_id, provider, encrypted, now()),
+            )
+
+    def playback_cloud_status(self, location_id: str) -> bool:
+        with self.connect() as conn:
+            return conn.execute(
+                "SELECT 1 FROM playback_cloud_credentials WHERE location_id=?",
+                (location_id,),
+            ).fetchone() is not None
+
+    def delete_playback_cloud_token(self, location_id: str):
+        with self.connect() as conn:
+            conn.execute("DELETE FROM playback_cloud_credentials WHERE location_id=?", (location_id,))
 
     def device_tokens(self) -> list[dict[str, str]]:
         with self.connect() as conn:

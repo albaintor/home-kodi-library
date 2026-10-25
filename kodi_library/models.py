@@ -276,8 +276,14 @@ class PlaybackLocationInput(StrictModel):
     """Share/provider descriptor; never send SMB, FTP or OAuth credentials."""
     name: str = Field(min_length=1, max_length=120)
     kind: Literal["smb", "nfs", "ftp", "onedrive", "google_drive",
-                  "dropbox", "icloud", "http", "local"]
+                  "dropbox", "box", "pcloud", "icloud", "upnp", "sftp", "http", "local"]
     target: str = Field(default="", max_length=2048)
+    host: str = Field(default="", max_length=255)
+    port: int | None = Field(default=None, ge=1, le=65535)
+    share: str = Field(default="", max_length=1024)
+    username: str = Field(default="", max_length=255)
+    workgroup: str = Field(default="", max_length=120)
+    password: SecretStr | None = Field(default=None, exclude=True)
 
     @field_validator("name")
     @classmethod
@@ -297,8 +303,17 @@ class PlaybackLocationInput(StrictModel):
         return target.strip()
 
 
-class PlaybackLocationView(PlaybackLocationInput):
+class PlaybackLocationView(StrictModel):
     id: str
+    name: str
+    kind: str
+    target: str
+    host: str = ""
+    port: int | None = None
+    share: str = ""
+    username: str = ""
+    workgroup: str = ""
+    has_password: bool = False
     created_at: str
     updated_at: str
 
