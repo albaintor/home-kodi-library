@@ -9,11 +9,11 @@ from __future__ import annotations
 import ftplib
 import logging
 import mimetypes
-from cryptography.fernet import InvalidToken
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
 import httpx
+from cryptography.fernet import InvalidToken
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
