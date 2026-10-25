@@ -1503,7 +1503,8 @@ function organizeConnectionSettingsTabs() {
       if(heading.includes('appairage')) category='ios';
       else if(heading.includes('intelligente')||heading.includes('métadonnées et portraits')) category='ai';
       else if(heading.includes('catalogue')||heading.includes('synchronisation')||
-              heading.includes('collection')||heading.includes('sources')) category='sources';
+              heading.includes('collection')||heading.includes('sauvegarde')||
+              heading.includes('sources')) category='sources';
     }
     panels.get(category).append(element);
   }
