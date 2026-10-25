@@ -1491,17 +1491,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             not client_id
             or len(client_id) > 1024
             or len(secret) > 4096
-            or parsed.scheme != "https"
-            or not parsed.hostname
-            or parsed.username
-            or parsed.path != "/api/v1/playback/cloud/callback"
-            or parsed.fragment
-            or parsed.query
+            or (provider != "onedrive" or redirect) and (
+                parsed.scheme != "https"
+                or not parsed.hostname
+                or parsed.username
+                or parsed.path != "/api/v1/playback/cloud/callback"
+                or parsed.fragment
+                or parsed.query
+            )
         ):
-            raise HTTPException(422, "A client ID and exact HTTPS OAuth callback URL are required.")
+            raise HTTPException(
+                422, "A client ID is required; HTTPS callback is optional only for OneDrive device login."
+            )
         encrypted = cloud_auth.encrypt_password(secret) if secret else None
         store.set_playback_oauth_app(provider, client_id, redirect, encrypted)
-        return {"provider": provider, "configured": cloud_auth.configured(provider)}
+        return {
+            "provider": provider,
+            "configured": cloud_auth.configured(provider),
+            "device_configured": provider == "onedrive"
+                and cloud_auth.device_configuration_error(provider) is None,
+        }
 
     @app.get(
         API + "/playback/cloud/providers",
