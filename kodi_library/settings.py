@@ -65,7 +65,7 @@ class Settings:
                 )
         if not isinstance(self.cloud_oauth_clients, dict):
             raise ValueError("CLOUD_OAUTH_CLIENTS must be a JSON object.")
-        for provider, options in self.cloud_oauth_clients.items():
+        for options in self.cloud_oauth_clients.values():
             if not isinstance(options, dict) or not isinstance(options.get("client_id"), str):
                 raise ValueError("CLOUD_OAUTH_CLIENTS entries require a client_id.")
             if options.get("client_secret") is not None and not isinstance(
