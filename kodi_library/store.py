@@ -2095,7 +2095,7 @@ class Store:
         }
 
     def new_job(self, source_id: str, operation: str = "kodi_sync") -> dict[str, Any]:
-        if operation not in {"kodi_sync", "kodi_scan", "collection_import"}:
+        if operation not in {"kodi_sync", "kodi_scan", "kodi_clean", "collection_import"}:
             raise ValueError("Unsupported job operation.")
         job_id = str(uuid4())
         with self.connect() as conn:
@@ -2123,6 +2123,8 @@ class Store:
             return 100
         phase = job.get("progress_phase")
         start, end = {
+            "kodi_cleaning": (1, 1),
+            "kodi_clean_finished": (1, 1),
             "connecting": (1, 4),
             "loading": (4, 8),
             "movies": (8, 70),
