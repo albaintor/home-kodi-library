@@ -1436,13 +1436,45 @@ function networkBrowseError(message) {
   $('network-browser-feedback').textContent=message||'';
 }
 function networkMedia(filename) {
-  return /\.(mp4|m4v|mov|mkv|webm|avi|ts|m2ts|mp3|m4a|wav)$/i.test(filename||'');
+  return /\.(mp4|m4v|mov|mkv|webm|avi|ts|m2ts|mpg|mpeg|mp3|m4a|wav)$/i.test(filename||'');
+}
+// Never launch dozens of remote FFmpeg thumbnail extractions together:
+// a folder may contain hundreds of MKVs on the same SMB session.
+let networkThumbnailBusy=0;
+const networkThumbnailQueue=[];
+function runNetworkThumbnailQueue(){
+  while(networkThumbnailBusy<2 && networkThumbnailQueue.length){
+    const image=networkThumbnailQueue.shift();
+    if(!image.isConnected)continue;
+    networkThumbnailBusy++;
+    image.addEventListener('load',()=>{
+      networkThumbnailBusy--;runNetworkThumbnailQueue();
+    },{once:true});
+    image.addEventListener('error',()=>{
+      networkThumbnailBusy--;runNetworkThumbnailQueue();
+    },{once:true});
+    image.src=image.dataset.thumbnailUrl;
+  }
+}
+const networkThumbnailObserver=new IntersectionObserver(entries=>{
+  for(const entry of entries){
+    if(!entry.isIntersecting)continue;
+    const image=entry.target;
+    networkThumbnailObserver.unobserve(image);
+    if(image.isConnected)networkThumbnailQueue.push(image);
+  }
+  runNetworkThumbnailQueue();
+},{root:$('network-browser-items'),rootMargin:'120px'});
+function observeNetworkThumbnails(){
+  document.querySelectorAll('#network-browser-items img[data-thumbnail-url]').forEach(
+    image=>networkThumbnailObserver.observe(image)
+  );
 }
 function networkThumbnail(entry){
   const loc=networkExplorer.selected;
   if(!loc || entry.is_dir || !/\.(jpg|jpeg|png|webp|gif|bmp|tif|tiff|heic|heif|avif|mp4|m4v|mov|mkv|avi|ts|m2ts|webm|mpg|mpeg)$/i.test(entry.name||''))return '';
   const src=url('api/v1/playback/thumbnail/'+encodeURIComponent(loc.id)+'?path='+encodeURIComponent(entry.path)).href;
-  return '<img class="network-browser-thumbnail" loading="lazy" decoding="async" src="'+esc(src)+'" alt="">';
+  return '<img class="network-browser-thumbnail" loading="lazy" decoding="async" data-thumbnail-url="'+esc(src)+'" alt="">';
 }
 function networkCurrentPath(){
   return networkExplorer.stack.at(-1)?.path||'';
@@ -1476,6 +1508,7 @@ function renderNetworkBrowser() {
     ).join('')||(!browser.busy?'<p class="hint">Aucun élément dans ce dossier.</p>':'');
   }
   $('network-browser-more').hidden=browser.entries.length<=count||!browser.selected;
+  observeNetworkThumbnails();
 }
 function formatBytes(bytes){
   const n=Number(bytes)||0;
@@ -1534,12 +1567,19 @@ function networkPlay(entry){
   }
   const video=$('network-browser-video');
   video.pause();
-  video.src=url('api/v1/playback/stream/'+encodeURIComponent(browser.selected.id)+
+  // HTML5 video cannot reliably demux Matroska, AVI or MPEG-TS. Use the
+  // server's progressive FFmpeg fragmented-MP4 stream for those containers.
+  // The original file remains remote and is never staged in the browser.
+  const transcode=/\.(mkv|avi|ts|m2ts|mpg|mpeg)$/i.test(entry.name);
+  const endpoint=transcode?'playback/browser-video/':'playback/stream/';
+  video.src=url('api/v1/'+endpoint+encodeURIComponent(browser.selected.id)+
     '?path='+encodeURIComponent(entry.path));
   $('network-browser-player').hidden=false;
+  networkBrowseError(transcode?'Conversion MKV → MP4 en streaming (initialisation de FFmpeg)…':'');
   video.load();
+  video.addEventListener('playing',()=>networkBrowseError(''),{once:true});
   void video.play().catch(()=>networkBrowseError(
-    'Lecture indisponible. Vérifiez l’accès au partage et la compatibilité du format avec le navigateur.'
+    'Lecture indisponible : vérifiez la réponse du serveur ou les capacités du navigateur.'
   ));
 }
 async function openNetworkBrowser(id=null){
