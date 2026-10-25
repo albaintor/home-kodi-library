@@ -62,6 +62,9 @@ def extract_video_frame(location: dict, path: str, password: str, mounts: dict) 
                         end = min(length - 1, int(match.group(2)))
                 else:
                     suffix = int(match.group(2))
+                    if suffix == 0:
+                        self.send_error(416)
+                        return
                     start = max(0, length - suffix)
                 if start >= length or start > end:
                     self.send_response(416)
@@ -100,7 +103,7 @@ def extract_video_frame(location: dict, path: str, password: str, mounts: dict) 
     try:
         probe = subprocess.run(
             [
-                "ffprobe", "-hide_banner", "-loglevel", "error", "-nostdin",
+                "ffprobe", "-hide_banner", "-loglevel", "error",
                 "-rw_timeout", "6000000", "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1", url,
             ],
