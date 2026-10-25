@@ -53,3 +53,30 @@ ne révoque pas les autorisations externes ; elles se gèrent chez le fournisseu
 exploration des répertoires cloud, renouvellement des jetons expirés, lecture
 directe cloud ou synchronisation de fichiers. Ces adaptateurs seront nécessaires
 pour offrir les fonctions de navigation et streaming de VLC.
+
+
+## Modèle hybride retenu (iOS + web)
+
+- Les adresses, ports, chemins de partage et noms sont des **descripteurs**
+  centralisés sur le serveur, copiés dans l'application pour usage autonome.
+  Lorsque l'API des emplacements n'est pas encore déployée (HTTP 404), la
+  création iOS est conservée localement et mise en attente de synchronisation.
+- Le **mot de passe saisi sur iOS** est conservé dans le trousseau de l'iPhone.
+  Il n'est **pas** envoyé dans le descripteur synchronisé. Le serveur peut
+  disposer d'un **autre secret**, enregistré depuis ses propres paramètres
+  web dans sa base chiffrée. Ne pas confondre les deux.
+- Pour iOS, la première intégration cloud passe par les **extensions File Provider**
+  des applications tierces présentes dans Fichiers. Leur authentification se
+  fait directement avec le fournisseur et n'utilise aucune route OAuth du
+  serveur ; l'utilisateur peut importer un média, puis le lire hors ligne.
+- Une future navigation cloud directe depuis l'app nécessitera l'enregistrement
+  d'un **client OAuth iOS** spécifique à chaque fournisseur, l'échange
+  authorization code + PKCE et la conservation du token dans Keychain.
+  Le client OAuth web et ses jetons restent indépendants.
+- Pour le web, la section Paramètres / Services cloud utilise les API OAuth
+  du serveur. Le serveur conserve les jetons du navigateur web uniquement.
+  Les autorisations web ne sont jamais renvoyées à iOS.
+
+**Limite actuelle :** la présence d'un emplacement enregistré ne signifie
+pas qu'il peut être parcouru. Les adaptateurs SMB, FTP, NFS, UPnP et les APIs
+cloud de navigation/streaming restent distincts des écrans de configuration.
