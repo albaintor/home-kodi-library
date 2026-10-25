@@ -1297,6 +1297,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return await discover_upnp()
 
     @app.get(
+        API + "/playback/cloud/apps",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def playback_oauth_apps():
+        return store.playback_oauth_apps()
+
+    @app.put(
+        API + "/playback/cloud/apps/{provider}",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def save_playback_oauth_app(provider: str, payload: dict):
+        from urllib.parse import urlsplit
+
+        if provider not in cloud_auth.supported:
+            raise HTTPException(422, "Unsupported cloud provider.")
+        client_id = str(payload.get("client_id") or "").strip()
+        redirect = str(payload.get("redirect_url") or "").strip()
+        secret = str(payload.get("client_secret") or "")
+        parsed = urlsplit(redirect)
+        if (not client_id or len(client_id) > 1024
+                or len(secret) > 4096 or parsed.scheme != "https"
+                or not parsed.hostname or parsed.username
+                or parsed.path != "/api/v1/playback/cloud/callback"
+                or parsed.fragment or parsed.query):
+            raise HTTPException(422, "A client ID and exact HTTPS OAuth callback URL are required.")
+        encrypted = cloud_auth.encrypt_password(secret) if secret else None
+        store.set_playback_oauth_app(provider, client_id, redirect, encrypted)
+        return {"provider": provider, "configured": cloud_auth.configured(provider)}
+
+    @app.get(
         API + "/playback/cloud/status",
         dependencies=[Depends(authenticated)],
         tags=["Playback"],

@@ -76,16 +76,33 @@ class CloudOAuth:
     def encrypt_password(self, value: str) -> str:
         return self.fernet.encrypt(value.encode("utf-8")).decode("ascii")
 
+    def decrypt_secret(self, value: str) -> str:
+        return self.fernet.decrypt(value.encode("ascii")).decode("utf-8")
+
+    def provider_options(self, provider: str) -> tuple[dict, str]:
+        saved = self.store.playback_oauth_app(provider)
+        if saved:
+            secret = None
+            if saved.get("secret_cipher"):
+                try:
+                    secret = self.fernet.decrypt(
+                        saved["secret_cipher"].encode("ascii")
+                    ).decode("utf-8")
+                except Exception:
+                    LOG.warning("Cannot decrypt OAuth app secret for %s", provider)
+            return {
+                "client_id": saved["client_id"], "client_secret": secret or ""
+            }, saved["redirect_url"]
+        return self.clients.get(provider, {}), self.redirect
+
     def configured(self, provider: str) -> bool:
-        item = self.clients.get(provider)
+        item, redirect = self.provider_options(provider)
         return (
             provider in PROVIDERS
-            and bool(self.redirect)
-            and isinstance(item, dict)
+            and bool(redirect)
             and bool(item.get("client_id"))
-            and (
-                provider not in {"google_drive", "box", "pcloud"} or bool(item.get("client_secret"))
-            )
+            and (provider not in {"google_drive", "box", "pcloud"}
+                 or bool(item.get("client_secret")))
         )
 
     def start(self, location_id: str, provider: str) -> str:
@@ -106,11 +123,12 @@ class CloudOAuth:
             "location_id": location_id,
             "provider": provider,
             "verifier": verifier,
+            "redirect": self.provider_options(provider)[1],
         }
-        client = self.clients[provider]
+        client, redirect = self.provider_options(provider)
         params = {
             "client_id": client["client_id"],
-            "redirect_uri": self.redirect,
+            "redirect_uri": redirect,
             "response_type": "code",
             "state": state,
         }
@@ -135,7 +153,7 @@ class CloudOAuth:
         if info is None or time.monotonic() - info["at"] > 600 or error or not code:
             raise CloudOAuthError("Autorisation expirée ou refusée.")
         provider = info["provider"]
-        client = self.clients[provider]
+        client, _ = self.provider_options(provider)
         payload = {
             "client_id": client["client_id"],
             "code": code,
@@ -146,7 +164,7 @@ class CloudOAuth:
             payload.update(
                 {
                     "grant_type": "authorization_code",
-                    "redirect_uri": self.redirect,
+                    "redirect_uri": info["redirect"],
                     "code_verifier": info["verifier"],
                 }
             )

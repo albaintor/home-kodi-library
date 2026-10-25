@@ -108,6 +108,10 @@ CREATE TABLE IF NOT EXISTS playback_location_options (
  location_id TEXT PRIMARY KEY REFERENCES playback_locations(id) ON DELETE CASCADE,
  public_config TEXT NOT NULL DEFAULT '{}', password_cipher TEXT
 );
+CREATE TABLE IF NOT EXISTS playback_oauth_apps (
+ provider TEXT PRIMARY KEY, client_id TEXT NOT NULL,
+ secret_cipher TEXT, redirect_url TEXT NOT NULL, updated_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS playback_cloud_credentials (
  location_id TEXT PRIMARY KEY REFERENCES playback_locations(id) ON DELETE CASCADE,
  provider TEXT NOT NULL, token_cipher TEXT NOT NULL, updated_at TEXT NOT NULL
@@ -481,6 +485,46 @@ class Store:
                 "updated_at=excluded.updated_at",
                 (location_id, provider, encrypted, now()),
             )
+
+    def playback_oauth_apps(self) -> list[dict[str, Any]]:
+        with self.connect() as conn:
+            return [dict(row) for row in conn.execute(
+                "SELECT provider,client_id,redirect_url,"
+                "(secret_cipher IS NOT NULL) AS has_secret,updated_at "
+                "FROM playback_oauth_apps ORDER BY provider"
+            )]
+
+    def playback_oauth_app(self, provider: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM playback_oauth_apps WHERE provider=?", (provider,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def set_playback_oauth_app(
+        self, provider: str, client_id: str, redirect_url: str,
+        secret_cipher: str | None = None,
+    ) -> None:
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO playback_oauth_apps"
+                "(provider,client_id,secret_cipher,redirect_url,updated_at)"
+                "VALUES(?,?,?,?,?) ON CONFLICT(provider) DO UPDATE SET "
+                "client_id=excluded.client_id,redirect_url=excluded.redirect_url,"
+                "secret_cipher=CASE WHEN playback_oauth_apps.client_id<>excluded.client_id "
+                "THEN excluded.secret_cipher ELSE COALESCE(excluded.secret_cipher,"
+                "playback_oauth_apps.secret_cipher) END,"
+                "updated_at=excluded.updated_at",
+                (provider, client_id, secret_cipher, redirect_url, now()),
+            )
+
+    def playback_cloud_credentials(self, location_id: str) -> dict[str, Any] | None:
+        with self.connect() as conn:
+            row = conn.execute(
+                "SELECT provider,token_cipher FROM playback_cloud_credentials "
+                "WHERE location_id=?", (location_id,)
+            ).fetchone()
+            return dict(row) if row else None
 
     def playback_cloud_status(self, location_id: str) -> bool:
         with self.connect() as conn:
