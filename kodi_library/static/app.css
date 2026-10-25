@@ -509,3 +509,37 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .list-cover-grid .list-choice-row .list-grid-caption{display:flex;flex-direction:column;gap:4px;padding:0 3px 4px}
 .list-cover-grid .list-choice-row strong{font-size:.94rem;line-height:1.3}
 .list-cover-grid .list-choice-row small{font-size:.78rem;margin:0}
+
+/* Settings: accessible categories and a compact, horizontally scrollable tab strip. */
+.connection-tab-nav {
+  display: flex;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  align-items: center;
+  gap: .4rem;
+  overflow-x: auto;
+  max-width: 100%;
+  padding: .7rem 0;
+  margin: .5rem 0 1rem;
+  background: var(--surface, var(--background, #161b22));
+  border-bottom: 1px solid var(--border, #475569);
+  scrollbar-width: thin;
+}
+.connection-tab-button {
+  white-space: nowrap;
+  flex: 0 0 auto;
+  padding: .6rem .85rem;
+  border-radius: .6rem;
+  border: 1px solid transparent;
+  background: transparent;
+  color: inherit;
+}
+.connection-tab-button[aria-selected="true"] {
+  border-color: var(--accent, #64748b);
+  font-weight: 700;
+  background: var(--surface-raised, rgba(128,128,128,.16));
+}
+.connection-tab-button:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.connection-tab-panel[hidden] { display: none !important; }
+.connection-tab-panel { min-width: 0; }
