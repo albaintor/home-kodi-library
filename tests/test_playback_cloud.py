@@ -1,15 +1,11 @@
 """Protocol configurations and OAuth credentials must remain private."""
-import base64
-import hashlib
-from unittest.mock import AsyncMock, patch
 from urllib.parse import parse_qs, urlsplit
+from unittest.mock import patch
 
-from cryptography.fernet import Fernet
 
 from conftest import ADMIN, READ
 from kodi_library.playback_cloud import CloudOAuth
 from kodi_library.settings import Settings
-from kodi_library.store import Store
 
 
 def test_network_fields_persist_and_password_is_redacted(client, admin):
