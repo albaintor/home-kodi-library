@@ -23,6 +23,7 @@ from fastapi import HTTPException
 from PIL import Image, ImageOps, UnidentifiedImageError
 
 from .playback_browser import _credentials, _sync_stream, safe_path
+from .playback_video_preview import extract_video_frame
 
 LOG = logging.getLogger(__name__)
 IMAGE_TYPES = {
@@ -64,9 +65,9 @@ def _jpeg_thumbnail(source: bytes, extension: str) -> bytes | None:
             return None
     if extension not in VIDEO_TYPES:
         return None
-    # Use the first decodable video frame. AVC/HEVC, Matroska and other
-    # FFmpeg-supported containers work even when AVAssetImageGenerator cannot.
-    # Remote media is never copied into a temporary movie file.
+    # Fallback for providers unable to offer a seekable Range source:
+    # decode the initial stream progressively. Network shares normally use
+    # the Kodi one-third position via extract_video_frame() below.
     try:
         child = subprocess.run(
             [
@@ -202,19 +203,31 @@ def _thumbnail_sync(
         raise HTTPException(415, "No thumbnail decoder for this file type.")
     limit = MAX_IMAGE if extension in IMAGE_TYPES else MAX_VIDEO
     cache.mkdir(parents=True, exist_ok=True)
-    digest = hashlib.sha256(f"{location['id']}\0{path}\0v2".encode()).hexdigest()
+    digest = hashlib.sha256(f"{location['id']}\0{path}\0v3".encode()).hexdigest()
     target = cache / f"{digest}.jpg"
     if target.is_file() and time.time() - target.stat().st_mtime < MAX_AGE:
         return target.read_bytes()
     if location["kind"] in {"smb", "ftp", "sftp", "nfs"}:
         secret = _credentials(store, encryption, location["id"])
-        size, supplier = _sync_stream(location, path, secret, mounts, 0, limit - 1)
-        raw = _read_limited(supplier, min(size, limit))
+        result = None
+        if extension in VIDEO_TYPES:
+            # ffprobe reads duration and ffmpeg seeks to duration/3 over an
+            # ephemeral localhost Range relay. No 24 GB file is staged.
+            try:
+                result = extract_video_frame(location, path, secret, mounts)
+            except Exception as exc:
+                LOG.debug("One-third preview unavailable (%s)", type(exc).__name__)
+        if result is None:
+            size, supplier = _sync_stream(location, path, secret, mounts, 0, limit - 1)
+            raw = _read_limited(supplier, min(size, limit))
+            if not raw:
+                raise HTTPException(422, "The remote file is empty.")
+            result = _jpeg_thumbnail(raw, extension)
     else:
         raw = _cloud_data(location, path, store, encryption, limit)
-    if not raw:
-        raise HTTPException(422, "The remote file is empty.")
-    result = _jpeg_thumbnail(raw, extension)
+        if not raw:
+            raise HTTPException(422, "The remote file is empty.")
+        result = _jpeg_thumbnail(raw, extension)
     if result is None:
         raise HTTPException(
             422,
