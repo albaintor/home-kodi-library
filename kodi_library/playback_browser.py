@@ -47,7 +47,9 @@ def _credentials(store, encryption, location_id: str) -> str:
         return encryption.decrypt_secret(cipher)
     except (InvalidToken, ValueError, TypeError, UnicodeError) as exc:
         LOG.warning("Cannot decrypt saved playback password for location %s", location_id)
-        raise HTTPException(409, "Saved network password could not be decrypted. Re-enter it in Network settings.") from exc
+        raise HTTPException(
+            409, "Saved network password could not be decrypted. Re-enter it in Network settings."
+        ) from exc
 
 
 def _root(location: dict) -> tuple[str, str]:
@@ -335,13 +337,20 @@ async def browse_location(location: dict, path: str, store, encryption, mounts: 
             raise
         except ImportError as exc:
             LOG.error("Network connector dependency missing for %s: %s", location["kind"], exc)
-            raise HTTPException(503, "Network connector unavailable on the server. Update the server image.") from exc
+            raise HTTPException(
+                503, "Network connector unavailable on the server. Update the server image."
+            ) from exc
         except Exception as exc:
             # Remote protocols raise protocol-specific exceptions that do not
             # necessarily inherit OSError (e.g. SSH authentication failures).
             # Return JSON rather than leaking an HTML/plain-text HTTP 500.
-            LOG.warning("Playback browse failed for %s (%s): %s", location["kind"], type(exc).__name__, exc)
-            raise HTTPException(502, "Could not browse this network location. Check its host, share and credentials.") from exc
+            LOG.warning(
+                "Playback browse failed for %s (%s): %s", location["kind"], type(exc).__name__, exc
+            )
+            raise HTTPException(
+                502,
+                "Could not browse this network location. Check its host, share and credentials.",
+            ) from exc
         rows.sort(key=lambda row: (not row["is_dir"], row["name"].casefold()))
         return [{"path": "/".join(filter(None, (relative, row["name"]))), **row} for row in rows]
     if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
@@ -359,7 +368,9 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
         token = json.loads(encryption.decrypt_secret(saved["token_cipher"]))
         access = token["access_token"]
     except (ValueError, KeyError, TypeError, InvalidToken, UnicodeError) as exc:
-        raise HTTPException(409, "Cloud authentication needs renewing. Reconnect this provider in Network settings.") from exc
+        raise HTTPException(
+            409, "Cloud authentication needs renewing. Reconnect this provider in Network settings."
+        ) from exc
     kind = location["kind"]
     headers = {"Authorization": "Bearer " + access}
     try:
@@ -504,10 +515,16 @@ async def stream_location(
     except HTTPException:
         raise
     except ImportError as exc:
-        raise HTTPException(503, "Network streaming connector unavailable. Update the server image.") from exc
+        raise HTTPException(
+            503, "Network streaming connector unavailable. Update the server image."
+        ) from exc
     except Exception as exc:
-        LOG.warning("Playback streaming failed for %s (%s): %s", location["kind"], type(exc).__name__, exc)
-        raise HTTPException(502, "Cannot open the remote file. Check the network and credentials.") from exc
+        LOG.warning(
+            "Playback streaming failed for %s (%s): %s", location["kind"], type(exc).__name__, exc
+        )
+        raise HTTPException(
+            502, "Cannot open the remote file. Check the network and credentials."
+        ) from exc
     if start >= size or (end is not None and end < start):
         raise HTTPException(416, "Requested range out of bounds.")
     finish = size - 1 if end is None else min(end, size - 1)
