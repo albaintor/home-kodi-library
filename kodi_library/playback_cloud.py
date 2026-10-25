@@ -124,7 +124,9 @@ class CloudOAuth:
     def configured(self, provider: str) -> bool:
         return self.configuration_error(provider) is None
 
-    def start(self, location_id: str, provider: str) -> str:
+    def start(self, location_id: str, provider: str, return_to: str = "web") -> str:
+        if return_to not in {"web", "ios"}:
+            raise CloudOAuthError("Destination OAuth non reconnue.")
         problem = self.configuration_error(provider)
         if problem:
             raise CloudOAuthError(problem)
@@ -144,6 +146,7 @@ class CloudOAuth:
             "provider": provider,
             "verifier": verifier,
             "redirect": self.provider_options(provider)[1],
+            "return_to": return_to,
         }
         client, redirect = self.provider_options(provider)
         params = {
@@ -168,7 +171,7 @@ class CloudOAuth:
             params["token_access_type"] = "offline"
         return PROVIDERS[provider][0] + "?" + urlencode(params)
 
-    async def complete(self, *, state: str, code: str, error: str, hostname: str = "") -> None:
+    async def complete(self, *, state: str, code: str, error: str, hostname: str = "") -> str:
         info = self.pending.pop(state, None)
         if info is None or time.monotonic() - info["at"] > 600 or error or not code:
             raise CloudOAuthError("Autorisation expirée ou refusée.")
@@ -221,3 +224,4 @@ class CloudOAuth:
         serialized = json.dumps(token, separators=(",", ":"))
         encrypted = self.fernet.encrypt(serialized.encode("utf-8")).decode("ascii")
         self.store.set_playback_cloud_token(info["location_id"], provider, encrypted)
+        return info.get("return_to", "web")
