@@ -1,10 +1,11 @@
 """Protocol configurations and OAuth credentials must remain private."""
+
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
-
 from conftest import ADMIN, READ
+
 from kodi_library.playback_cloud import CloudOAuth, CloudOAuthError
 from kodi_library.settings import Settings
 
@@ -13,9 +14,15 @@ def test_network_fields_persist_and_password_is_redacted(client, admin):
     path = "/api/v1/playback/locations"
     password = "the-secret-password"
     data = {
-        "name": "JEDI", "kind": "smb", "target": "smb://jedi:445/Series",
-        "host": "jedi", "port": 445, "share": "Series",
-        "username": "damien", "workgroup": "WORKGROUP", "password": password,
+        "name": "JEDI",
+        "kind": "smb",
+        "target": "smb://jedi:445/Series",
+        "host": "jedi",
+        "port": 445,
+        "share": "Series",
+        "username": "damien",
+        "workgroup": "WORKGROUP",
+        "password": password,
     }
     response = client.post(path, headers=admin, json=data)
     assert response.status_code == 201, response.text
@@ -54,36 +61,38 @@ def test_network_fields_persist_and_password_is_redacted(client, admin):
 
 def test_cloud_not_configured_and_icloud_uses_files(client, admin):
     path = "/api/v1/playback/locations"
-    cloud = client.post(path, headers=admin, json={
-        "name": "Dropbox", "kind": "dropbox", "target": ""
-    }).json()
+    cloud = client.post(
+        path, headers=admin, json={"name": "Dropbox", "kind": "dropbox", "target": ""}
+    ).json()
     state = client.get("/api/v1/playback/cloud/status", headers=admin).json()
     assert state[0]["id"] == cloud["id"]
     assert state[0]["configured"] is False and state[0]["connected"] is False
-    result = client.post(
-        f"/api/v1/playback/cloud/{cloud['id']}/authorize", headers=admin
-    )
+    result = client.post(f"/api/v1/playback/cloud/{cloud['id']}/authorize", headers=admin)
     assert result.status_code == 422
     assert client.post("/api/v1/playback/cloud/bad/authorize", headers=admin).status_code == 404
-    icloud = client.post(path, headers=admin, json={
-        "name": "iCloud", "kind": "icloud", "target": ""
-    }).json()
-    assert client.post(
-        f"/api/v1/playback/cloud/{icloud['id']}/authorize", headers=admin
-    ).status_code == 422
+    icloud = client.post(
+        path, headers=admin, json={"name": "iCloud", "kind": "icloud", "target": ""}
+    ).json()
+    assert (
+        client.post(f"/api/v1/playback/cloud/{icloud['id']}/authorize", headers=admin).status_code
+        == 422
+    )
 
 
 def test_oauth_pkce_and_single_use_callback(tmp_path):
     class FakeStore:
         def __init__(self):
             self.saved = []
+
         def playback_location(self, location_id):
             return {"id": location_id, "kind": "dropbox"}
+
         def set_playback_cloud_token(self, location_id, provider, cipher):
             self.saved.append((location_id, provider, cipher))
 
     settings = Settings(
-        data_dir=tmp_path, api_token=ADMIN,
+        data_dir=tmp_path,
+        api_token=ADMIN,
         cloud_oauth_redirect_url="https://example.org/api/v1/playback/cloud/callback",
         cloud_oauth_clients={"dropbox": {"client_id": "test-client"}},
     )
@@ -101,13 +110,19 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
     assert "access_token" not in url
 
     class FakeReply:
-        def raise_for_status(self): pass
+        def raise_for_status(self):
+            pass
+
         def json(self):
             return {"access_token": "private-cloud-token", "refresh_token": "refresh-private"}
 
     class FakeHttp:
-        async def __aenter__(self): return self
-        async def __aexit__(self, *_args): pass
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
         async def post(self, url, data):
             assert url == "https://api.dropboxapi.com/oauth2/token"
             assert data["code_verifier"]
@@ -117,17 +132,13 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
     import asyncio
 
     with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
-        asyncio.run(manager.complete(
-            state=state, code="one-time-code", error=""
-        ))
+        asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
     assert len(store.saved) == 1
     assert "private-cloud-token" not in store.saved[0][2]
     assert "refresh-private" not in store.saved[0][2]
-    assert manager.fernet.decrypt(store.saved[0][2].encode()).decode().find(
-        "private-cloud-token"
-    ) >= 0
+    assert (
+        manager.fernet.decrypt(store.saved[0][2].encode()).decode().find("private-cloud-token") >= 0
+    )
 
     with pytest.raises(CloudOAuthError):
-        asyncio.run(manager.complete(
-            state=state, code="one-time-code", error=""
-        ))
+        asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
