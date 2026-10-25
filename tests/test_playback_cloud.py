@@ -1,10 +1,11 @@
 """Protocol configurations and OAuth credentials must remain private."""
-from urllib.parse import parse_qs, urlsplit
 from unittest.mock import patch
+from urllib.parse import parse_qs, urlsplit
 
+import pytest
 
 from conftest import ADMIN, READ
-from kodi_library.playback_cloud import CloudOAuth
+from kodi_library.playback_cloud import CloudOAuth, CloudOAuthError
 from kodi_library.settings import Settings
 
 
@@ -126,8 +127,6 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
         "private-cloud-token"
     ) >= 0
 
-    import pytest
-    from kodi_library.playback_cloud import CloudOAuthError
     with pytest.raises(CloudOAuthError):
         asyncio.run(manager.complete(
             state=state, code="one-time-code", error=""
