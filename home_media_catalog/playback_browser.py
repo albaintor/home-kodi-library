@@ -529,7 +529,8 @@ async def stream_location(
     password = _credentials(store, encryption, location["id"])
     try:
         size, content = await asyncio.wait_for(
-            asyncio.to_thread(_sync_stream, location, relative, password, mounts), timeout=18
+            asyncio.to_thread(_sync_stream, location, relative, password, mounts, start, end),
+            timeout=18
         )
     except HTTPException:
         raise
@@ -696,7 +697,7 @@ async def cloud_stream_location(location, file_id, range_header, oauth, method="
 
         async def content():
             try:
-                async for piece in upstream.aiter_raw(chunk_size=256 * 1024):
+                async for piece in upstream.aiter_bytes(chunk_size=256 * 1024):
                     if piece:
                         yield piece
             finally:
