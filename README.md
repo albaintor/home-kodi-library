@@ -6,6 +6,32 @@
 
 Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
 
+## Renommage Home Media Catalog et compatibilité
+
+Le dépôt se nomme `home-media-catalog`, le module Python
+`home_media_catalog` (anciennement `kodi_library`) et la distribution
+Python `home-media-catalog`. Les commandes Docker et les fichiers de
+déploiement ont été mis à jour.
+
+Une mise à jour NAS conserve le service Compose `library`, le volume
+`./data:/data`, les clés de la configuration `.env`, les jetons, les
+appairages et les chemins d’API `/api/v1/…`. L'identifiant de service
+`home-kodi-library`, le format des sauvegardes JSON `home-kodi-library`
+et les clés de préférences navigateur `kodi_library_preferences_v1` /
+`kodi_library_view` sont volontairement conservés pour garantir la
+compatibilité de l’application iOS et la conservation des données.
+
+Le nom Docker par défaut devient `home-media-catalog`, avec prise en
+charge de `HOME_MEDIA_CATALOG_CONTAINER_NAME` et de l'ancienne variable
+`KODI_LIBRARY_CONTAINER_NAME`. L'image se nomme
+`home-media-catalog:local`. Pour reconstruire une installation existante,
+utiliser `docker compose up -d --build --force-recreate library` puis
+vérifier `/healthz`, sans supprimer `.env` ou `./data`.
+
+Les modules Kodi, par exemple `connectors/kodi.py`, gardent leur nom :
+ils désignent une intégration métier.
+
+
 ## Highlights
 
 - **Combine** Kodi (read-only MariaDB synchronization) and CLZ Movies, MyMovies, or Filmotech (XML imports), with editions grouped by title.
