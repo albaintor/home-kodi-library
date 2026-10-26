@@ -168,7 +168,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     pass
 
     app = FastAPI(
-        title="Kodi Library API",
+        title="Home Media Catalog API",
         version=__version__,
         lifespan=lifespan,
         description="API v1 for Kodi MariaDB and physical collections. Bearer authentication for native clients; the web interface uses the same endpoints. Watch status unknown is distinct from unwatched.",
@@ -268,7 +268,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/docs", include_in_schema=False, dependencies=[Depends(authenticated)])
     def docs():
-        return get_swagger_ui_html(openapi_url="api/v1/openapi.json", title="Kodi Library API v1")
+        return get_swagger_ui_html(openapi_url="api/v1/openapi.json", title="Home Media Catalog API v1")
 
     @app.get(API + "/openapi.json", include_in_schema=False, dependencies=[Depends(authenticated)])
     def schema():

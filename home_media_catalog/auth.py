@@ -12,7 +12,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 bearer = HTTPBearer(auto_error=False, scheme_name="BearerToken")
-COOKIE = "kodi_library_session"
+COOKIE = "home_media_catalog_session"
 
 
 def secure_equal(left: str, right: str) -> bool:

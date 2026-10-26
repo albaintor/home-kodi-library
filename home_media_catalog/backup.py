@@ -63,7 +63,7 @@ def export_backup(store) -> dict:
 def import_backup(store, document: object) -> tuple[list[str], list[str]]:
     """Atomically replace catalogue data. Preserve existing paired-device access."""
     if not isinstance(document, dict) or document.get("format") != FORMAT:
-        raise ValueError("Not a Home Kodi Library backup.")
+        raise ValueError("Not a Home Media Catalog backup.")
     if (
         document.get("version") != FORMAT_VERSION
         or document.get("schema_version") != SCHEMA_VERSION

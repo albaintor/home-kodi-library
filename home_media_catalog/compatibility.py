@@ -1,6 +1,6 @@
 """Version the mobile data model independently of the REST route and server release.
 
-Contract 1 describes the DTOs shipped by Media Catalog 1.0. Additive API
+Contract 1 describes the DTOs shipped by Home Media Catalog 1.0. Additive API
 changes do not require a new contract. A breaking change must increment the
 contract, keep /api/v1/status and /api/v1/discovery readable by older clients,
 and increase MIN_MOBILE_CONTRACT only when compatibility has actually ended.
