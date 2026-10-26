@@ -4,16 +4,16 @@ import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-from kodi_library.kodi_scan import KodiScanUnavailable, scan_until_finished
+from home_media_catalog.kodi_scan import KodiScanUnavailable, scan_until_finished
 
 
 def test_websocket_unavailable_uses_correct_http_jsonrpc_scan_path():
     with (
         patch(
-            "kodi_library.kodi_scan._websocket_scan",
+            "home_media_catalog.kodi_scan._websocket_scan",
             side_effect=KodiScanUnavailable("Kodi WebSocket unavailable"),
         ) as ws,
-        patch("kodi_library.kodi_scan._http_scan", new_callable=AsyncMock) as http,
+        patch("home_media_catalog.kodi_scan._http_scan", new_callable=AsyncMock) as http,
     ):
         result = asyncio.run(scan_until_finished({"host": "kodi", "port": 8080}))
     assert result == "http"
@@ -22,7 +22,7 @@ def test_websocket_unavailable_uses_correct_http_jsonrpc_scan_path():
 
 
 def test_http_scan_invokes_kodi_jsonrpc_and_checks_scan_completion():
-    from kodi_library.kodi_scan import _http_scan
+    from home_media_catalog.kodi_scan import _http_scan
 
     calls = []
 
@@ -41,9 +41,9 @@ def test_http_scan_invokes_kodi_jsonrpc_and_checks_scan_completion():
         yield rpc
 
     with (
-        patch("kodi_library.kodi_scan.connection", fake_connection),
-        patch("kodi_library.kodi_scan.monotonic", side_effect=[0, 5, 6, 7]),
-        patch("kodi_library.kodi_scan.asyncio.sleep", new_callable=AsyncMock),
+        patch("home_media_catalog.kodi_scan.connection", fake_connection),
+        patch("home_media_catalog.kodi_scan.monotonic", side_effect=[0, 5, 6, 7]),
+        patch("home_media_catalog.kodi_scan.asyncio.sleep", new_callable=AsyncMock),
     ):
         asyncio.run(_http_scan({"host": "kodi", "port": 8080}))
     assert [method for method, _params in calls[:2]] == [

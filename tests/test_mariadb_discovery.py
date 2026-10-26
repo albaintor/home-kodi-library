@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 from conftest import READ
 
-from kodi_library.connectors.kodi import KodiConnector
+from home_media_catalog.connectors.kodi import KodiConnector
 
 
 class FakeCursor:

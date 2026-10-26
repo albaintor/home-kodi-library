@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import httpx
 
-from kodi_library.connectors.collection_xml import parse_collection
+from home_media_catalog.connectors.collection_xml import parse_collection
 
 
 def source_with_export(client, admin, *, enabled=True, api_key="very-private-key"):
@@ -38,7 +38,7 @@ def fake_remote(handler):
         return handler(request)
 
     return patch(
-        "kodi_library.mymovies_writeback.httpx.AsyncClient",
+        "home_media_catalog.mymovies_writeback.httpx.AsyncClient",
         side_effect=lambda **kwargs: actual(transport=httpx.MockTransport(respond), **kwargs),
     )
 

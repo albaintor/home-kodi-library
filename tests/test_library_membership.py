@@ -4,10 +4,10 @@ import asyncio
 import sqlite3
 from unittest.mock import patch
 
-from kodi_library.connectors.base import Record
-from kodi_library.connectors.kodi import KodiConnector
-from kodi_library.settings import Settings
-from kodi_library.sync import SyncManager
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.connectors.kodi import KodiConnector
+from home_media_catalog.settings import Settings
+from home_media_catalog.sync import SyncManager
 
 
 class SQLCursor:
@@ -136,7 +136,7 @@ def test_sync_falls_back_to_mariadb_when_player_is_offline(store):
 
     from contextlib import asynccontextmanager
 
-    from kodi_library.players import KodiUnavailable
+    from home_media_catalog.players import KodiUnavailable
 
     @asynccontextmanager
     async def offline(_config, **_kwargs):
@@ -145,7 +145,7 @@ def test_sync_falls_back_to_mariadb_when_player_is_offline(store):
 
     with (
         patch.object(KodiConnector, "fetch", fake_fetch),
-        patch("kodi_library.sync.connection", offline),
+        patch("home_media_catalog.sync.connection", offline),
     ):
         job = asyncio.run(run())
     assert job["status"] == "completed"

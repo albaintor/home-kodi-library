@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parents[1] / "kodi_library" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "home_media_catalog" / "static"
 
 
 def test_kodi_instance_cards_span_the_entire_source_card():

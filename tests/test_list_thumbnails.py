@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, patch
 
 from PIL import Image
 
-from kodi_library.connectors.base import Record
-from kodi_library.list_thumbnails import HEIGHT, WIDTH, compose
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.list_thumbnails import HEIGHT, WIDTH, compose
 
 
 def colored_poster(rgb):
@@ -61,7 +61,7 @@ def test_mosaic_is_saved_and_replaced_at_list_revision(client, admin):
         assert first.status_code == 200
         assert first.headers["content-type"] == "image/jpeg"
         assert "immutable" in first.headers["cache-control"]
-        with patch("kodi_library.list_thumbnails.compose", side_effect=AssertionError("cached")):
+        with patch("home_media_catalog.list_thumbnails.compose", side_effect=AssertionError("cached")):
             assert client.get(original, headers=admin).content == first.content
 
         assert (

@@ -4,8 +4,8 @@ import pytest
 from conftest import ADMIN, READ
 from fastapi.testclient import TestClient
 
-from kodi_library.app import create_app
-from kodi_library.settings import Settings
+from home_media_catalog.app import create_app
+from home_media_catalog.settings import Settings
 
 
 def settings(tmp_path, **kwargs):

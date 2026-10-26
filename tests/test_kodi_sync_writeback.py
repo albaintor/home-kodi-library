@@ -3,8 +3,8 @@
 import time
 from unittest.mock import AsyncMock, patch
 
-from kodi_library.connectors.base import ConnectorError, Record
-from kodi_library.players import KodiUnavailable
+from home_media_catalog.connectors.base import ConnectorError, Record
+from home_media_catalog.players import KodiUnavailable
 
 
 def kodi_fixture(client, admin):
@@ -51,12 +51,12 @@ def test_fallback_is_used_only_on_unavailable_jsonrpc_and_audited(client, admin)
     sid, mid = kodi_fixture(client, admin)
     with (
         patch(
-            "kodi_library.writeback._write_kodi",
+            "home_media_catalog.writeback._write_kodi",
             new_callable=AsyncMock,
             side_effect=KodiUnavailable("JSON-RPC indisponible"),
         ),
         patch(
-            "kodi_library.writeback.write_kodi_mariadb",
+            "home_media_catalog.writeback.write_kodi_mariadb",
             return_value="Écriture MariaDB effectuée",
         ) as sql,
     ):
@@ -80,11 +80,11 @@ def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
     sid, mid = kodi_fixture(client, admin)
     with (
         patch(
-            "kodi_library.writeback._write_kodi",
+            "home_media_catalog.writeback._write_kodi",
             new_callable=AsyncMock,
             side_effect=ConnectorError("UpdateData refusé"),
         ),
-        patch("kodi_library.writeback.write_kodi_mariadb") as sql,
+        patch("home_media_catalog.writeback.write_kodi_mariadb") as sql,
     ):
         response = client.patch(
             f"/api/v1/media/{mid}/personal", json={"user_rating": 9}, headers=admin
@@ -112,14 +112,14 @@ def test_kodi_scan_finished_triggers_local_sync(client, admin):
         yield rpc
 
     with (
-        patch("kodi_library.sync.connection", reachable),
+        patch("home_media_catalog.sync.connection", reachable),
         patch(
-            "kodi_library.sync.scan_until_finished",
+            "home_media_catalog.sync.scan_until_finished",
             new_callable=AsyncMock,
             return_value="websocket",
         ) as scan,
         patch(
-            "kodi_library.sync.KodiConnector.fetch",
+            "home_media_catalog.sync.KodiConnector.fetch",
             return_value=[
                 Record(
                     "movie:11",
@@ -159,13 +159,13 @@ def test_kodi_scan_disconnection_never_resynchronizes(client, admin):
         yield rpc
 
     with (
-        patch("kodi_library.sync.connection", reachable),
+        patch("home_media_catalog.sync.connection", reachable),
         patch(
-            "kodi_library.sync.scan_until_finished",
+            "home_media_catalog.sync.scan_until_finished",
             new_callable=AsyncMock,
             side_effect=ConnectorError("WebSocket disconnected"),
         ),
-        patch("kodi_library.sync.KodiConnector.fetch") as fetch,
+        patch("home_media_catalog.sync.KodiConnector.fetch") as fetch,
     ):
         response = client.post(f"/api/v1/sources/{sid}/scan", headers=admin)
         assert response.status_code == 202

@@ -6,7 +6,7 @@ import time
 import pytest
 from fastapi import HTTPException
 
-from kodi_library import local_stream
+from home_media_catalog import local_stream
 
 
 class Request:
@@ -40,7 +40,7 @@ def test_expired_ticket_rejected():
 def test_catalogue_path_is_used_without_extra_kodi_jsonrpc():
     from types import SimpleNamespace
 
-    from kodi_library.models import PlayInput
+    from home_media_catalog.models import PlayInput
 
     edition = {
         "id": "edition-1",
