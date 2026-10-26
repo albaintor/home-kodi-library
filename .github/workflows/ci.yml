@@ -13,8 +13,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: pip install -e '.[dev]'
-      - run: ruff check kodi_library tests
-      - run: ruff format --check kodi_library tests
+      - run: ruff check home_media_catalog tests
+      - run: ruff format --check home_media_catalog tests
       - run: pytest -q
   browser:
     runs-on: ubuntu-latest
@@ -40,9 +40,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build from a restrictive NAS-style checkout
         run: |
-          chmod -R go-rwx kodi_library
-          docker build -t home-kodi-library:test .
-          docker run --rm home-kodi-library:test python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
+          chmod -R go-rwx home_media_catalog
+          docker build -t home-media-catalog:test .
+          docker run --rm home-media-catalog:test python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
       - name: Start and probe the container
         run: |
           sudo install -d -m 0700 -o ${{ matrix.uid }} -g ${{ matrix.gid }} "$RUNNER_TEMP/kodi-library-data"
@@ -51,7 +51,7 @@ jobs:
             --read-only --tmpfs /tmp:mode=1777 \
             --cap-drop ALL --security-opt no-new-privileges:true \
             -v "$RUNNER_TEMP/kodi-library-data:/data" \
-            -e API_TOKEN=ci-test-token-00000000000000000000 home-kodi-library:test
+            -e API_TOKEN=ci-test-token-00000000000000000000 home-media-catalog:test
           for attempt in $(seq 1 30); do
             if curl -fsS http://localhost:8099/healthz; then break; fi
             sleep 1
@@ -66,8 +66,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Build and start with host networking
         run: |
-          docker build -t home-kodi-library:local .
-          docker run --rm home-kodi-library:local python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
+          docker build -t home-media-catalog:local .
+          docker run --rm home-media-catalog:local python -c 'import smbclient, paramiko; print("SMB and SFTP connectors available")'
           sudo install -d -m 0700 -o 1000 -g 1000 data
           cat > .env <<'EOF'
           API_TOKEN=ci-test-token-00000000000000000000

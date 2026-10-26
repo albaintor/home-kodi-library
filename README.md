@@ -1,10 +1,10 @@
-# <img src="kodi_library/static/cinema.svg" width="36" alt=""> Media Catalog
+# <img src="home_media_catalog/static/cinema.svg" width="36" alt=""> Home Media Catalog
 
 
 
 **Bring your Kodi library and physical movie collection together.**
 
-Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
+Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
 
 ## Highlights
 
@@ -37,7 +37,7 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 
 ## What's new — iOS 1.2 and AI search
 
-**Media Catalog for iOS/iPadOS 1.2** keeps the standard
+**Home Media Catalog for iOS/iPadOS 1.2** keeps the standard
 SwiftUI search field **inside the main catalogue**, directly filtering the
 same poster/list view on iPhone, iPad and iPhone Duo. A sparkles action in
 the **top toolbar** opens a dedicated conversational AI page through native
@@ -82,7 +82,7 @@ the client falls back to plan-only refinement on earlier servers. See the
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
 2. Open the web interface to add a Kodi source or import a CLZ Movies, MyMovies, or Filmotech XML export.
-3. Connect the **Media Catalog** iOS/iPadOS app with a short-lived pairing code from the web interface.
+3. Connect the **Home Media Catalog** iOS/iPadOS app with a short-lived pairing code from the web interface.
 
 ## Documentation
 
@@ -92,13 +92,13 @@ the client falls back to plan-only refinement on earlier servers. See the
 - [REST API](docs/api.md) · [OpenAPI schema](docs/openapi-v1.json)
 - [Data model and backups](docs/model.md) · [Development and testing](docs/development.md)
 
-Media Catalog is not a media streaming/transcoding service. Use **HTTPS or a VPN** for remote access.
+Home Media Catalog is not a media streaming/transcoding service. Use **HTTPS or a VPN** for remote access.
 
 [Support the project on Buy Me a Coffee](https://www.buymeacoffee.com/albaintor)
 
 ## Support
 
-If you have any issues check first if it has not already been reported then [raise a ticket](https://github.com/albaintor/home-kodi-library/issues)
+If you have any issues check first if it has not already been reported then [raise a ticket](https://github.com/albaintor/home-media-catalog/issues)
 
 
 
