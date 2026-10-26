@@ -257,9 +257,11 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     import asyncio
     import json
     from unittest.mock import patch
+
     from home_media_catalog.playback_cloud import (
-        MICROSOFT_DEVICE_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT,
+        MICROSOFT_DEVICE_ENDPOINT,
         MICROSOFT_DEVICE_VERIFICATION_URL,
+        MICROSOFT_TOKEN_ENDPOINT,
     )
 
     class Store:
