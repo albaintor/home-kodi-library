@@ -1568,13 +1568,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for loc in store.playback_locations()
             if loc["kind"] in cloud_auth.supported or loc["kind"] == "icloud"
         ]
+
         # Only add non-secret display metadata. Refresh independent accounts
         # concurrently; absence of a provider email never hides a location.
         async def with_account_email(item: dict) -> dict:
             if item["connected"] and item["provider"] in cloud_auth.supported:
-                item["account_email"] = await cloud_auth.account_email(
-                    item["id"], item["provider"]
-                )
+                item["account_email"] = await cloud_auth.account_email(item["id"], item["provider"])
             return item
 
         return await asyncio.gather(*(with_account_email(item) for item in locations))
