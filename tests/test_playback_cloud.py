@@ -424,3 +424,61 @@ def test_onedrive_device_routes_do_not_expose_microsoft_secrets(client, admin, m
         json={"request_id": "../bad"},
     )
     assert invalid.status_code == 422
+
+
+def test_cloud_account_email_uses_location_identity_and_never_exposes_tokens(tmp_path):
+    import asyncio
+
+    class Store:
+        def playback_oauth_app(self, _provider):
+            return None
+
+    oauth = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), Store())
+
+    async def credentials(location_id, provider):
+        assert provider == "onedrive"
+        return {"access_token": f"private-token-{location_id}"}
+
+    oauth.credentials = credentials
+
+    class Reply:
+        status_code = 200
+
+        def __init__(self, token):
+            self.token = token
+
+        def json(self):
+            return {
+                "owner": {"user": {"email": f"{self.token}@example.net"}}
+            }
+
+    class HTTP:
+        calls = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            pass
+
+        async def get(self, url, headers):
+            assert url == "https://graph.microsoft.com/v1.0/me/drive"
+            token = headers["Authorization"].removeprefix("Bearer private-token-")
+            self.calls.append(token)
+            return Reply(token)
+
+    http = HTTP()
+
+    async def check():
+        with patch("home_media_catalog.playback_cloud.httpx.AsyncClient", return_value=http):
+            assert await oauth.account_email("one", "onedrive") == "one@example.net"
+            assert await oauth.account_email("two", "onedrive") == "two@example.net"
+            assert await oauth.account_email("one", "onedrive") == "one@example.net"
+        assert http.calls == ["one", "two"]
+        # The profile cache stores only display emails, never OAuth tokens.
+        assert all(
+            "private-token" not in str(value)
+            for value in oauth._account_labels.values()
+        )
+
+    asyncio.run(check())
