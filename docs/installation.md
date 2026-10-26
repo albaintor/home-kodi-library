@@ -64,7 +64,7 @@ The standard `compose.yaml` uses Docker bridge networking. `compose.host.yaml` p
 
 ## Container name
 
-`compose.yaml` and `compose.host.yaml` define `container_name: ${KODI_LIBRARY_CONTAINER_NAME:-home-kodi-library}`, giving the container a consistent name in Docker tooling, including Synology Container Manager. To customize it without editing tracked files, set `KODI_LIBRARY_CONTAINER_NAME` in `.env`. This does not affect volumes or the selected networking mode, although a Compose container-name change can require recreation. If another container already uses the name, deployment fails until the conflict is resolved. Preserve `COMPOSE_FILE` to keep host networking where it is used for token-free local access.
+`compose.yaml` and `compose.host.yaml` define `container_name: ${HOME_MEDIA_CATALOG_CONTAINER_NAME:-${KODI_LIBRARY_CONTAINER_NAME:-home-media-catalog}}`, using the new Home Media Catalog name by default while recognizing the legacy name override, giving the container a consistent name in Docker tooling, including Synology Container Manager. To customize it without editing tracked files, set `KODI_LIBRARY_CONTAINER_NAME` in `.env`. This does not affect volumes or the selected networking mode, although a Compose container-name change can require recreation. If another container already uses the name, deployment fails until the conflict is resolved. Preserve `COMPOSE_FILE` to keep host networking where it is used for token-free local access.
 
 ## Local access without a token
 
