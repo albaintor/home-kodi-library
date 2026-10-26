@@ -572,6 +572,7 @@ async def cloud_stream_location(location, file_id, range_header, oauth, method="
     import mimetypes
     import re
     from urllib.parse import urlsplit
+
     from .playback_cloud import CloudOAuthError
 
     if range_header:
