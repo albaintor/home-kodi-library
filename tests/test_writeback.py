@@ -7,7 +7,7 @@ import httpx
 import pytest
 from conftest import READ
 
-from kodi_library.connectors.base import Record
+from home_media_catalog.connectors.base import Record
 
 
 def prepare_media(client, admin, kind="movie", with_player=True):
@@ -64,7 +64,7 @@ def fake_kodi(handler):
         return httpx.Response(200, json={"jsonrpc": "2.0", "id": 1, "result": result})
 
     return patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kwargs: real_client(transport=httpx.MockTransport(respond), **kwargs),
     )
 

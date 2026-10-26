@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-STATIC = Path(__file__).resolve().parents[1] / "kodi_library" / "static"
+STATIC = Path(__file__).resolve().parents[1] / "home_media_catalog" / "static"
 
 
 def test_media_detail_title_is_a_copy_button():

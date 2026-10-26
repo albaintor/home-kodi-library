@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from conftest import READ
 
-from kodi_library.connectors.base import ConnectorError, Record
+from home_media_catalog.connectors.base import ConnectorError, Record
 
 
 def prepare_movie(client, admin, *, two_sources=False):
@@ -41,7 +41,7 @@ def prepare_movie(client, admin, *, two_sources=False):
 def test_error_queues_explicit_edit_and_manual_replay_with_icon(client, admin):
     sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("JSON-RPC refuse la modification"),
     ):
@@ -78,7 +78,7 @@ def test_error_queues_explicit_edit_and_manual_replay_with_icon(client, admin):
         calls.append(changes)
         return None
 
-    with patch("kodi_library.writeback._write_kodi", side_effect=ok):
+    with patch("home_media_catalog.writeback._write_kodi", side_effect=ok):
         replay = client.post(f"/api/v1/writebacks/pending/{pending['id']}/retry", headers=admin)
     assert replay.status_code == 200, replay.text
     assert replay.json()["results"][0]["result"]["method"] == "jsonrpc"
@@ -101,7 +101,7 @@ def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_f
 ):
     _sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):
@@ -112,7 +112,7 @@ def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_f
     assert status["pending_count"] == 1
     assert status["pending"][0]["changes"] == {"user_rating": 9, "watched": True}
     # A later successful change clears only its field, not unrelated failed ones.
-    with patch("kodi_library.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
+    with patch("home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
         r = client.patch(f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": False})
     assert r.status_code == 200
     status = client.get("/api/v1/writebacks/status", headers=admin).json()
@@ -120,7 +120,7 @@ def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_f
     assert status["pending"][0]["changes"] == {"user_rating": 9}
 
     # Resetting an override to null clears its queue entry, with no remote request.
-    with patch("kodi_library.writeback._write_kodi") as write:
+    with patch("home_media_catalog.writeback._write_kodi") as write:
         r = client.patch(f"/api/v1/media/{mid}/personal", headers=admin, json={"user_rating": None})
     assert r.status_code == 200
     write.assert_not_called()
@@ -130,7 +130,7 @@ def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_f
 def test_replay_never_replays_stale_local_values_or_readonly_tokens(client, admin):
     _sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):
@@ -146,7 +146,7 @@ def test_replay_never_replays_stale_local_values_or_readonly_tokens(client, admi
     )
     # Simulate a local change outside the public PATCH endpoint.
     client.app.state.store.update_personal(mid, {"user_rating": 7})
-    with patch("kodi_library.writeback._write_kodi") as write:
+    with patch("home_media_catalog.writeback._write_kodi") as write:
         r = client.post(f"/api/v1/writebacks/pending/{pending['id']}/retry", headers=admin)
     assert r.status_code == 409
     write.assert_not_called()
@@ -156,7 +156,7 @@ def test_replay_never_replays_stale_local_values_or_readonly_tokens(client, admi
 def test_bulk_retry_keeps_failures_and_returns_per_source_result(client, admin):
     _sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):
@@ -167,7 +167,7 @@ def test_bulk_retry_keeps_failures_and_returns_per_source_result(client, admin):
     assert response.json()["results"][0]["result"]["status"] == "failed"
     pending = client.get("/api/v1/writebacks/pending", headers=admin).json()[0]
     assert pending["retry_count"] == 1
-    with patch("kodi_library.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
+    with patch("home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
         response = client.post("/api/v1/writebacks/retry", headers=admin)
     assert response.status_code == 200
     assert response.json()["pending_count"] == 0
@@ -176,12 +176,12 @@ def test_bulk_retry_keeps_failures_and_returns_per_source_result(client, admin):
 def test_importing_a_kodi_snapshot_does_not_push_upstream_or_retry_queue(client, admin):
     sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):
         client.patch(f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": True})
-    with patch("kodi_library.writeback._write_kodi") as remote:
+    with patch("home_media_catalog.writeback._write_kodi") as remote:
         client.app.state.store.apply_snapshot(
             sid,
             [
@@ -202,13 +202,13 @@ def test_importing_a_kodi_snapshot_does_not_push_upstream_or_retry_queue(client,
 def test_idempotent_patch_does_not_replay_failed_write(client, admin):
     _sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):
         first = client.patch(f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": True})
     assert first.json()["writeback"][0]["status"] == "failed"
-    with patch("kodi_library.writeback._write_kodi") as remote:
+    with patch("home_media_catalog.writeback._write_kodi") as remote:
         repeated = client.patch(
             f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": True}
         )
@@ -221,7 +221,7 @@ def test_idempotent_patch_does_not_replay_failed_write(client, admin):
 def test_queue_survives_catalogue_store_reinitialization(client, admin):
     _sid, mid = prepare_movie(client, admin)
     with patch(
-        "kodi_library.writeback._write_kodi",
+        "home_media_catalog.writeback._write_kodi",
         new_callable=AsyncMock,
         side_effect=ConnectorError("offline"),
     ):

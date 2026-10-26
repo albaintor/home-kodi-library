@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[1] / "kodi_library" / "static"
+APP = Path(__file__).resolve().parents[1] / "home_media_catalog" / "static"
 
 
 def test_episode_action_button_uses_inclusive_cutoff_without_contextmenu_override():

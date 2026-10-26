@@ -1,6 +1,6 @@
 """TV seasons are browsed inside their series, never in the main catalogue."""
 
-from kodi_library.connectors.base import Record
+from home_media_catalog.connectors.base import Record
 
 
 def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
@@ -176,7 +176,7 @@ def test_main_search_excludes_episodes_and_seasons_are_paged(client, admin):
 
 
 def test_watch_up_to_selected_episode_scopes_to_season(client, admin):
-    from kodi_library.connectors.base import Record
+    from home_media_catalog.connectors.base import Record
 
     response = client.post(
         "/api/v1/sources",

@@ -2,8 +2,8 @@ from dataclasses import replace
 
 import pytest
 
-from kodi_library.connectors.base import Record
-from kodi_library.connectors.clz import parse_clz
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.connectors.clz import parse_clz
 
 
 def export(history):
