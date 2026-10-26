@@ -1655,6 +1655,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             explanation = str(exc) or "Connexion refusée ou expirée."
             if return_to == "ios":
                 from urllib.parse import urlencode
+
                 return RedirectResponse(
                     "homekodilibrary://oauth/server?"
                     + urlencode({"result": "error", "message": explanation}),

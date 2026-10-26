@@ -295,6 +295,7 @@ async def thumbnail_location(
     try:
         if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
             from .playback_cloud import CloudOAuthError
+
             try:
                 await encryption.credentials(location["id"], location["kind"])
             except CloudOAuthError as exc:

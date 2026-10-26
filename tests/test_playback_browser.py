@@ -100,6 +100,7 @@ def test_http_range_relay_for_all_network_backends(
 
     observed = []
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_: "")
+
     def fake_stream(location, path, secret, mounts, start, end):
         observed.append((location["kind"], start, end))
         return 1024, lambda: iter([b"x"])

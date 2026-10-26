@@ -415,7 +415,6 @@ class CloudOAuth:
         self.store.set_playback_cloud_token(info["location_id"], provider, encrypted)
         return info.get("return_to", "web")
 
-
     async def credentials(self, location_id: str, provider: str) -> dict:
         """Return a live provider token server-side; refresh without exposing it."""
         # Concurrent thumbnails and byte-range reads may all discover an

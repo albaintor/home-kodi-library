@@ -528,7 +528,7 @@ async def stream_location(
     try:
         size, content = await asyncio.wait_for(
             asyncio.to_thread(_sync_stream, location, relative, password, mounts, start, end),
-            timeout=18
+            timeout=18,
         )
     except HTTPException:
         raise

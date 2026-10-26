@@ -297,6 +297,7 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
 
     class Http:
         attempts = 0
+
         async def __aenter__(self):
             return self
 
@@ -335,6 +336,7 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     store = Store()
     oauth = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), store)
     transport = Http()
+
     async def scenario():
         with patch("home_media_catalog.playback_cloud.httpx.AsyncClient", return_value=transport):
             started = await oauth.start_device("test-location", "onedrive")
