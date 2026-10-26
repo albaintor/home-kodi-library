@@ -6,7 +6,7 @@ import httpx
 import pytest
 from conftest import READ
 
-from kodi_library.ai_usage import (
+from home_media_catalog.ai_usage import (
     AIBudgetExceeded,
     AIPriceUnavailable,
     AIUsageLedger,
@@ -109,9 +109,9 @@ def test_budget_settings_persist_and_reports_are_admin_only(client, admin):
 def test_catalogue_sync_trigger_is_connected_without_prolonging_imports():
     from pathlib import Path
 
-    sync = (Path(__file__).parent.parent / "kodi_library" / "sync.py").read_text()
+    sync = (Path(__file__).parent.parent / "home_media_catalog" / "sync.py").read_text()
     assert 'result.get("rebuilt_works") and self.on_catalog_changed' in sync
     assert "self.on_catalog_changed()" in sync
-    app = (Path(__file__).parent.parent / "kodi_library" / "app.py").read_text()
+    app = (Path(__file__).parent.parent / "home_media_catalog" / "app.py").read_text()
     assert "sync.on_catalog_changed = start_ai_index" in app
     assert "run_ai_index_debounced" in app

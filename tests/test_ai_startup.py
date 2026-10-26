@@ -7,12 +7,12 @@ from threading import Event
 from conftest import ADMIN, INGRESS, READ
 from fastapi.testclient import TestClient
 
-from kodi_library.ai import AIConfiguration, AISettingsInput
-from kodi_library.ai_vectors import SemanticIndex
-from kodi_library.app import create_app
-from kodi_library.connectors.base import Record
-from kodi_library.settings import Settings
-from kodi_library.store import Store
+from home_media_catalog.ai import AIConfiguration, AISettingsInput
+from home_media_catalog.ai_vectors import SemanticIndex
+from home_media_catalog.app import create_app
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.settings import Settings
+from home_media_catalog.store import Store
 
 
 def server(tmp_path):
@@ -55,7 +55,7 @@ def test_startup_reindexes_changed_vectors_but_not_unchanged_ones(tmp_path, monk
         embedded.set()
         return [[1.0, 0.0] for _ in texts]
 
-    monkeypatch.setattr("kodi_library.ai_vectors.embed", fake_embed)
+    monkeypatch.setattr("home_media_catalog.ai_vectors.embed", fake_embed)
     assert (
         asyncio.run(index.refresh(store.ai_documents(), "text-embedding-3-small", "test-only-key"))
         == 1
@@ -93,7 +93,7 @@ def test_startup_skips_indexing_when_ai_is_not_configured(tmp_path, monkeypatch)
         attempted.set()
         raise AssertionError("Indexing without an API key must not be attempted")
 
-    monkeypatch.setattr("kodi_library.ai_vectors.embed", forbidden_embed)
+    monkeypatch.setattr("home_media_catalog.ai_vectors.embed", forbidden_embed)
     with server(tmp_path) as client:
         status = client.get(
             "/api/v1/ai/status", headers={"Authorization": f"Bearer {ADMIN}"}
@@ -118,7 +118,7 @@ def test_slow_startup_index_does_not_block_api_and_cancels_on_shutdown(tmp_path,
         await asyncio.sleep(60)
         return [[1.0, 0.0] for _ in texts]
 
-    monkeypatch.setattr("kodi_library.ai_vectors.embed", slow_embed)
+    monkeypatch.setattr("home_media_catalog.ai_vectors.embed", slow_embed)
     with server(tmp_path) as client:
         assert started.wait(5)
         assert client.get("/healthz").status_code == 200

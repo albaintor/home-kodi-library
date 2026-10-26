@@ -4,10 +4,10 @@ import asyncio
 
 from conftest import READ
 
-from kodi_library.ai import AISearchPlan, normalize_plan
-from kodi_library.ai_hybrid import hybrid_page
-from kodi_library.ai_vectors import SemanticIndex
-from kodi_library.connectors.base import Record
+from home_media_catalog.ai import AISearchPlan, normalize_plan
+from home_media_catalog.ai_hybrid import hybrid_page
+from home_media_catalog.ai_vectors import SemanticIndex
+from home_media_catalog.connectors.base import Record
 
 
 def test_episode_scope_survives_structured_validation():
@@ -51,8 +51,8 @@ def test_episode_plot_is_indexed_and_returned_on_parent_series(store, monkeypatc
     async def query_embed(texts, model, key):
         return [[1.0, 0.0] for _ in texts]
 
-    monkeypatch.setattr("kodi_library.ai_vectors.embed", fake_embed)
-    monkeypatch.setattr("kodi_library.ai_hybrid.embed", query_embed)
+    monkeypatch.setattr("home_media_catalog.ai_vectors.embed", fake_embed)
+    monkeypatch.setattr("home_media_catalog.ai_hybrid.embed", query_embed)
     assert asyncio.run(index.refresh(docs, "test-embedding", "dummy")) == len(docs)
     assert asyncio.run(index.refresh(docs, "test-embedding", "dummy")) == 0
 
@@ -99,7 +99,7 @@ def test_conversational_refinement_passes_previous_plan(client, admin, monkeypat
         received["previous"] = context
         return AISearchPlan(kind="movie", year_min=1990, year_max=1999, semantic_query="mystery")
 
-    monkeypatch.setattr("kodi_library.app.interpret_prompt", interpret)
+    monkeypatch.setattr("home_media_catalog.app.interpret_prompt", interpret)
     result = client.post(
         "/api/v1/ai/search",
         headers={"Authorization": f"Bearer {READ}"},
@@ -150,9 +150,9 @@ def test_style_search_excludes_unrelated_barbie_match(store, monkeypatch, tmp_pa
             if item["title"] == "La forêt des esprits"
         ]
 
-    monkeypatch.setattr("kodi_library.ai_vectors.embed", fake_embed)
-    monkeypatch.setattr("kodi_library.ai_hybrid.embed", fake_embed)
-    monkeypatch.setattr("kodi_library.ai_hybrid.rerank_candidates", strict_judge)
+    monkeypatch.setattr("home_media_catalog.ai_vectors.embed", fake_embed)
+    monkeypatch.setattr("home_media_catalog.ai_hybrid.embed", fake_embed)
+    monkeypatch.setattr("home_media_catalog.ai_hybrid.rerank_candidates", strict_judge)
     asyncio.run(index.refresh(docs, "test-style", "key"))
     plan = AISearchPlan(kind="movie", watch_status="unwatched", semantic_query="style Miyazaki")
     results = asyncio.run(
@@ -255,7 +255,7 @@ def test_hnsw_cache_and_scoped_search(tmp_path, monkeypatch):
     pytest = __import__("pytest")
     pytest.importorskip("numpy")
     pytest.importorskip("usearch.index")
-    import kodi_library.ai_vectors as vectors
+    import home_media_catalog.ai_vectors as vectors
 
     async def fake_embed(texts, model, key):
         lookup = {

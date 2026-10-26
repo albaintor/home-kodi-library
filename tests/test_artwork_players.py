@@ -5,10 +5,10 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from kodi_library.artwork import Artwork, ArtworkError
-from kodi_library.connectors.base import ConnectorError
-from kodi_library.players import play
-from kodi_library.settings import Settings
+from home_media_catalog.artwork import Artwork, ArtworkError
+from home_media_catalog.connectors.base import ConnectorError
+from home_media_catalog.players import play
+from home_media_catalog.settings import Settings
 
 
 def test_artwork_mount_and_path_containment(tmp_path):
@@ -39,7 +39,7 @@ def test_artwork_mount_and_path_containment(tmp_path):
 )
 def test_artwork_rejects_private_and_credential_urls(tmp_path, url):
     art = Artwork(Settings(data_dir=tmp_path))
-    with patch("kodi_library.artwork.aiohttp.ClientSession") as session:
+    with patch("home_media_catalog.artwork.aiohttp.ClientSession") as session:
         with pytest.raises(ArtworkError):
             asyncio.run(art.get([url]))
         session.assert_not_called()
@@ -82,7 +82,7 @@ def test_play_uses_selected_file_and_rejects_wrong_library():
             }
         ],
     }
-    with patch("kodi_library.players.httpx.AsyncClient", side_effect=client):
+    with patch("home_media_catalog.players.httpx.AsyncClient", side_effect=client):
         assert asyncio.run(play(player, detail, "version", True))["status"] == "started"
         assert requests[-1]["params"]["item"] == {"file": "smb://nas/films/version.mkv"}
         assert requests[-1]["params"]["options"]["resume"] is True
@@ -130,7 +130,7 @@ def test_explicit_default_file_plays_without_a_version_picker(kind, id_name):
         ],
     }
     with patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kwargs: original(transport=httpx.MockTransport(handle), **kwargs),
     ):
         asyncio.run(play(player, detail, "e", False))

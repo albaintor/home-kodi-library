@@ -2,8 +2,8 @@
 
 from conftest import READ
 
-from kodi_library.ai import AIConfiguration, AISearchPlan, normalize_plan
-from kodi_library.connectors.base import Record
+from home_media_catalog.ai import AIConfiguration, AISearchPlan, normalize_plan
+from home_media_catalog.connectors.base import Record
 
 
 def test_configuration_persists_and_never_discloses_secret(client, admin, tmp_path):
@@ -132,7 +132,7 @@ def test_ai_filters_are_applied_only_to_real_media(client, admin, monkeypatch):
             keywords="",
         )
 
-    monkeypatch.setattr("kodi_library.app.interpret_prompt", fake_interpret)
+    monkeypatch.setattr("home_media_catalog.app.interpret_prompt", fake_interpret)
     result = client.post(
         "/api/v1/ai/search", headers=admin, json={"prompt": "SF récente non vue bien notée"}
     )

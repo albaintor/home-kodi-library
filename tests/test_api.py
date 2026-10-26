@@ -2,7 +2,7 @@ import time
 
 from conftest import ADMIN, INGRESS, READ
 
-from kodi_library.connectors.base import Record
+from home_media_catalog.connectors.base import Record
 
 
 def test_auth_required_and_read_only_token(client):
@@ -228,7 +228,7 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
         ],
     )
     item = store.media()["items"][0]
-    from kodi_library.connectors.kodi import KodiConnector
+    from home_media_catalog.connectors.kodi import KodiConnector
 
     monkeypatch.setattr(
         KodiConnector,
@@ -252,7 +252,7 @@ def test_media_diagnostics_checks_movie_and_reports_all_sources(client, admin, m
 
 
 def test_media_diagnostics_identifies_sql_movie_absent_from_navigation(client, admin, monkeypatch):
-    from kodi_library.connectors.kodi import KodiConnector
+    from home_media_catalog.connectors.kodi import KodiConnector
 
     sid = client.post(
         "/api/v1/sources",
@@ -393,8 +393,8 @@ def test_on_open_refresh_only_after_24_hours_and_never_duplicates(client, admin)
 
 
 def test_no_periodic_scheduler_and_model_part_of_release():
-    from kodi_library import DATA_MODEL_VERSION, __version__
-    from kodi_library.sync import SyncManager
+    from home_media_catalog import DATA_MODEL_VERSION, __version__
+    from home_media_catalog.sync import SyncManager
 
     assert not hasattr(SyncManager, "_schedule")
     assert __version__.endswith(f"+model.{DATA_MODEL_VERSION}")

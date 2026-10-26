@@ -3,7 +3,7 @@
 import httpx
 from conftest import READ
 
-from kodi_library.ai import AISearchPlan
+from home_media_catalog.ai import AISearchPlan
 
 
 def test_openai_connection_requires_configured_admin(client, admin):
@@ -39,8 +39,8 @@ def test_openai_connection_checks_both_models(client, admin, monkeypatch):
         checked.append("embedding")
         return [[0.1, 0.2]]
 
-    monkeypatch.setattr("kodi_library.app.interpret_prompt", check_language)
-    monkeypatch.setattr("kodi_library.app.embed", check_embedding)
+    monkeypatch.setattr("home_media_catalog.app.interpret_prompt", check_language)
+    monkeypatch.setattr("home_media_catalog.app.embed", check_embedding)
     response = client.post("/api/v1/ai/connection/test", headers=admin)
     assert response.status_code == 200
     assert response.json() == {
@@ -73,8 +73,8 @@ def test_openai_connection_reports_partial_failure_without_provider_body(
     async def working_embedding(texts, model, key):
         return [[0.5, 0.5]]
 
-    monkeypatch.setattr("kodi_library.app.interpret_prompt", broken_language)
-    monkeypatch.setattr("kodi_library.app.embed", working_embedding)
+    monkeypatch.setattr("home_media_catalog.app.interpret_prompt", broken_language)
+    monkeypatch.setattr("home_media_catalog.app.embed", working_embedding)
     response = client.post("/api/v1/ai/connection/test", headers=admin)
     assert response.status_code == 200
     result = response.json()

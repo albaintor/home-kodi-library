@@ -4,7 +4,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
-from kodi_library.sync import SyncManager
+from home_media_catalog.sync import SyncManager
 
 
 def _manager(last_attempt: str | None, last_sync: str | None = None):

@@ -4,7 +4,7 @@ from copy import deepcopy
 
 from conftest import READ
 
-from kodi_library.connectors.base import Record
+from home_media_catalog.connectors.base import Record
 
 
 def _library(client):
