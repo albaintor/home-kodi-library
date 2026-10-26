@@ -4,7 +4,7 @@ services:
   library:
     build: .
     image: home-media-catalog:local
-    container_name: ${KODI_LIBRARY_CONTAINER_NAME:-home-kodi-library}
+    container_name: ${HOME_MEDIA_CATALOG_CONTAINER_NAME:-${KODI_LIBRARY_CONTAINER_NAME:-home-media-catalog}}
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     network_mode: host
