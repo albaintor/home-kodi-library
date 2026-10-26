@@ -28,7 +28,7 @@ iCloud Drive : **intégration native via Fichiers**, sans OAuth tiers.
 
 ### OneDrive sans domaine public (méthode recommandée)
 
-Application Microsoft Entra déjà enregistrée pour Home Kodi Library :
+Application Microsoft Entra déjà enregistrée pour Home Media Catalog :
 `145e06bb-b35b-4d96-8cf8-4077cd5e5528` (identifiant public, **pas un secret**).
 Le serveur l'utilise par défaut. Il est possible de le remplacer avec
 `ONEDRIVE_CLIENT_ID` ou dans les réglages avancés du fournisseur.
@@ -112,7 +112,7 @@ les redirections CDN, quotas et renouvellements des jetons.
 - **Fichiers iOS (repli)** : les extensions File Provider d'OneDrive, Dropbox,
   Google Drive, etc., utilisent leur propre authentification. Un média choisi
   depuis Fichiers peut être importé pour lecture **hors ligne**, sans identifiant
-  OAuth propre à Home Kodi Library. Ce n'est pas du streaming direct.
+  OAuth propre à Home Media Catalog. Ce n'est pas du streaming direct.
 - **Configuration OneDrive sans domaine** : dans Microsoft Entra,
   activer les flux de clients publics et les autorisations déléguées Files.Read.
   L'application utilise le client ID public ; aucun secret ni URI HTTPS
