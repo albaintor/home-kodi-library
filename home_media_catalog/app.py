@@ -268,7 +268,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/docs", include_in_schema=False, dependencies=[Depends(authenticated)])
     def docs():
-        return get_swagger_ui_html(openapi_url="api/v1/openapi.json", title="Home Media Catalog API v1")
+        return get_swagger_ui_html(
+            openapi_url="api/v1/openapi.json", title="Home Media Catalog API v1"
+        )
 
     @app.get(API + "/openapi.json", include_in_schema=False, dependencies=[Depends(authenticated)])
     def schema():
@@ -1258,8 +1260,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not location:
             raise HTTPException(404, "Unknown playback location.")
         if location["kind"] not in {
-            "smb", "ftp", "sftp", "nfs",
-            "onedrive", "google_drive", "dropbox", "box", "pcloud",
+            "smb",
+            "ftp",
+            "sftp",
+            "nfs",
+            "onedrive",
+            "google_drive",
+            "dropbox",
+            "box",
+            "pcloud",
         }:
             raise HTTPException(501, "Native streaming is unavailable for this protocol.")
         relative = safe_path(payload.get("path", ""))
@@ -1267,9 +1276,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "A file path is required.")
         # Cloud paths often contain opaque IDs without an extension. iOS also
         # supplies the visible filename to select a safe media content type.
-        filename = payload.get("filename", "") if location["kind"] in {
-            "onedrive", "google_drive", "dropbox", "box", "pcloud"
-        } else relative
+        filename = (
+            payload.get("filename", "")
+            if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}
+            else relative
+        )
         if not isinstance(filename, str) or len(filename) > 1024:
             raise HTTPException(422, "Invalid media filename.")
         extension = PurePosixPath(filename).suffix.lower().lstrip(".")
@@ -1492,7 +1503,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             not client_id
             or len(client_id) > 1024
             or len(secret) > 4096
-            or (provider != "onedrive" or redirect) and (
+            or (provider != "onedrive" or redirect)
+            and (
                 parsed.scheme != "https"
                 or not parsed.hostname
                 or parsed.username
@@ -1502,7 +1514,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             )
         ):
             raise HTTPException(
-                422, "A client ID is required; HTTPS callback is optional only for OneDrive device login."
+                422,
+                "A client ID is required; HTTPS callback is optional only for OneDrive device login.",
             )
         encrypted = cloud_auth.encrypt_password(secret) if secret else None
         store.set_playback_oauth_app(provider, client_id, redirect, encrypted)
@@ -1510,7 +1523,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "provider": provider,
             "configured": cloud_auth.configured(provider),
             "device_configured": provider == "onedrive"
-                and cloud_auth.device_configuration_error(provider) is None,
+            and cloud_auth.device_configuration_error(provider) is None,
         }
 
     @app.get(
@@ -1527,12 +1540,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "configured": cloud_auth.configured(provider),
                 "reason": cloud_auth.configuration_error(provider),
                 "device_supported": provider == "onedrive",
-                "device_configured": provider == "onedrive" and
-                    cloud_auth.device_configuration_error(provider) is None,
+                "device_configured": provider == "onedrive"
+                and cloud_auth.device_configuration_error(provider) is None,
                 "device_reason": cloud_auth.device_configuration_error(provider)
-                    if provider == "onedrive" else None,
+                if provider == "onedrive"
+                else None,
                 "device_client_id": cloud_auth.device_client_id(provider)
-                    if provider == "onedrive" else None,
+                if provider == "onedrive"
+                else None,
             }
             for provider in sorted(cloud_auth.supported)
         ]
@@ -1577,7 +1592,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import re
 
         request_id = payload.get("request_id")
-        if not isinstance(request_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]{24,128}", request_id):
+        if not isinstance(request_id, str) or not re.fullmatch(
+            r"[A-Za-z0-9_-]{24,128}", request_id
+        ):
             raise HTTPException(422, "Invalid device authorization request.")
         # Never return the Microsoft device_code, bearer or refresh token.
         return await cloud_auth.poll_device(location_id, request_id)
@@ -1622,11 +1639,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 )
             return HTMLResponse(
                 '<!doctype html><html lang="fr"><meta charset="utf-8">'
-                '<title>Compte connecté</title><body><h2>Compte connecté.</h2>'
-                '<p>Cette fenêtre peut être fermée.</p>'
-                '<script>if(window.opener){window.opener.postMessage('
+                "<title>Compte connecté</title><body><h2>Compte connecté.</h2>"
+                "<p>Cette fenêtre peut être fermée.</p>"
+                "<script>if(window.opener){window.opener.postMessage("
                 '{type:"homekodi-cloud-oauth",success:true},"*");'
-                'window.close();}</script></body></html>',
+                "window.close();}</script></body></html>",
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
             )
         except CloudOAuthError as exc:
@@ -1639,20 +1656,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if return_to == "ios":
                 from urllib.parse import urlencode
                 return RedirectResponse(
-                    "homekodilibrary://oauth/server?" +
-                    urlencode({"result": "error", "message": explanation}),
+                    "homekodilibrary://oauth/server?"
+                    + urlencode({"result": "error", "message": explanation}),
                     status_code=302,
                     headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
                 )
             return HTMLResponse(
                 '<!doctype html><html lang="fr"><meta charset="utf-8">'
-                '<title>Connexion refusée</title><body>'
-                '<h2>Connexion cloud non effectuée</h2>'
-                '<p>' + html.escape(explanation) + '</p>'
-                '<p>Vous pouvez fermer cette fenêtre et corriger le problème.</p>'
-                '<script>if(window.opener){window.opener.postMessage('
-                + json.dumps({"type": "homekodi-cloud-oauth", "success": False,
-                              "error": explanation})
+                "<title>Connexion refusée</title><body>"
+                "<h2>Connexion cloud non effectuée</h2>"
+                "<p>" + html.escape(explanation) + "</p>"
+                "<p>Vous pouvez fermer cette fenêtre et corriger le problème.</p>"
+                "<script>if(window.opener){window.opener.postMessage("
+                + json.dumps(
+                    {"type": "homekodi-cloud-oauth", "success": False, "error": explanation}
+                )
                 + ',"*");}</script></body></html>',
                 status_code=400,
                 headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},

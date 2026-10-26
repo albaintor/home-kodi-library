@@ -507,9 +507,7 @@ async def stream_location(
     if not relative:
         raise HTTPException(422, "Specify a remote file.")
     if location["kind"] in {"onedrive", "google_drive", "dropbox", "box", "pcloud"}:
-        return await cloud_stream_location(
-            location, relative, range_header, encryption, method
-        )
+        return await cloud_stream_location(location, relative, range_header, encryption, method)
     if location["kind"] not in {"smb", "ftp", "sftp", "nfs"}:
         raise HTTPException(501, "Direct streaming is not enabled for this source.")
     start, end = 0, None
@@ -621,8 +619,9 @@ async def cloud_stream_location(location, file_id, range_header, oauth, method="
             if "/" in file_id:
                 raise HTTPException(422, "Invalid Google Drive item identifier.")
             url = (
-                "https://www.googleapis.com/drive/v3/files/" +
-                quote(file_id, safe="") + "?alt=media"
+                "https://www.googleapis.com/drive/v3/files/"
+                + quote(file_id, safe="")
+                + "?alt=media"
             )
         elif kind == "box":
             if "/" in file_id:
@@ -650,8 +649,11 @@ async def cloud_stream_location(location, file_id, range_header, oauth, method="
 
         parsed = urlsplit(url)
         if (
-            parsed.scheme != "https" or not parsed.hostname
-            or parsed.username or parsed.password or parsed.fragment
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+            or parsed.fragment
             or parsed.hostname in {"localhost", "localhost.localdomain"}
         ):
             raise HTTPException(502, "Unsafe cloud media URL.")
@@ -705,8 +707,10 @@ async def cloud_stream_location(location, file_id, range_header, oauth, method="
                 await client.aclose()
 
         return StreamingResponse(
-            content(), status_code=upstream.status_code,
-            media_type=mime, headers=out_headers,
+            content(),
+            status_code=upstream.status_code,
+            media_type=mime,
+            headers=out_headers,
         )
     except HTTPException:
         if upstream is not None:

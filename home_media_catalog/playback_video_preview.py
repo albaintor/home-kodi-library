@@ -103,11 +103,21 @@ def extract_video_frame(location: dict, path: str, password: str, mounts: dict) 
     try:
         probe = subprocess.run(
             [
-                "ffprobe", "-hide_banner", "-loglevel", "error",
-                "-rw_timeout", "6000000", "-show_entries", "format=duration",
-                "-of", "default=noprint_wrappers=1:nokey=1", url,
+                "ffprobe",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-rw_timeout",
+                "6000000",
+                "-show_entries",
+                "format=duration",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                url,
             ],
-            capture_output=True, timeout=12, check=False,
+            capture_output=True,
+            timeout=12,
+            check=False,
         )
         try:
             duration = float(probe.stdout.decode("ascii").strip())
@@ -119,13 +129,34 @@ def extract_video_frame(location: dict, path: str, password: str, mounts: dict) 
         for second in (duration / 3, duration / 5):
             run = subprocess.run(
                 [
-                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-                    "-rw_timeout", "6000000", "-ss", str(second), "-i", url,
-                    "-map", "0:v:0", "-frames:v", "1",
-                    "-vf", "scale=360:256:force_original_aspect_ratio=decrease",
-                    "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "pipe:1",
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-nostdin",
+                    "-rw_timeout",
+                    "6000000",
+                    "-ss",
+                    str(second),
+                    "-i",
+                    url,
+                    "-map",
+                    "0:v:0",
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "scale=360:256:force_original_aspect_ratio=decrease",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "mjpeg",
+                    "-q:v",
+                    "5",
+                    "pipe:1",
                 ],
-                capture_output=True, timeout=16, check=False,
+                capture_output=True,
+                timeout=16,
+                check=False,
             )
             if run.returncode == 0 and 0 < len(run.stdout) <= 512 * 1024:
                 return run.stdout

@@ -73,18 +73,38 @@ def _jpeg_thumbnail(source: bytes, extension: str) -> bytes | None:
     # intro frames), falling back to the first decodable frame for short clips.
     for skip in (5, 0):
         command = [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-nostdin",
-            "-analyzeduration", "3000000", "-probesize", "6000000",
-            "-i", "pipe:0",
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-analyzeduration",
+            "3000000",
+            "-probesize",
+            "6000000",
+            "-i",
+            "pipe:0",
         ]
         if skip:
             # Output-side -ss can advance on non-seekable stdin.
             command.extend(["-ss", str(skip)])
-        command.extend([
-            "-map", "0:v:0", "-frames:v", "1",
-            "-vf", "scale=360:256:force_original_aspect_ratio=decrease",
-            "-f", "image2pipe", "-vcodec", "mjpeg", "-q:v", "5", "pipe:1",
-        ])
+        command.extend(
+            [
+                "-map",
+                "0:v:0",
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=360:256:force_original_aspect_ratio=decrease",
+                "-f",
+                "image2pipe",
+                "-vcodec",
+                "mjpeg",
+                "-q:v",
+                "5",
+                "pipe:1",
+            ]
+        )
         try:
             child = subprocess.run(
                 command, input=source, capture_output=True, timeout=14, check=False
@@ -183,13 +203,20 @@ def _cloud_data(location: dict, path: str, store, encryption, limit: int) -> byt
 
 
 def _thumbnail_sync(
-    location: dict, path: str, store, encryption, mounts: dict, cache: Path,
+    location: dict,
+    path: str,
+    store,
+    encryption,
+    mounts: dict,
+    cache: Path,
     filename: str = "",
 ) -> bytes:
     path = safe_path(path)
     # OneDrive uses opaque IDs; the display name supplies the extension.
-    if not isinstance(filename, str) or len(filename) > 512 or any(
-        ord(char) < 32 for char in filename
+    if (
+        not isinstance(filename, str)
+        or len(filename) > 512
+        or any(ord(char) < 32 for char in filename)
     ):
         raise HTTPException(422, "Invalid media filename.")
     extension = PurePosixPath(filename or path).suffix.lower()
@@ -228,7 +255,8 @@ def _thumbnail_sync(
                     with httpx.Client(timeout=14, follow_redirects=True) as client:
                         image = client.get(
                             "https://graph.microsoft.com/v1.0/me/drive/items/"
-                            + quote(path, safe="") + "/thumbnails/0/medium/content",
+                            + quote(path, safe="")
+                            + "/thumbnails/0/medium/content",
                             headers={"Authorization": "Bearer " + auth["access_token"]},
                         )
                         if image.status_code == 200 and len(image.content) <= MAX_IMAGE:
@@ -256,7 +284,12 @@ def _thumbnail_sync(
 
 
 async def thumbnail_location(
-    location: dict, path: str, store, encryption, mounts: dict, data_dir: Path,
+    location: dict,
+    path: str,
+    store,
+    encryption,
+    mounts: dict,
+    data_dir: Path,
     filename: str = "",
 ) -> bytes:
     try:

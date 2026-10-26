@@ -116,9 +116,10 @@ class CloudOAuth:
         from uuid import UUID
 
         client, _ = self.provider_options("onedrive")
-        value = str(client.get("client_id") or os.environ.get(
-            "ONEDRIVE_CLIENT_ID", ONEDRIVE_PUBLIC_CLIENT_ID
-        )).strip()
+        value = str(
+            client.get("client_id")
+            or os.environ.get("ONEDRIVE_CLIENT_ID", ONEDRIVE_PUBLIC_CLIENT_ID)
+        ).strip()
         try:
             UUID(value)
         except (ValueError, AttributeError, TypeError):
@@ -135,8 +136,7 @@ class CloudOAuth:
     def _prune_device_sessions(self) -> None:
         now = time.monotonic()
         self.pending_devices = {
-            key: entry for key, entry in self.pending_devices.items()
-            if entry["deadline"] > now
+            key: entry for key, entry in self.pending_devices.items() if entry["deadline"] > now
         }
 
     async def start_device(self, location_id: str, provider: str) -> dict:
@@ -175,9 +175,9 @@ class CloudOAuth:
             interval = max(5, min(60, int(result.get("interval", 5))))
         except (ValueError, KeyError, TypeError) as exc:
             raise CloudOAuthError("Réponse Microsoft incomplète.") from exc
-        if not all(isinstance(x, str) and x for x in (
-            device_code, user_code, verification_uri
-        )) or not verification_uri.startswith("https://"):
+        if not all(
+            isinstance(x, str) and x for x in (device_code, user_code, verification_uri)
+        ) or not verification_uri.startswith("https://"):
             raise CloudOAuthError("Code ou adresse de validation Microsoft invalide.")
         request_id = secrets.token_urlsafe(32)
         now = time.monotonic()
@@ -219,11 +219,14 @@ class CloudOAuth:
             state["next_poll"] = now + state["interval"]
             try:
                 async with httpx.AsyncClient(timeout=15, follow_redirects=False) as http:
-                    response = await http.post(MICROSOFT_TOKEN_ENDPOINT, data={
-                        "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
-                        "client_id": state["client_id"],
-                        "device_code": state["device_code"],
-                    })
+                    response = await http.post(
+                        MICROSOFT_TOKEN_ENDPOINT,
+                        data={
+                            "grant_type": "urn:ietf:params:oauth:grant-type:device_code",
+                            "client_id": state["client_id"],
+                            "device_code": state["device_code"],
+                        },
+                    )
                     result = response.json()
             except (httpx.HTTPError, ValueError) as exc:
                 LOG.warning("OneDrive device polling failed (%s)", type(exc).__name__)
@@ -247,7 +250,7 @@ class CloudOAuth:
                     return {
                         "status": "error",
                         "message": "Activez « Autoriser les flux de clients publics » "
-                                   "dans Microsoft Entra pour cette application.",
+                        "dans Microsoft Entra pour cette application.",
                     }
                 return {"status": "error", "message": "Microsoft a refusé la connexion OneDrive."}
             access_token = result.get("access_token")
@@ -265,9 +268,7 @@ class CloudOAuth:
             if not current or current["kind"] != "onedrive":
                 self.pending_devices.pop(request_id, None)
                 return {"status": "error", "message": "Emplacement OneDrive supprimé."}
-            result["expires_at"] = time.time() + max(
-                0, float(result.get("expires_in") or 3600)
-            )
+            result["expires_at"] = time.time() + max(0, float(result.get("expires_in") or 3600))
             # Record the exact client used to issue the rotating refresh token.
             result["_hkl_client_id"] = state["client_id"]
             encrypted = self.encrypt_password(json.dumps(result, separators=(",", ":")))
@@ -287,13 +288,19 @@ class CloudOAuth:
                 "Aucune application OAuth n’est enregistrée pour ce fournisseur sur le serveur. "
                 "La configuration est à effectuer une seule fois par l’administrateur."
             )
-        if provider in {"onedrive", "google_drive", "box", "pcloud"} and not client.get("client_secret"):
+        if provider in {"onedrive", "google_drive", "box", "pcloud"} and not client.get(
+            "client_secret"
+        ):
             return "Le secret de l’application OAuth manque dans la configuration du serveur."
         parsed = urlsplit(redirect or "")
         if (
-            parsed.scheme != "https" or not parsed.hostname
+            parsed.scheme != "https"
+            or not parsed.hostname
             or parsed.path != "/api/v1/playback/cloud/callback"
-            or parsed.username or parsed.password or parsed.query or parsed.fragment
+            or parsed.username
+            or parsed.password
+            or parsed.query
+            or parsed.fragment
         ):
             return (
                 "L’URL de retour OAuth doit être une adresse HTTPS publique "
