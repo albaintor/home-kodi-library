@@ -448,9 +448,7 @@ def test_cloud_account_email_uses_location_identity_and_never_exposes_tokens(tmp
             self.token = token
 
         def json(self):
-            return {
-                "owner": {"user": {"email": f"{self.token}@example.net"}}
-            }
+            return {"owner": {"user": {"email": f"{self.token}@example.net"}}}
 
     class HTTP:
         calls = []
@@ -476,9 +474,6 @@ def test_cloud_account_email_uses_location_identity_and_never_exposes_tokens(tmp
             assert await oauth.account_email("one", "onedrive") == "one@example.net"
         assert http.calls == ["one", "two"]
         # The profile cache stores only display emails, never OAuth tokens.
-        assert all(
-            "private-token" not in str(value)
-            for value in oauth._account_labels.values()
-        )
+        assert all("private-token" not in str(value) for value in oauth._account_labels.values())
 
     asyncio.run(check())
