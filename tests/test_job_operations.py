@@ -53,7 +53,7 @@ def test_sql_only_job_and_invalid_operation(client, admin):
 
 def test_new_job_field_is_additive_for_v1_mobile_clients(client, admin):
     """Do not change any pre-existing job fields or the mobile contract."""
-    from kodi_library.compatibility import mobile_compatibility
+    from home_media_catalog.compatibility import mobile_compatibility
 
     source = client.post(
         "/api/v1/sources",
@@ -88,7 +88,7 @@ def test_new_job_field_is_additive_for_v1_mobile_clients(client, admin):
 
 def test_migration_from_pre_operation_sqlite_schema_preserves_old_jobs(tmp_path):
     """Opening a previous server's SQLite store adds only the optional job metadata."""
-    from kodi_library.store import Store
+    from home_media_catalog.store import Store
 
     store = Store(tmp_path / "catalog.sqlite3")
     store.initialize()

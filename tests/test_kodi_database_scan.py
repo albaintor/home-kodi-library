@@ -8,9 +8,9 @@ from unittest.mock import MagicMock, patch
 import aiohttp
 import pytest
 
-from kodi_library.connectors.base import ConnectorError
-from kodi_library.kodi_mariadb_write import write_kodi_mariadb
-from kodi_library.kodi_scan import scan_until_finished, websocket_url
+from home_media_catalog.connectors.base import ConnectorError
+from home_media_catalog.kodi_mariadb_write import write_kodi_mariadb
+from home_media_catalog.kodi_scan import scan_until_finished, websocket_url
 
 
 def sql_fixture(*, remote_id="123", title="Film"):
@@ -49,7 +49,7 @@ def sql_fixture(*, remote_id="123", title="Film"):
 
 def test_sql_fallback_updates_confirmed_id_and_commits():
     source, detail, editions, conn, cursor = sql_fixture()
-    with patch("kodi_library.kodi_mariadb_write.pymysql.connect", return_value=conn):
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect", return_value=conn):
         result = write_kodi_mariadb(source, detail, editions, {"user_rating": 7.5, "watched": True})
     assert "MariaDB" in result
     updates = [
@@ -68,7 +68,7 @@ def test_sql_fallback_updates_confirmed_id_and_commits():
 
 def test_sql_fallback_wrong_identity_aborts_without_mutation():
     source, detail, editions, conn, cursor = sql_fixture(remote_id="different")
-    with patch("kodi_library.kodi_mariadb_write.pymysql.connect", return_value=conn):
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect", return_value=conn):
         with pytest.raises(ConnectorError, match="contradictoires"):
             write_kodi_mariadb(source, detail, editions, {"watched": False})
     conn.commit.assert_not_called()
@@ -132,7 +132,7 @@ def test_websocket_scan_waits_for_start_finish_and_ack():
         ]
     )
     session = FakeSession(socket)
-    with patch("kodi_library.kodi_scan.aiohttp.ClientSession", return_value=session):
+    with patch("home_media_catalog.kodi_scan.aiohttp.ClientSession", return_value=session):
         asyncio.run(scan_until_finished({"host": "kodi", "websocket_port": 9091}))
     assert session.url == "ws://kodi:9091/jsonrpc"
     assert [message["method"] for message in socket.sent] == [
@@ -149,7 +149,7 @@ def test_websocket_scan_does_not_claim_success_without_finish():
             {"method": "VideoLibrary.OnScanStarted"},
         ]
     )
-    with patch("kodi_library.kodi_scan.aiohttp.ClientSession", return_value=FakeSession(socket)):
+    with patch("home_media_catalog.kodi_scan.aiohttp.ClientSession", return_value=FakeSession(socket)):
         with pytest.raises(ConnectorError, match="interrompue"):
             asyncio.run(scan_until_finished({"host": "kodi"}))
 

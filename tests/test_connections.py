@@ -7,10 +7,10 @@ import pymysql
 import pytest
 from conftest import READ
 
-from kodi_library.connectors.base import ConnectorError
-from kodi_library.connectors.kodi import KodiConnector
-from kodi_library.enrichment import probe_tmdb
-from kodi_library.players import probe
+from home_media_catalog.connectors.base import ConnectorError
+from home_media_catalog.connectors.kodi import KodiConnector
+from home_media_catalog.enrichment import probe_tmdb
+from home_media_catalog.players import probe
 
 MARIADB = {"config": {"host": "nas", "username": "reader", "password": "private-secret"}}
 
@@ -21,7 +21,7 @@ def test_tmdb_status_and_probe_are_explicit_and_admin_only(client, admin):
     assert client.post(path).status_code == 401
     assert client.post(path, headers={"Authorization": f"Bearer {READ}"}).status_code == 403
     assert client.post(path, headers=admin).status_code == 422
-    with patch("kodi_library.app.probe_tmdb", new_callable=AsyncMock) as tested:
+    with patch("home_media_catalog.app.probe_tmdb", new_callable=AsyncMock) as tested:
         assert client.post(path, headers=admin).status_code == 422
         tested.assert_not_called()
 
@@ -40,7 +40,7 @@ def test_tmdb_probe_supports_both_credentials_and_keeps_errors_private(token):
 
     original = httpx.AsyncClient
     with patch(
-        "kodi_library.enrichment.httpx.AsyncClient",
+        "home_media_catalog.enrichment.httpx.AsyncClient",
         side_effect=lambda **kwargs: original(transport=httpx.MockTransport(upstream), **kwargs),
     ):
         asyncio.run(probe_tmdb(token))
@@ -136,7 +136,7 @@ def test_probe_failure_and_saved_target_password(client, admin):
         json={"name": "Salon", "source_id": sid, "host": "kodi", "password": "private-secret"},
     ).json()["id"]
     with patch(
-        "kodi_library.app.probe_player",
+        "home_media_catalog.app.probe_player",
         new_callable=AsyncMock,
         return_value={"version": "22.0", "playback_allowed": True},
     ) as tested:
@@ -173,7 +173,7 @@ def test_probe_failure_and_saved_target_password(client, admin):
 )
 def test_mariadb_error_categories_do_not_echo_server_message(code, fragment):
     with patch(
-        "kodi_library.connectors.kodi.pymysql.connect",
+        "home_media_catalog.connectors.kodi.pymysql.connect",
         side_effect=pymysql.OperationalError(code, "server message containing private-secret"),
     ):
         with pytest.raises(ConnectorError) as error:
@@ -202,7 +202,7 @@ def test_mariadb_probe_checks_views_without_importing_or_writing():
     conn = MagicMock()
     conn.__enter__.return_value = conn
     conn.cursor.return_value.__enter__.return_value = cursor
-    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=conn):
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect", return_value=conn):
         assert KodiConnector(MARIADB["config"]).probe() == {
             "database": "MyVideos131",
             "available_media": ["movie", "tvshow", "episode"],
@@ -232,7 +232,7 @@ def test_kodi_probe_uses_only_non_playback_calls(permission_key):
 
     actual_client = httpx.AsyncClient
     with patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw),
     ):
         assert asyncio.run(probe({"host": "kodi", "port": 8080})) == {
@@ -255,7 +255,7 @@ def test_kodi_probe_reports_http_and_rpc_errors_safely(status, payload, fragment
     actual_client = httpx.AsyncClient
     transport = httpx.MockTransport(lambda request: httpx.Response(status, json=payload))
     with patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kw: actual_client(transport=transport, **kw),
     ):
         with pytest.raises(ConnectorError) as error:
@@ -280,7 +280,7 @@ def test_kodi_probe_refuses_denied_playback_permission(permissions):
 
     actual_client = httpx.AsyncClient
     with patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw),
     ):
         with pytest.raises(ConnectorError, match="ControlPlayback=false"):
@@ -314,7 +314,7 @@ def test_kodi_probe_reports_unexpected_permissions_without_claiming_access_is_de
 
     actual_client = httpx.AsyncClient
     with patch(
-        "kodi_library.players.httpx.AsyncClient",
+        "home_media_catalog.players.httpx.AsyncClient",
         side_effect=lambda **kw: actual_client(transport=httpx.MockTransport(handle), **kw),
     ):
         with pytest.raises(ConnectorError, match="Réponse JSONRPC.Permission inattendue") as error:

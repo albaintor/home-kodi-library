@@ -5,8 +5,8 @@ from unittest.mock import patch
 
 import pytest
 
-from kodi_library.connectors.base import ConnectorError
-from kodi_library.connectors.kodi_jsonrpc import fetch_kodi_snapshot, normalize_jsonrpc
+from home_media_catalog.connectors.base import ConnectorError
+from home_media_catalog.connectors.kodi_jsonrpc import fetch_kodi_snapshot, normalize_jsonrpc
 
 
 def test_record_normalizer_keeps_identity_and_parent_links():
@@ -60,7 +60,7 @@ def test_jsonrpc_fetches_all_pages():
     async def dummy(_config, **_kwargs):
         yield rpc
 
-    with patch("kodi_library.connectors.kodi_jsonrpc.connection", dummy):
+    with patch("home_media_catalog.connectors.kodi_jsonrpc.connection", dummy):
         records = asyncio.run(fetch_kodi_snapshot({"host": "localhost"}))
     assert len(records) == 202
     assert calls[:2] == [("VideoLibrary.GetMovies", 0), ("VideoLibrary.GetMovies", 200)]
@@ -76,13 +76,13 @@ def test_incomplete_page_never_returns_a_partial_snapshot():
     async def dummy(_config, **_kwargs):
         yield rpc
 
-    with patch("kodi_library.connectors.kodi_jsonrpc.connection", dummy):
+    with patch("home_media_catalog.connectors.kodi_jsonrpc.connection", dummy):
         with pytest.raises(ConnectorError, match="incomplete"):
             asyncio.run(fetch_kodi_snapshot({"host": "localhost"}))
 
 
 def test_rpc_cannot_erase_multiple_sql_movie_versions(store):
-    from kodi_library.connectors.base import Record
+    from home_media_catalog.connectors.base import Record
 
     sid = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
     store.apply_snapshot(

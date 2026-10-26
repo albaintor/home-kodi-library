@@ -43,8 +43,8 @@ def test_clean_requires_confirmed_completion_before_catalogue_import():
     import asyncio
     from unittest.mock import AsyncMock
 
-    from kodi_library.kodi_scan import KodiScanUnavailable
-    from kodi_library.sync import SyncManager
+    from home_media_catalog.kodi_scan import KodiScanUnavailable
+    from home_media_catalog.sync import SyncManager
 
     class Store:
         def __init__(self):
@@ -68,7 +68,7 @@ def test_clean_requires_confirmed_completion_before_catalogue_import():
     async def check():
         with (
             patch(
-                "kodi_library.sync.clean_until_finished",
+                "home_media_catalog.sync.clean_until_finished",
                 new=AsyncMock(side_effect=KodiScanUnavailable("WebSocket unavailable")),
             ),
             patch.object(manager, "_run", new_callable=AsyncMock) as downstream,

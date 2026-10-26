@@ -3,8 +3,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from kodi_library.connectors.base import Record
-from kodi_library.connectors.clz import parse_clz
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.connectors.clz import parse_clz
 
 
 def source(store, type="clz"):
@@ -675,7 +675,7 @@ def test_job_progress_tracks_actual_stage_counts_and_finishes(store):
 def test_job_progress_migration_preserves_old_jobs(tmp_path):
     import sqlite3
 
-    from kodi_library.store import Store
+    from home_media_catalog.store import Store
 
     database = tmp_path / "legacy.db"
     with sqlite3.connect(database) as connection:
@@ -704,7 +704,7 @@ def test_repeat_sync_skips_identical_works_and_fts_writes(store, monkeypatch):
     ]
     store.apply_snapshot(kodi, records)
     original = {v["title"]: v["id"] for v in store.media()["items"]}
-    from kodi_library.store import Store
+    from home_media_catalog.store import Store
 
     rebuilt = []
     original_rebuild = Store._rebuild

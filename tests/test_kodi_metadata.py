@@ -4,10 +4,10 @@ import sqlite3
 
 import pytest
 
-from kodi_library.connectors.base import Record
-from kodi_library.connectors.clz import parse_clz
-from kodi_library.connectors.kodi import KodiConnector
-from kodi_library.media_formats import stream_metadata, technical_formats
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.connectors.clz import parse_clz
+from home_media_catalog.connectors.kodi import KodiConnector
+from home_media_catalog.media_formats import stream_metadata, technical_formats
 
 
 class SnapshotCursor:

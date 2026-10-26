@@ -2,9 +2,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from kodi_library.connectors.base import ConnectorError
-from kodi_library.connectors.clz import parse_clz
-from kodi_library.connectors.kodi import KodiConnector, artwork_candidates, normalize_row
+from home_media_catalog.connectors.base import ConnectorError
+from home_media_catalog.connectors.clz import parse_clz
+from home_media_catalog.connectors.kodi import KodiConnector, artwork_candidates, normalize_row
 
 
 def test_kodi_movie_file_version_artwork_and_identifiers():
@@ -97,7 +97,7 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
     conn = MagicMock()
     conn.__enter__.return_value = conn
     conn.cursor.return_value.__enter__.return_value = cursor
-    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=conn):
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect", return_value=conn):
         connector = KodiConnector({"host": "nas", "username": "reader"})
         assert len(connector.fetch()) == 1
     conn.select_db.assert_called_once_with("MyVideos131")
@@ -117,7 +117,7 @@ def test_mariadb_snapshot_chooses_highest_version_and_never_writes():
 
 
 def test_invalid_database_is_rejected_before_connect():
-    with patch("kodi_library.connectors.kodi.pymysql.connect") as connect:
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect") as connect:
         with pytest.raises(ConnectorError):
             KodiConnector(
                 {"host": "nas", "username": "reader", "database": "MyVideos; DROP TABLE movie"}
@@ -152,7 +152,7 @@ def test_kodi_skips_orphaned_movie_view_rows_missing_from_movie_table():
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
     updates = []
-    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect", return_value=connection):
         connector = KodiConnector(
             {"host": "nas", "username": "reader", "database": "MyVideos131"},
             progress=lambda phase, current, total: updates.append((phase, current, total)),
@@ -178,7 +178,7 @@ def test_diagnostic_checks_real_movie_table_and_selected_database():
     connection = MagicMock()
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
-    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect", return_value=connection):
         result = KodiConnector(
             {"host": "nas", "username": "reader", "database": "MyVideos131"}
         ).check_movie_ids([10, 99])
@@ -187,7 +187,7 @@ def test_diagnostic_checks_real_movie_table_and_selected_database():
 
 
 def test_kodi_progress_callbacks_are_throttled_to_avoid_sqlite_write_storm(monkeypatch):
-    from kodi_library.connectors import kodi as kodi_module
+    from home_media_catalog.connectors import kodi as kodi_module
 
     timestamps = iter([10.0, 10.1, 10.2, 10.6, 10.7, 10.8])
     monkeypatch.setattr(kodi_module, "monotonic", lambda: next(timestamps))
@@ -266,7 +266,7 @@ def test_diagnostic_inspects_movie_file_paths_without_implying_disk_existence():
     connection = MagicMock()
     connection.__enter__.return_value = connection
     connection.cursor.return_value.__enter__.return_value = cursor
-    with patch("kodi_library.connectors.kodi.pymysql.connect", return_value=connection):
+    with patch("home_media_catalog.connectors.kodi.pymysql.connect", return_value=connection):
         report = KodiConnector(
             {"host": "nas", "username": "reader", "database": "MyVideos131"}
         ).inspect_movie_links([7, 8, 7])

@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from kodi_library.connectors.base import ConnectorError, Record
-from kodi_library.connectors.collection_xml import parse_collection
+from home_media_catalog.connectors.base import ConnectorError, Record
+from home_media_catalog.connectors.collection_xml import parse_collection
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
