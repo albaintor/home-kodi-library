@@ -87,6 +87,9 @@ class CloudOAuth:
         self.pending = {}
         self.pending_devices: dict[str, dict] = {}
         self._refresh_locks: dict[str, asyncio.Lock] = {}
+        # Only non-secret display information is cached here. Account identity
+        # is keyed by location, not provider, to distinguish multiple OneDrives.
+        self._account_labels: dict[str, tuple[float, str | None]] = {}
 
     def encrypt_password(self, value: str) -> str:
         return self.fernet.encrypt(value.encode("utf-8")).decode("ascii")
@@ -273,6 +276,7 @@ class CloudOAuth:
             result["_hkl_client_id"] = state["client_id"]
             encrypted = self.encrypt_password(json.dumps(result, separators=(",", ":")))
             self.store.set_playback_cloud_token(location_id, "onedrive", encrypted)
+            self._account_labels.pop(location_id, None)
             self.pending_devices.pop(request_id, None)
             return {"status": "connected"}
 
@@ -413,7 +417,70 @@ class CloudOAuth:
         serialized = json.dumps(token, separators=(",", ":"))
         encrypted = self.fernet.encrypt(serialized.encode("utf-8")).decode("ascii")
         self.store.set_playback_cloud_token(info["location_id"], provider, encrypted)
+        self._account_labels.pop(info["location_id"], None)
         return info.get("return_to", "web")
+
+    async def account_email(self, location_id: str, provider: str) -> str | None:
+        """Return a display-only email for an authenticated account.
+
+        OAuth tokens remain server-side. Missing user-information scopes or
+        providers that hide an email simply yield None; listing stays usable.
+        Avoid a provider-level cache: several accounts of the same type can
+        be connected to different playback locations.
+        """
+        now = time.monotonic()
+        cached = self._account_labels.get(location_id)
+        if cached and now - cached[0] < 900:
+            return cached[1]
+        email: str | None = None
+        try:
+            token = await self.credentials(location_id, provider)
+            access = token.get("access_token")
+            if not isinstance(access, str) or not access:
+                return None
+            headers = {"Authorization": "Bearer " + access}
+            async with httpx.AsyncClient(timeout=5, follow_redirects=False) as client:
+                if provider == "onedrive":
+                    # Files.Read already authorizes /me/drive; User.Read is not
+                    # needed just to retrieve the drive owner's email.
+                    response = await client.get(
+                        "https://graph.microsoft.com/v1.0/me/drive", headers=headers
+                    )
+                    if response.status_code == 200:
+                        owner = response.json().get("owner") or {}
+                        user = owner.get("user") or {}
+                        email = user.get("email") or user.get("userPrincipalName")
+                elif provider == "google_drive":
+                    response = await client.get(
+                        "https://www.googleapis.com/drive/v3/about",
+                        params={"fields": "user(emailAddress)"},
+                        headers=headers,
+                    )
+                    if response.status_code == 200:
+                        email = (response.json().get("user") or {}).get("emailAddress")
+                elif provider == "box":
+                    response = await client.get(
+                        "https://api.box.com/2.0/users/me",
+                        params={"fields": "login"},
+                        headers=headers,
+                    )
+                    if response.status_code == 200:
+                        email = response.json().get("login")
+                elif provider == "dropbox":
+                    response = await client.post(
+                        "https://api.dropboxapi.com/2/users/get_current_account",
+                        headers=headers,
+                    )
+                    if response.status_code == 200:
+                        email = response.json().get("email")
+        except (CloudOAuthError, httpx.HTTPError, ValueError, TypeError, AttributeError):
+            # This metadata is optional; do not break the entire list if a
+            # cloud profile endpoint or permission is unavailable.
+            email = None
+        if not isinstance(email, str) or "@" not in email or len(email) > 254:
+            email = None
+        self._account_labels[location_id] = (time.monotonic(), email)
+        return email
 
     async def credentials(self, location_id: str, provider: str) -> dict:
         """Return a live provider token server-side; refresh without exposing it."""
