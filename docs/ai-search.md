@@ -1,6 +1,6 @@
 # AI catalogue search — structured filters, semantic retrieval and conversational refinement
 
-Home Kodi Library works without an AI provider. Normal SQLite FTS5/title search
+Home Media Catalog works without an AI provider. Normal SQLite FTS5/title search
 is never disabled, and configuration and index files are not part of JSON backups.
 
 ## Server setup
@@ -226,7 +226,7 @@ A missing or broken provider is surfaced to the user: the server never silently
 pretends that a semantic result was computed. FTS5 and the standard catalogue
 remain available without an AI API key.
 
-## iOS entry point (Media Catalog 1.2 build 7)
+## iOS entry point (Home Media Catalog 1.2 build 7)
 
 Ordinary title and metadata search uses Apple's native SwiftUI `searchable`
 modifier **on the existing catalogue grid/list**, not an independent Search

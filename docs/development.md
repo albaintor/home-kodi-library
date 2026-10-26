@@ -12,13 +12,13 @@ python -m venv .venv
 pip install -e '.[dev]'
 export DATA_DIR="$PWD/data"
 export API_TOKEN="$(openssl rand -hex 32)"
-uvicorn kodi_library.app:create_app --factory --port 8099 --no-proxy-headers
+uvicorn home_media_catalog.app:create_app --factory --port 8099 --no-proxy-headers
 ```
 
 ```bash
 pytest -q
-ruff check kodi_library tests
-ruff format --check kodi_library tests
+ruff check home_media_catalog tests
+ruff format --check home_media_catalog tests
 ```
 
 Browser testing uses a synthetic catalog without personal data:

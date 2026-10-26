@@ -1,8 +1,8 @@
-# Install the Media Catalog server
+# Install the Home Media Catalog server
 
 [← Overview](../README.md) · [Features](features.md)
 
-Media Catalog runs in Docker on **Linux, Windows or macOS with Docker Desktop**, and on compatible **home servers or NAS devices**. The NAS examples below are optional; no Synology or Home Assistant installation is required.
+Home Media Catalog runs in Docker on **Linux, Windows or macOS with Docker Desktop**, and on compatible **home servers or NAS devices**. The NAS examples below are optional; no Synology or Home Assistant installation is required.
 
 ## Requirements
 
@@ -13,8 +13,8 @@ Media Catalog runs in Docker on **Linux, Windows or macOS with Docker Desktop**,
 ## Install and start with Docker
 
 ```bash
-git clone https://github.com/albaintor/home-kodi-library.git
-cd home-kodi-library
+git clone https://github.com/albaintor/home-media-catalog.git
+cd home-media-catalog
 cp .env.example .env
 openssl rand -hex 32
 ```
@@ -39,7 +39,7 @@ After an update that adds metadata support, use **Settings → Synchronize** for
 
 ### Connect the iOS/iPadOS app
 
-In the web interface, use **Settings → iOS Pairing** to generate a short-lived code. Media Catalog can discover the server over Bonjour on the local network or connect by manual URL. To advertise Bonjour, set `DISCOVERY_ENABLED=true` in `.env` and ensure mDNS reaches your network. On some Linux Docker hosts (including NAS), host networking helps; it is **not mandatory** for manual connection.
+In the web interface, use **Settings → iOS Pairing** to generate a short-lived code. Home Media Catalog can discover the server over Bonjour on the local network or connect by manual URL. To advertise Bonjour, set `DISCOVERY_ENABLED=true` in `.env` and ensure mDNS reaches your network. On some Linux Docker hosts (including NAS), host networking helps; it is **not mandatory** for manual connection.
 
 For access from outside your LAN, use HTTPS through a reverse proxy or a VPN. The iOS client needs its own authentication token; the Home Assistant Ingress secret is not for iOS.
 
@@ -104,7 +104,7 @@ A `Temporary failure in name resolution` message during `pip install` means the 
 On a Linux Docker host (including a Synology NAS), try building with host networking:
 
 ```bash
-sudo docker build --network=host -t home-kodi-library:local .
+sudo docker build --network=host -t home-media-catalog:local .
 sudo docker compose up -d --no-build
 ```
 

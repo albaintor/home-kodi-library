@@ -80,10 +80,10 @@ iOS discovery (`/api/v1/discovery`) exposes `server_version` and the same
 `data_model_version`.
 
 The server identifier contains a `+model.N` suffix derived from
-`DATA_MODEL_VERSION` in `kodi_library/compatibility.py`. **Any change
+`DATA_MODEL_VERSION` in `home_media_catalog/compatibility.py`. **Any change
 to the SQLite schema or a REST data model must increment this
 constant.** The server version suffix then changes automatically.
-The release version in `pyproject.toml` and `kodi_library/__init__.py`
+The release version in `pyproject.toml` and `home_media_catalog/__init__.py`
 is updated for each release.
 
 SQLite `PRAGMA user_version` and the mobile contract bounds

@@ -12,18 +12,18 @@ The community integration [hass_ingress](https://github.com/lovelylain/hass_ingr
 
 ```yaml
 ingress:
-  kodi_library:
+  home_media_catalog:
     work_mode: ingress
     title: Library
     icon: mdi:movie-open
     url: http://DOCKER_HOST:8099
     headers:
-      X-Kodi-Library-Ingress-Token: !secret kodi_library_ingress_token
+      X-Kodi-Library-Ingress-Token: !secret home_media_catalog_ingress_token
 ```
 
 ```yaml
 # secrets.yaml
-kodi_library_ingress_token: "SAME_RANDOM_SECRET_AS_INGRESS_TOKEN"
+home_media_catalog_ingress_token: "SAME_RANDOM_SECRET_AS_INGRESS_TOKEN"
 ```
 
 4. Restart Home Assistant. The view appears in the sidebar and authenticates using the secret forwarded server-side. Verify that it can be accessed over a mobile network.

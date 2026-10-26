@@ -92,9 +92,9 @@ curl -H "Authorization: Bearer $KODI_LIBRARY_TOKEN" \
 
 Poll `/jobs/JOB_ID` before refreshing the catalog. Each import applies an atomic snapshot: editions missing from the export are removed from that source only. On failure, the previous catalog is preserved. Only one active job per source; maximum import size is 20 MiB.
 
-Create a Kodi source with `{"name":"NAS","type":"kodi","config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"MyVideos131","tls":false}}`. `database` may be empty for automatic discovery. During PUT, a missing or `null` password preserves the previous value; an empty string clears it. Responses replace the password with `has_password`.
+Create a Kodi source with `{"name":"NAS","type":"kodi","config":{"host":"192.168.1.10","port":3306,"username":"home_media_catalog","password":"…","database":"MyVideos131","tls":false}}`. `database` may be empty for automatic discovery. During PUT, a missing or `null` password preserves the previous value; an empty string clears it. Responses replace the password with `has_password`.
 
-Before creating a source, `POST /connections/mariadb/test` accepts `{"config":{"host":"192.168.1.10","port":3306,"username":"kodi_library","password":"…","database":"","tls":false}}`. The test checks access to the views and tables used without importing the catalog. The response includes `success`, `kind`, `message`, `database`, and `available_media`.
+Before creating a source, `POST /connections/mariadb/test` accepts `{"config":{"host":"192.168.1.10","port":3306,"username":"home_media_catalog","password":"…","database":"","tls":false}}`. The test checks access to the views and tables used without importing the catalog. The response includes `success`, `kind`, `message`, `database`, and `available_media`.
 
 For a playback target, `POST /connections/kodi/test` accepts `{"host":"192.168.1.20","port":8080,"username":"kodi","password":"…","tls":false}`. It calls `JSONRPC.Ping`, `JSONRPC.Permission`, and `Application.GetProperties` without playing media. The response includes `version` and `playback_allowed`, among other fields. Kodi must be running with HTTP remote control enabled. This test does not guarantee that the instance uses the same MyVideos database; that association still needs to be configured.
 
