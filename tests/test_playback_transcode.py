@@ -5,7 +5,7 @@ import subprocess
 
 import pytest
 
-from kodi_library.playback_transcode import _mp4_fragments
+from home_media_catalog.playback_transcode import _mp4_fragments
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg unavailable")

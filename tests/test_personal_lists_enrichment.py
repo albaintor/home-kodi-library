@@ -4,11 +4,11 @@ import httpx
 import pytest
 from conftest import READ
 
-from kodi_library.connectors.base import ConnectorError, Record
-from kodi_library.connectors.clz import parse_clz
-from kodi_library.enrichment import enrich_tmdb
-from kodi_library.people import youtube_url
-from kodi_library.store import Store
+from home_media_catalog.connectors.base import ConnectorError, Record
+from home_media_catalog.connectors.clz import parse_clz
+from home_media_catalog.enrichment import enrich_tmdb
+from home_media_catalog.people import youtube_url
+from home_media_catalog.store import Store
 
 
 def seed(store):
@@ -298,7 +298,7 @@ def test_tmdb_uses_imdb_identity_and_caches_credits(client, admin):
 
     import asyncio
 
-    with patch("kodi_library.enrichment.httpx.AsyncClient", side_effect=session):
+    with patch("home_media_catalog.enrichment.httpx.AsyncClient", side_effect=session):
         payload = asyncio.run(enrich_tmdb(store.detail(mid), "test-tmdb-token"))
     assert calls[0].url.path.endswith("/find/tt1234560")
     assert calls[0].headers["authorization"] == "Bearer test-tmdb-token"
@@ -311,7 +311,7 @@ def test_tmdb_uses_imdb_identity_and_caches_credits(client, admin):
     assert (
         client.get("/api/v1/media?q=Camille&deep_search=true", headers=admin).json()["total"] == 1
     )
-    with patch("kodi_library.app.enrich_tmdb") as fetch:
+    with patch("home_media_catalog.app.enrich_tmdb") as fetch:
         assert client.post(f"/api/v1/media/{mid}/enrich", headers=admin).status_code == 200
         fetch.assert_not_called()
     store.initialize()
@@ -330,7 +330,7 @@ def test_tmdb_uses_imdb_identity_and_caches_credits(client, admin):
     async def refreshed(*args):
         return {"people": [{"name": "New Person", "category": "director"}], "trailers": []}
 
-    with patch("kodi_library.app.enrich_tmdb", side_effect=refreshed):
+    with patch("home_media_catalog.app.enrich_tmdb", side_effect=refreshed):
         updated = client.post(f"/api/v1/media/{mid}/enrich?refresh=true", headers=admin).json()
         assert updated["people"][0]["name"] == "New Person"
     assert (
@@ -350,7 +350,7 @@ def test_failed_enrichment_retains_cache(client, admin):
     async def fail(*args):
         raise ConnectorError("Unavailable")
 
-    with patch("kodi_library.app.enrich_tmdb", side_effect=fail):
+    with patch("home_media_catalog.app.enrich_tmdb", side_effect=fail):
         assert (
             client.post(f"/api/v1/media/{mid}/enrich?refresh=true", headers=admin).status_code
             == 502

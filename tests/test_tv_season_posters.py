@@ -4,8 +4,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, patch
 
-from kodi_library.connectors.base import Record
-from kodi_library.enrichment import enrich_tmdb
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.enrichment import enrich_tmdb
 
 
 def test_tv_season_poster_paths_are_cached_and_auth_protected(client, admin):
@@ -62,7 +62,7 @@ def test_tmdb_tv_enrichment_reads_season_posters_from_series_details():
 
         yield get
 
-    with patch("kodi_library.enrichment.tmdb_connection", fake_connection):
+    with patch("home_media_catalog.enrichment.tmdb_connection", fake_connection):
         enriched = asyncio.run(
             enrich_tmdb({"kind": "tvshow", "identifiers": {"tmdb": ["42"]}}, "token")
         )

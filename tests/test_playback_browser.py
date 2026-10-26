@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from kodi_library.playback_browser import _full_path, safe_path
+from home_media_catalog.playback_browser import _full_path, safe_path
 
 
 @pytest.mark.parametrize("path", ["../etc", "/etc/passwd", "folder/../private", "a\\b", "x\x00y"])
@@ -24,7 +24,7 @@ def test_protocol_errors_are_json_http_exceptions(monkeypatch):
     """SMB/SSH protocol exceptions must not become plain-text HTTP 500."""
     import asyncio
 
-    from kodi_library import playback_browser
+    from home_media_catalog import playback_browser
 
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_args: "")
     monkeypatch.setattr(
@@ -42,8 +42,8 @@ def test_protocol_errors_are_json_http_exceptions(monkeypatch):
 def test_expired_or_unreadable_cloud_credential_returns_409():
     import asyncio
 
-    from kodi_library import playback_browser
-    from kodi_library.playback_cloud import CloudOAuthError
+    from home_media_catalog import playback_browser
+    from home_media_catalog.playback_cloud import CloudOAuthError
 
     class Crypto:
         async def credentials(self, _location_id, _provider):
@@ -62,7 +62,7 @@ def test_expired_or_unreadable_cloud_credential_returns_409():
 
 
 def test_nfs_stream_suffix_offset_and_isolated_ranges(tmp_path):
-    from kodi_library.playback_browser import _sync_stream
+    from home_media_catalog.playback_browser import _sync_stream
 
     payload = bytes(range(256)) * 8
     (tmp_path / "sample.mkv").write_bytes(payload)
@@ -95,7 +95,7 @@ def test_http_range_relay_for_all_network_backends(
     monkeypatch, requested, expected_start, expected_end, expected_status
 ):
     import asyncio
-    from kodi_library import playback_browser
+    from home_media_catalog import playback_browser
 
     observed = []
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_: "")
@@ -125,7 +125,7 @@ def test_http_range_relay_for_all_network_backends(
 @pytest.mark.parametrize("requested", ["bytes=-0", "bytes=4-2", "bytes=3-4,10-11"])
 def test_reject_invalid_or_unsatisfiable_ranges(monkeypatch, requested):
     import asyncio
-    from kodi_library import playback_browser
+    from home_media_catalog import playback_browser
 
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_: "")
     monkeypatch.setattr(
@@ -146,7 +146,7 @@ def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
     import asyncio
     import httpx
 
-    from kodi_library import playback_browser
+    from home_media_catalog import playback_browser
 
     seen = []
 

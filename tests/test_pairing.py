@@ -5,9 +5,9 @@ import time
 from conftest import ADMIN, READ
 from fastapi.testclient import TestClient
 
-from kodi_library import DATA_MODEL_VERSION, __version__
-from kodi_library.app import create_app
-from kodi_library.settings import Settings
+from home_media_catalog import DATA_MODEL_VERSION, __version__
+from home_media_catalog.app import create_app
+from home_media_catalog.settings import Settings
 
 
 def test_public_discovery_is_minimal_and_pairing_is_admin_only(client, admin):

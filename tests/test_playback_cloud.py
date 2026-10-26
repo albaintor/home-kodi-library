@@ -6,8 +6,8 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 from conftest import ADMIN, READ
 
-from kodi_library.playback_cloud import CloudOAuth, CloudOAuthError
-from kodi_library.settings import Settings
+from home_media_catalog.playback_cloud import CloudOAuth, CloudOAuthError
+from home_media_catalog.settings import Settings
 
 
 def test_network_fields_persist_and_password_is_redacted(client, admin):
@@ -142,7 +142,7 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
 
     import asyncio
 
-    with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
+    with patch("home_media_catalog.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
         result = asyncio.run(manager.complete(state=state, code="one-time-code", error=""))
     assert result == "ios"
     assert len(store.saved) == 1
@@ -229,7 +229,7 @@ def test_cloud_token_auto_refresh(tmp_path):
             assert data["client_secret"] == "server-secret"
             return FakeReply()
 
-    with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
+    with patch("home_media_catalog.playback_cloud.httpx.AsyncClient", return_value=FakeHttp()):
         credential = asyncio.run(oauth.credentials("onedrive-1", "onedrive"))
     assert credential["access_token"] == "new-token"
     assert credential["refresh_token"] == "rotating-refresh"
@@ -238,7 +238,7 @@ def test_cloud_token_auto_refresh(tmp_path):
 
 
 def test_onedrive_device_configured_without_domain(tmp_path):
-    from kodi_library.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
+    from home_media_catalog.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
 
     class Store:
         def playback_oauth_app(self, provider):
@@ -257,7 +257,7 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     import asyncio
     import json
     from unittest.mock import patch
-    from kodi_library.playback_cloud import (
+    from home_media_catalog.playback_cloud import (
         MICROSOFT_DEVICE_ENDPOINT, MICROSOFT_TOKEN_ENDPOINT,
         MICROSOFT_DEVICE_VERIFICATION_URL,
     )
@@ -323,7 +323,7 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
     oauth = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), store)
     transport = Http()
     async def scenario():
-        with patch("kodi_library.playback_cloud.httpx.AsyncClient", return_value=transport):
+        with patch("home_media_catalog.playback_cloud.httpx.AsyncClient", return_value=transport):
             started = await oauth.start_device("test-location", "onedrive")
             assert started["user_code"] == "QWER-1234"
             assert started["verification_uri"] == MICROSOFT_DEVICE_VERIFICATION_URL
@@ -348,7 +348,7 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
 
 
 def test_onedrive_public_client_api_without_redirect(client, admin):
-    from kodi_library.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
+    from home_media_catalog.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
 
     saved = client.put(
         "/api/v1/playback/cloud/apps/onedrive", headers=admin,
@@ -366,7 +366,7 @@ def test_onedrive_public_client_api_without_redirect(client, admin):
 
 
 def test_onedrive_device_routes_do_not_expose_microsoft_secrets(client, admin, monkeypatch):
-    from kodi_library.playback_cloud import CloudOAuth
+    from home_media_catalog.playback_cloud import CloudOAuth
 
     cloud = client.post(
         "/api/v1/playback/locations", headers=admin,

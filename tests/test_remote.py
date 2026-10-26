@@ -8,8 +8,8 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 
-from kodi_library import remote
-from kodi_library.remote import (
+from home_media_catalog import remote
+from home_media_catalog.remote import (
     RemoteAction,
     _artwork_sources,
     _kodi_artwork_path,

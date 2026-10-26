@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 from PIL import Image
 
-from kodi_library import playback_thumbnails as thumbs
+from home_media_catalog import playback_thumbnails as thumbs
 
 
 def test_image_thumb_decodes_and_downscales():
