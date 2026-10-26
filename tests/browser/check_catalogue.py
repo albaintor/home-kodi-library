@@ -429,14 +429,22 @@ def main():
                 selected_edition = page.locator("#play-edition").input_value()
                 page.locator("#play-resume").uncheck()
                 page.locator("#play-button").click()
-                expect(page.locator("#play-status")).to_contain_text("Lecture envoyée")
+                # Acknowledged playback closes the media dialogs and opens the
+                # Kodi remote, rather than leaving a transient status behind.
+                expect(page.locator("#kodi-remote-dialog")).to_be_visible(timeout=15000)
                 assert play_calls[-1][2] == selected_edition and play_calls[-1][3] is False
-                page.locator('[data-close="play-dialog"]').click()
-                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
+                expect(page.locator("#play-dialog")).to_be_hidden()
+                expect(page.locator("#detail-dialog")).to_be_hidden()
+                page.locator("#remote-close").click()
+                expect(page.locator("#kodi-remote-dialog")).to_be_hidden()
+                # Reopening the same title retains its playback selection.
+                page.locator(".media-card").first.click()
+                expect(page.locator("#detail-dialog")).to_be_visible()
                 page.locator("#open-playback").click()
                 expect(page.locator("#play-edition")).to_have_value(selected_edition)
                 expect(page.locator("#play-resume")).not_to_be_checked()
                 page.locator('[data-close="play-dialog"]').click()
+                assert page.locator("html").evaluate("e=>e.classList.contains('modal-open')")
                 page.locator("#rating-button").hover()
                 expect(page.locator("#rating-popover")).to_be_visible()
                 expect(page.locator(".rating-choice")).to_have_count(10)
