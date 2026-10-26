@@ -117,6 +117,44 @@ The project now includes **more than collection management**:
 
 Read the [native iOS project documentation](https://github.com/albaintor/home-media-catalog-ios) (repository access may be restricted) for build and development details, or the [network/cloud playback guide](docs/playback-network-cloud.md) for server setup.
 
+### iOS evaluation, purchase and support (development version)
+
+The iOS/iPadOS client offers **10 free full-screen video playback sessions**
+for local files, NAS/SMB, cloud and network sources, including experimental
+MEMC modes. Remaining sessions are displayed under the video title while
+the on-screen controls are visible. The **11th playback session** requires
+one **non-consumable lifetime purchase** to unlock the entire native video
+player, including MEMC. The planned French price is **€2** (actual price
+and availability are provided by the App Store through StoreKit 2). Kodi
+remote control, cataloguing and AI search stay free.
+
+The in-app product identifier is
+`fr.albaintor.HomeKodiLibrary.video_player_unlock` because the underlying
+app bundle identifier is intentionally preserved across the rename. The
+purchase will not be available until it has been configured in
+App Store Connect; a missing product produces an unavailable state and a
+retry control, not a fake price. Purchase and restore are not claims of
+App Store approval.
+
+The native **Settings → Support** section links to this project's
+[home page](https://github.com/albaintor/home-media-catalog) and
+[issue tracker](https://github.com/albaintor/home-media-catalog/issues).
+The main collection context menu uses **Play on...** (French:
+**Lire sur...**) with a generic media-playback icon; this still launches
+the Kodi player selector.
+
+**For developers:** Xcode Cloud now uses the committed
+`ci_scripts/ci_post_clone.sh` hook to prepare checksum-verified repaired
+FFmpeg/PrismCore frameworks and generate a local Xcode project. The tracked
+Xcode project references the public Swift package, rather than an ignored
+`Vendor/FFmpegApple` directory that isn't available in fresh CI checkouts.
+Read the private iOS repository's
+[Xcode Cloud configuration](https://github.com/albaintor/home-media-catalog-ios/blob/main/docs/XCODE_CLOUD_SETUP.md)
+and
+[StoreKit/App Store Connect configuration](https://github.com/albaintor/home-media-catalog-ios/blob/main/docs/VIDEO_PLAYER_MONETIZATION.md)
+(requires access to the iOS repository). Dynamic-library licence compliance,
+device archiving, signing and payment acceptance remain release gates.
+
 ### Legal notices and third-party licences
 
 Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. In particular, the iOS dependency chain documents statically linked FFmpeg components with LGPLv3 requirements requiring pre-release compliance review.
