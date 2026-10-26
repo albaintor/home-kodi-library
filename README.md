@@ -61,9 +61,9 @@ The server uses its own **SQLite database**. Importing Kodi content requires an 
 
 
 
-## What's new — iOS 1.2 and AI search
+## Native iOS/iPadOS experience and AI search
 
-**Home Media Catalog for iOS/iPadOS 1.2** keeps the standard
+**Home Media Catalog for iOS/iPadOS** keeps the standard
 SwiftUI search field **inside the main catalogue**, directly filtering the
 same poster/list view on iPhone, iPad and iPhone Duo. A sparkles action in
 the **top toolbar** opens a dedicated conversational AI page through native
@@ -157,7 +157,7 @@ device archiving, signing and payment acceptance remain release gates.
 
 ### Legal notices and third-party licences
 
-Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. In particular, the iOS dependency chain documents statically linked FFmpeg components with LGPLv3 requirements requiring pre-release compliance review.
+Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. Earlier iOS/MPVKit builds used statically linked FFmpeg components with LGPLv3 obligations. The current development branch uses an experimental dynamically linked FFmpeg adapter; it still requires a pre-release source, binary, licensing and distribution-rights audit.
 
 See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). No statement here should be read as certification that a particular iOS binary or Docker release is compliant. Also review rights to media content, artwork, logos and third-party service APIs before distribution.
 
