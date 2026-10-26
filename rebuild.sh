@@ -44,7 +44,7 @@ main() {
     git pull --ff-only
 
     printf '\nConstruction de l’image…\n'
-    docker_run build --network=host -t home-kodi-library:local .
+    docker_run build --network=host -t home-media-catalog:local .
 
     printf '\nRecréation du conteneur…\n'
     compose_run up -d --no-build --force-recreate library

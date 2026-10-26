@@ -3,7 +3,7 @@ requires = ["hatchling>=1.25"]
 build-backend = "hatchling.build"
 
 [project]
-name = "kodi-library"
+name = "home-media-catalog"
 version = "0.2.0"
 description = "Independent Kodi and physical movie catalogue with a versioned API"
 requires-python = ">=3.12"
@@ -20,7 +20,7 @@ dev = ["pytest>=8,<10", "ruff>=0.12,<1"]
 browser = ["playwright>=1.50,<2"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["kodi_library"]
+packages = ["home_media_catalog"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -14,10 +14,10 @@ import uvicorn
 from fastapi import FastAPI
 from playwright.sync_api import expect, sync_playwright
 
-from kodi_library.app import create_app
-from kodi_library.connectors.base import Record
-from kodi_library.settings import Settings
-from kodi_library.store import Store
+from home_media_catalog.app import create_app
+from home_media_catalog.connectors.base import Record
+from home_media_catalog.settings import Settings
+from home_media_catalog.store import Store
 
 
 def main():
@@ -116,11 +116,11 @@ def main():
                 "status": "started",
             }
 
-        enrichment_patch = patch("kodi_library.app.enrich_tmdb", side_effect=enrichment)
-        playback_patch = patch("kodi_library.app.play", side_effect=playback)
-        tmdb_probe_patch = patch("kodi_library.app.probe_tmdb")
+        enrichment_patch = patch("home_media_catalog.app.enrich_tmdb", side_effect=enrichment)
+        playback_patch = patch("home_media_catalog.app.play", side_effect=playback)
+        tmdb_probe_patch = patch("home_media_catalog.app.probe_tmdb")
         player_probe_patch = patch(
-            "kodi_library.app.probe_player",
+            "home_media_catalog.app.probe_player",
             return_value={"version": "22.0", "playback_allowed": True},
         )
         enrichment_patch.start()
@@ -142,7 +142,7 @@ def main():
             )
             return await call_next(request)
 
-        root.mount("/api/ingress/kodi_library", app)
+        root.mount("/api/ingress/home_media_catalog", app)
         server = uvicorn.Server(
             uvicorn.Config(
                 root, host="127.0.0.1", port=8768, log_level="error", proxy_headers=False
@@ -192,10 +192,10 @@ def main():
                         body='<svg xmlns="http://www.w3.org/2000/svg" width="100" height="30"><text y="25" fill="#01b4e4">TMDB</text></svg>',
                     ),
                 )
-                prefix = "http://127.0.0.1:8768/api/ingress/kodi_library/"
+                prefix = "http://127.0.0.1:8768/api/ingress/home_media_catalog/"
                 page.goto(prefix, wait_until="domcontentloaded")
                 expect(page.locator(".media-card")).to_have_count(60)
-                expect(page).to_have_title("Media Catalog")
+                expect(page).to_have_title("Home Media Catalog")
                 expect(page.locator(".heading-row h1")).to_have_count(0)
                 expect(page.locator(".heading-row .eyebrow")).to_have_count(0)
                 expect(page.locator("#catalogue-status")).to_be_visible()
@@ -741,7 +741,7 @@ def main():
                 english_errors = []
                 english.on("pageerror", lambda error: english_errors.append(str(error)))
                 english.goto(prefix, wait_until="domcontentloaded")
-                expect(english).to_have_title("Media Catalog")
+                expect(english).to_have_title("Home Media Catalog")
                 expect(english.locator("html")).to_have_attribute("lang", "en")
                 expect(english.locator("#header-language")).to_have_value("en")
                 expect(english.locator("#lists-button")).to_have_text("My lists")

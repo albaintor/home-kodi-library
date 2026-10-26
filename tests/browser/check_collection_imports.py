@@ -9,8 +9,8 @@ from pathlib import Path
 import uvicorn
 from playwright.sync_api import expect, sync_playwright
 
-from kodi_library.app import create_app
-from kodi_library.settings import Settings
+from home_media_catalog.app import create_app
+from home_media_catalog.settings import Settings
 
 
 def main():

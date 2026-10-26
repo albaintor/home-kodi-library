@@ -3,9 +3,9 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from kodi_library.app import create_app
-from kodi_library.settings import Settings
-from kodi_library.store import Store
+from home_media_catalog.app import create_app
+from home_media_catalog.settings import Settings
+from home_media_catalog.store import Store
 
 ADMIN = "unit-test-admin-token-with-at-least-24-characters"
 READ = "unit-test-reader-token-with-at-least-24-characters"
