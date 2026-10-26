@@ -95,6 +95,7 @@ def test_http_range_relay_for_all_network_backends(
     monkeypatch, requested, expected_start, expected_end, expected_status
 ):
     import asyncio
+
     from home_media_catalog import playback_browser
 
     observed = []
@@ -125,6 +126,7 @@ def test_http_range_relay_for_all_network_backends(
 @pytest.mark.parametrize("requested", ["bytes=-0", "bytes=4-2", "bytes=3-4,10-11"])
 def test_reject_invalid_or_unsatisfiable_ranges(monkeypatch, requested):
     import asyncio
+
     from home_media_catalog import playback_browser
 
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_: "")
