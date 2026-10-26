@@ -61,7 +61,9 @@ def test_mosaic_is_saved_and_replaced_at_list_revision(client, admin):
         assert first.status_code == 200
         assert first.headers["content-type"] == "image/jpeg"
         assert "immutable" in first.headers["cache-control"]
-        with patch("home_media_catalog.list_thumbnails.compose", side_effect=AssertionError("cached")):
+        with patch(
+            "home_media_catalog.list_thumbnails.compose", side_effect=AssertionError("cached")
+        ):
             assert client.get(original, headers=admin).content == first.content
 
         assert (

@@ -149,7 +149,9 @@ def test_websocket_scan_does_not_claim_success_without_finish():
             {"method": "VideoLibrary.OnScanStarted"},
         ]
     )
-    with patch("home_media_catalog.kodi_scan.aiohttp.ClientSession", return_value=FakeSession(socket)):
+    with patch(
+        "home_media_catalog.kodi_scan.aiohttp.ClientSession", return_value=FakeSession(socket)
+    ):
         with pytest.raises(ConnectorError, match="interrompue"):
             asyncio.run(scan_until_finished({"host": "kodi"}))
 

@@ -112,7 +112,9 @@ def test_repeated_edits_supersede_unsent_values_and_success_clears_only_edited_f
     assert status["pending_count"] == 1
     assert status["pending"][0]["changes"] == {"user_rating": 9, "watched": True}
     # A later successful change clears only its field, not unrelated failed ones.
-    with patch("home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
+    with patch(
+        "home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None
+    ):
         r = client.patch(f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": False})
     assert r.status_code == 200
     status = client.get("/api/v1/writebacks/status", headers=admin).json()
@@ -167,7 +169,9 @@ def test_bulk_retry_keeps_failures_and_returns_per_source_result(client, admin):
     assert response.json()["results"][0]["result"]["status"] == "failed"
     pending = client.get("/api/v1/writebacks/pending", headers=admin).json()[0]
     assert pending["retry_count"] == 1
-    with patch("home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None):
+    with patch(
+        "home_media_catalog.writeback._write_kodi", new_callable=AsyncMock, return_value=None
+    ):
         response = client.post("/api/v1/writebacks/retry", headers=admin)
     assert response.status_code == 200
     assert response.json()["pending_count"] == 0

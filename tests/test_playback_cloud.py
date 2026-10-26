@@ -162,7 +162,8 @@ def test_cloud_oauth_configuration_diagnostics(tmp_path):
             return None
 
     settings = Settings(
-        data_dir=tmp_path, api_token=ADMIN,
+        data_dir=tmp_path,
+        api_token=ADMIN,
         cloud_oauth_clients={"onedrive": {"client_id": "1234"}},
         cloud_oauth_redirect_url="",
     )
@@ -197,7 +198,8 @@ def test_cloud_token_auto_refresh(tmp_path):
             self.cipher = cipher
 
     settings = Settings(
-        data_dir=tmp_path, api_token=ADMIN,
+        data_dir=tmp_path,
+        api_token=ADMIN,
         cloud_oauth_redirect_url="https://example.org/api/v1/playback/cloud/callback",
         cloud_oauth_clients={
             "onedrive": {"client_id": "test-client", "client_secret": "server-secret"}
@@ -205,9 +207,11 @@ def test_cloud_token_auto_refresh(tmp_path):
     )
     store = FakeStore()
     oauth = CloudOAuth(settings, store)
-    store.cipher = oauth.encrypt_password(json.dumps({
-        "access_token": "expired", "refresh_token": "rotating-refresh", "expires_at": 1
-    }))
+    store.cipher = oauth.encrypt_password(
+        json.dumps(
+            {"access_token": "expired", "refresh_token": "rotating-refresh", "expires_at": 1}
+        )
+    )
 
     class FakeReply:
         def raise_for_status(self):
@@ -244,9 +248,7 @@ def test_onedrive_device_configured_without_domain(tmp_path):
         def playback_oauth_app(self, provider):
             return None
 
-    manager = CloudOAuth(
-        Settings(data_dir=tmp_path, api_token=ADMIN), Store()
-    )
+    manager = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), Store())
     assert manager.device_configuration_error("onedrive") is None
     assert manager.device_client_id("onedrive") == ONEDRIVE_PUBLIC_CLIENT_ID
     assert not manager.configured("onedrive")
@@ -304,22 +306,31 @@ def test_onedrive_device_code_start_pending_and_success(tmp_path):
         async def post(self, url, data):
             if url == MICROSOFT_DEVICE_ENDPOINT:
                 assert data["scope"] == "offline_access Files.Read"
-                return Reply(200, {
-                    "device_code": "a-private-code", "user_code": "QWER-1234",
-                    # Microsoft may return a different verification domain.
-                    # No provider-supplied URL may become a user-facing link.
-                    "verification_uri": "https://aka.ms/devicelogin",
-                    "expires_in": 900, "interval": 5
-                })
+                return Reply(
+                    200,
+                    {
+                        "device_code": "a-private-code",
+                        "user_code": "QWER-1234",
+                        # Microsoft may return a different verification domain.
+                        # No provider-supplied URL may become a user-facing link.
+                        "verification_uri": "https://aka.ms/devicelogin",
+                        "expires_in": 900,
+                        "interval": 5,
+                    },
+                )
             assert url == MICROSOFT_TOKEN_ENDPOINT
             assert data["grant_type"] == "urn:ietf:params:oauth:grant-type:device_code"
             self.attempts += 1
             if self.attempts == 1:
                 return Reply(400, {"error": "authorization_pending"})
-            return Reply(200, {
-                "access_token": "secret-access", "refresh_token": "secret-refresh",
-                "expires_in": 3600
-            })
+            return Reply(
+                200,
+                {
+                    "access_token": "secret-access",
+                    "refresh_token": "secret-refresh",
+                    "expires_in": 3600,
+                },
+            )
 
     store = Store()
     oauth = CloudOAuth(Settings(data_dir=tmp_path, api_token=ADMIN), store)
@@ -353,7 +364,8 @@ def test_onedrive_public_client_api_without_redirect(client, admin):
     from home_media_catalog.playback_cloud import ONEDRIVE_PUBLIC_CLIENT_ID
 
     saved = client.put(
-        "/api/v1/playback/cloud/apps/onedrive", headers=admin,
+        "/api/v1/playback/cloud/apps/onedrive",
+        headers=admin,
         json={"client_id": ONEDRIVE_PUBLIC_CLIENT_ID, "redirect_url": ""},
     )
     assert saved.status_code == 200, saved.text
@@ -371,16 +383,19 @@ def test_onedrive_device_routes_do_not_expose_microsoft_secrets(client, admin, m
     from home_media_catalog.playback_cloud import CloudOAuth
 
     cloud = client.post(
-        "/api/v1/playback/locations", headers=admin,
-        json={"name": "OneDrive", "kind": "onedrive", "target": ""}
+        "/api/v1/playback/locations",
+        headers=admin,
+        json={"name": "OneDrive", "kind": "onedrive", "target": ""},
     ).json()
 
     async def mock_start(self, location_id, provider):
         assert location_id == cloud["id"] and provider == "onedrive"
         return {
-            "request_id": "x" * 32, "user_code": "BCDF-HJKL",
+            "request_id": "x" * 32,
+            "user_code": "BCDF-HJKL",
             "verification_uri": "https://microsoft.com/devicelogin",
-            "expires_in": 900, "interval": 5
+            "expires_in": 900,
+            "interval": 5,
         }
 
     async def mock_poll(self, location_id, request_id):
@@ -389,21 +404,21 @@ def test_onedrive_device_routes_do_not_expose_microsoft_secrets(client, admin, m
 
     monkeypatch.setattr(CloudOAuth, "start_device", mock_start)
     monkeypatch.setattr(CloudOAuth, "poll_device", mock_poll)
-    start = client.post(
-        f"/api/v1/playback/cloud/{cloud['id']}/device/start", headers=admin
-    )
+    start = client.post(f"/api/v1/playback/cloud/{cloud['id']}/device/start", headers=admin)
     assert start.status_code == 200
     assert "user_code" in start.json()
     assert "device_code" not in start.text
     assert "access_token" not in start.text
     polling = client.post(
         f"/api/v1/playback/cloud/{cloud['id']}/device/poll",
-        headers=admin, json={"request_id": "x" * 32},
+        headers=admin,
+        json={"request_id": "x" * 32},
     )
     assert polling.status_code == 200
     assert polling.json() == {"status": "pending", "retry_after": 5}
     invalid = client.post(
         f"/api/v1/playback/cloud/{cloud['id']}/device/poll",
-        headers=admin, json={"request_id": "../bad"},
+        headers=admin,
+        json={"request_id": "../bad"},
     )
     assert invalid.status_code == 422

@@ -108,8 +108,12 @@ def test_http_range_relay_for_all_network_backends(
     for kind in ("smb", "nfs", "ftp", "sftp"):
         response = asyncio.run(
             playback_browser.stream_location(
-                {"id": "test", "kind": kind}, "movie.mkv", requested,
-                None, None, {},
+                {"id": "test", "kind": kind},
+                "movie.mkv",
+                requested,
+                None,
+                None,
+                {},
             )
         )
         assert response.status_code == expected_status
@@ -119,8 +123,9 @@ def test_http_range_relay_for_all_network_backends(
             if expected_end is None
             else expected_end - expected_start + 1
         )
-    assert observed == [(kind, expected_start, expected_end)
-                        for kind in ("smb", "nfs", "ftp", "sftp")]
+    assert observed == [
+        (kind, expected_start, expected_end) for kind in ("smb", "nfs", "ftp", "sftp")
+    ]
 
 
 @pytest.mark.parametrize("requested", ["bytes=-0", "bytes=4-2", "bytes=3-4,10-11"])
@@ -131,14 +136,19 @@ def test_reject_invalid_or_unsatisfiable_ranges(monkeypatch, requested):
 
     monkeypatch.setattr(playback_browser, "_credentials", lambda *_: "")
     monkeypatch.setattr(
-        playback_browser, "_sync_stream",
+        playback_browser,
+        "_sync_stream",
         lambda *_: (1024, lambda: iter(())),
     )
     with pytest.raises(HTTPException) as error:
         asyncio.run(
             playback_browser.stream_location(
-                {"id": "test", "kind": "smb"}, "movie.mkv", requested,
-                None, None, {},
+                {"id": "test", "kind": "smb"},
+                "movie.mkv",
+                requested,
+                None,
+                None,
+                {},
             )
         )
     assert error.value.status_code == 416
@@ -158,26 +168,27 @@ def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
         if request.url.host == "graph.microsoft.com":
             assert request.headers.get("Authorization") == "Bearer private-access"
             return httpx.Response(
-                200, json={
-                    "@microsoft.graph.downloadUrl": "https://cdn.example.org/video.mkv"
-                }
+                200, json={"@microsoft.graph.downloadUrl": "https://cdn.example.org/video.mkv"}
             )
         assert request.url.host == "cdn.example.org"
         assert request.headers.get("Authorization") is None
         assert request.headers.get("Range") == "bytes=4-7"
         return httpx.Response(
-            206, headers={
+            206,
+            headers={
                 "Content-Range": "bytes 4-7/100",
                 "Content-Length": "4",
                 "Content-Type": "video/x-matroska",
-            }, content=b"abcd"
+            },
+            content=b"abcd",
         )
 
     original_client = httpx.AsyncClient
     transport = httpx.MockTransport(handle)
     monkeypatch.setattr(
-        playback_browser.httpx, "AsyncClient",
-        lambda **options: original_client(transport=transport, **options)
+        playback_browser.httpx,
+        "AsyncClient",
+        lambda **options: original_client(transport=transport, **options),
     )
 
     class OAuth:
@@ -189,7 +200,9 @@ def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
     async def read():
         response = await playback_browser.cloud_stream_location(
             {"id": "cloud-1", "kind": "onedrive"},
-            "opaque-file-id", "bytes=4-7", OAuth(),
+            "opaque-file-id",
+            "bytes=4-7",
+            OAuth(),
         )
         assert response.status_code == 206
         assert response.headers["content-range"] == "bytes 4-7/100"
