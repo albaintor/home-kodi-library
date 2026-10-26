@@ -1,4 +1,4 @@
-/* Media Catalog web interface translations.
+/* Home Media Catalog web interface translations.
  * French is the original UI language; English is selected using browser
  * preferences or the explicit language selector. Persist the user's choice.
  */
@@ -93,7 +93,7 @@ const EN = {
   "Affiche": "Poster",
   "Fond d’écran": "Backdrop",
   "Connexion au serveur impossible": "Cannot connect to server",
-  "Le serveur Media Catalog est momentanément inaccessible. Votre bibliothèque et vos paramètres sont conservés.": "The Media Catalog server is temporarily unreachable. Your library and settings are preserved.",
+  "Le serveur Home Media Catalog est momentanément inaccessible. Votre bibliothèque et vos paramètres sont conservés.": "The Home Media Catalog server is temporarily unreachable. Your library and settings are preserved.",
   "Réessayer maintenant": "Retry now",
   "Nouvelle tentative dans 10 s…": "Retrying in 10 s…",
   "Actualiser les médiathèques distantes": "Refresh remote Kodi libraries",

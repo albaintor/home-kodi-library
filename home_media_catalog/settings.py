@@ -22,7 +22,7 @@ class Settings:
     trusted_proxy_networks: list[str] = field(default_factory=list)
     tmdb_api_token: str = ""
     discovery_enabled: bool = False
-    discovery_name: str = "Home Kodi Library"
+    discovery_name: str = "Home Media Catalog"
     discovery_port: int = 8099
     cloud_oauth_clients: dict = field(default_factory=dict)
     cloud_oauth_redirect_url: str = ""
@@ -104,7 +104,7 @@ class Settings:
             cloud_oauth_redirect_url=os.environ.get("CLOUD_OAUTH_REDIRECT_URL", ""),
             playback_encryption_key=os.environ.get("PLAYBACK_ENCRYPTION_KEY", ""),
             playback_nfs_mounts=json.loads(os.environ.get("PLAYBACK_NFS_MOUNTS", "{}")),
-            discovery_name=os.environ.get("DISCOVERY_NAME", "Home Kodi Library"),
+            discovery_name=os.environ.get("DISCOVERY_NAME", "Home Media Catalog"),
             discovery_port=int(os.environ.get("DISCOVERY_PORT", os.environ.get("PORT", "8099"))),
         )
         value.validate()
