@@ -104,6 +104,25 @@ Recent result-editing features require the `ai_refine_results` server capability
 the client falls back to plan-only refinement on earlier servers. See the
 [full setup, privacy and API guide](docs/ai-search.md).
 
+
+## Recent playback and iOS features (October 2026)
+
+The project now includes **more than collection management**:
+
+- **Web video playback:** network location browser for SMB/FTP/SFTP and configured NFS mounts, HTTP Range streaming, thumbnails sampled from actual videos, and FFmpeg-powered progressive MP4 transcoding of selected non-browser-friendly formats. Browser formats, transcoding quality and seek behaviour depend on source, codec and server CPU.
+- **Cloud media:** OneDrive (including a Device Code flow for private NAS deployments), Google Drive and Dropbox; other providers have connector infrastructure. Cloud OAuth secrets/tokens stay encrypted on the server. Apple's iCloud Drive is accessed through **iOS Files**, not a server-side iCloud connector.
+- **Native iOS playback:** AVPlayer with an optional PrismCore/FFmpeg-assisted route, video technical information and offline video files. Importing from Files copies the selected file to app storage; it is not automatically a zero-copy third-party stream.
+- **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
+- **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
+
+Read the [native iOS project documentation](https://github.com/albaintor/home-media-catalog-ios) (repository access may be restricted) for build and development details, or the [network/cloud playback guide](docs/playback-network-cloud.md) for server setup.
+
+### Legal notices and third-party licences
+
+Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. In particular, the iOS dependency chain documents statically linked FFmpeg components with LGPLv3 requirements requiring pre-release compliance review.
+
+See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). No statement here should be read as certification that a particular iOS binary or Docker release is compliant. Also review rights to media content, artwork, logos and third-party service APIs before distribution.
+
 ## Get started
 
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
@@ -118,7 +137,7 @@ the client falls back to plan-only refinement on earlier servers. See the
 - [REST API](docs/api.md) · [OpenAPI schema](docs/openapi-v1.json)
 - [Data model and backups](docs/model.md) · [Development and testing](docs/development.md)
 
-Home Media Catalog is not a media streaming/transcoding service. Use **HTTPS or a VPN** for remote access.
+Home Media Catalog now includes an **optional network/cloud media browser and video playback workflow**. The browser can transcode some remote video formats with FFmpeg; this consumes server CPU and is not equivalent to direct/native playback. Native iOS playback uses AVPlayer and PrismCore. Use **HTTPS or a VPN** for remote access.
 
 [Support the project on Buy Me a Coffee](https://www.buymeacoffee.com/albaintor)
 
