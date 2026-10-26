@@ -163,10 +163,12 @@ graph: it prepares checksum-verified FFmpeg frameworks, generates the
 Reopen `HomeMediaCatalog.xcodeproj` when done. If required, use
 **File → Packages → Reset Package Caches** and **Resolve Package Versions**.
 
-The committed `Package.resolved` now includes **AMSMB2 4.0.3**,
-the public PrismCore/FFmpeg adapter (`prismcore-dynamic`), and
-**Swift Atomics 1.2.0**. The generated local Xcode project points to
-untracked `Vendor/FFmpegApple`: **do not commit this generated project**.
+The committed `Package.resolved` pins the two **remote** SwiftPM
+dependencies: **AMSMB2 4.0.3** and **Swift Atomics 1.2.0**. The iOS
+Xcode project currently references **local** `Vendor/FFmpegApple`
+as the PrismCore package, which is created by the helper script.
+This directory is not committed to Git; avoid committing generated
+Xcode changes after a local rebuild.
 
 #### Xcode Cloud configuration
 

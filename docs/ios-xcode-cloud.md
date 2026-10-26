@@ -2,12 +2,16 @@
 
 ## Why the previous build failed
 
-The tracked `HomeMediaCatalog.xcodeproj` referenced the local package
-`Vendor/FFmpegApple`, but `Vendor/` is ignored and does not exist in a
-fresh Xcode Cloud checkout. This caused **Could not resolve package
-dependencies** before compilation. The tracked project now references the
-public PrismCore adapter from `https://github.com/albaintor/ffmpeg-apple.git`,
-branch `prismcore-dynamic`.
+The tracked `HomeMediaCatalog.xcodeproj` references the local Swift package
+`Vendor/FFmpegApple`, but `Vendor/` is ignored and absent from fresh
+Xcode Cloud checkouts. An earlier build failed with **Could not resolve
+package dependencies** because that directory did not exist. The
+`ci_post_clone.sh` hook must create it **before package resolution**.
+The local adapter is cloned from
+`https://github.com/albaintor/ffmpeg-apple.git`, branch
+`prismcore-dynamic`. If Xcode Cloud validates packages before this hook
+runs, dependency resolution will still fail and requires a workflow/project
+configuration change.
 
 The currently published r2 FFmpeg XCFrameworks have incorrect Clang module
 metadata. To preserve the corrected local-development variant, Xcode Cloud
@@ -52,15 +56,16 @@ This is a reproducible build workaround, **not** an App Store licence audit.
    validate a signed distribution archive.
 6. Preserve the complete committed `Package.resolved` at
    `HomeMediaCatalog.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`.
-   It pins the public PrismCore adapter, AMSMB2 4.0.3, and Swift Atomics
-   1.2.0. Xcode Cloud uses this file for deterministic package resolution.
+   Because PrismCore is a **local** package, it has no remote pin here.
+   The lockfile includes AMSMB2 4.0.3 and Swift Atomics 1.2.0.
+   Xcode Cloud uses it for remote dependency resolution.
    After changing package versions, refresh and commit all relevant pins.
 
 ## Troubleshooting
 
 | Symptom | Action |
 | --- | --- |
-| `Vendor/FFmpegApple` missing | Confirm the latest `main` revision is selected and the post-clone hook runs before resolution. The **tracked** project should reference the remote adapter; the **generated** build project references the locally prepared variant. |
+| `Vendor/FFmpegApple` missing | Confirm the latest `main` revision is selected and the post-clone hook runs before resolution. The tracked Xcode project references the **local adapter**; ensure the **post-clone hook prepares it before SwiftPM resolution**. |
 | `xcodegen` missing | Inspect Homebrew installation output in the post-clone log. Xcode Cloud includes Homebrew but scripts cannot use `sudo`. |
 | `Libavutil`, module map or Clang import errors | Confirm the local repaired FFmpeg variant was generated rather than building directly with the published r2 package. |
 | Missing library/framework at runtime | Inspect app `Frameworks/`, signing and `otool -L`; `AMSMB2.framework` must be embedded. |
@@ -70,8 +75,8 @@ This is a reproducible build workaround, **not** an App Store licence audit.
 
 ## Fix local Xcode errors: missing AMSMB2 and PrismCore
 
-A fresh pull restores the tracked **remote** PrismCore package reference, while
-some developer Macs were previously using the prepared *local* FFmpeg package.
+The tracked iOS Xcode project uses a **local** PrismCore package, which must
+be present in the working copy before SwiftPM resolves dependencies.
 The SwiftPM error `Missing package product 'AMSMB2'` or
 `Missing package product 'PrismCore'` is often secondary to unresolved
 source packages, missing product checkouts or a stale Xcode cache.
@@ -106,10 +111,10 @@ xcodebuild -project HomeMediaCatalog.xcodeproj \
 
 **Important:** Local XcodeGen regeneration intentionally changes your working
 copy's `.xcodeproj` to point at `Vendor/FFmpegApple`. Do **not commit**
-that modified project; preserve the tracked **remote** package reference for
-fresh checkouts and Xcode Cloud. Running `git restore
-HomeMediaCatalog.xcodeproj/project.pbxproj` after building restores the tracked
-configuration.
+the resulting unreviewed changes: the project is versioned with a local
+PrismCore package reference, and the Git checkout omits its generated vendor
+directory. Running `git restore HomeMediaCatalog.xcodeproj/project.pbxproj`
+after building restores the tracked configuration.
 
 For Apple's process, see
 [custom Xcode Cloud build scripts](https://developer.apple.com/documentation/xcode/writing-custom-build-scripts),

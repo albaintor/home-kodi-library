@@ -95,9 +95,9 @@ zsh scripts/resolve_local_packages.sh
 ```
 
 Xcode Cloud runs the equivalent setup from `ci_scripts/ci_post_clone.sh`;
-see [public Xcode Cloud instructions](ios-xcode-cloud.md). The committed Xcode
-project points to the public PrismCore package; the local corrected FFmpeg
-variant is generated before compiling and must not be committed.
+see [public Xcode Cloud instructions](ios-xcode-cloud.md). The committed Xcode project refers to the **local** PrismCore package.
+The post-clone/local preparation downloads the public adapter and creates
+the ignored `Vendor/FFmpegApple` directory before compilation.
 The embedded AMSMB2 framework must stay present and signed; see
 `scripts/audit_dyld_launch.py`.
 
