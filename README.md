@@ -115,7 +115,7 @@ The project now includes **more than collection management**:
 - **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
-Read the [native iOS project documentation](https://github.com/albaintor/home-media-catalog-ios) (repository access may be restricted) for build and development details, or the [network/cloud playback guide](docs/playback-network-cloud.md) for server setup.
+Read the **public** [Xcode Cloud / iOS build instructions](docs/ios-xcode-cloud.md), [StoreKit / evaluation guide](docs/ios-storekit.md), and [network/cloud playback guide](docs/playback-network-cloud.md). The native source repository is private; these guides are public.
 
 ### iOS evaluation, purchase and support (development version)
 
@@ -143,17 +143,92 @@ The main collection context menu uses **Play on...** (French:
 **Lire sur...**) with a generic media-playback icon; this still launches
 the Kodi player selector.
 
-**For developers:** Xcode Cloud now uses the committed
-`ci_scripts/ci_post_clone.sh` hook to prepare checksum-verified repaired
-FFmpeg/PrismCore frameworks and generate a local Xcode project. The tracked
-Xcode project references the public Swift package, rather than an ignored
-`Vendor/FFmpegApple` directory that isn't available in fresh CI checkouts.
-Read the private iOS repository's
-[Xcode Cloud configuration](https://github.com/albaintor/home-media-catalog-ios/blob/main/docs/XCODE_CLOUD_SETUP.md)
-and
-[StoreKit/App Store Connect configuration](https://github.com/albaintor/home-media-catalog-ios/blob/main/docs/VIDEO_PLAYER_MONETIZATION.md)
-(requires access to the iOS repository). Dynamic-library licence compliance,
-device archiving, signing and payment acceptance remain release gates.
+#### Local iOS build and package resolution
+
+The native iOS source repository is private. For developers with access,
+after updating its `main` branch, quit Xcode and run:
+
+```bash
+cd /path/to/home-media-catalog-ios
+git switch main
+git pull --ff-only
+brew install xcodegen
+zsh scripts/resolve_local_packages.sh
+```
+
+This corrects `Missing package product 'AMSMB2'` and
+`Missing package product 'PrismCore'` caused by a stale/unresolved package
+graph: it prepares checksum-verified FFmpeg frameworks, generates the
+**local** Xcode project, then runs `xcodebuild -resolvePackageDependencies`.
+Reopen `HomeMediaCatalog.xcodeproj` when done. If required, use
+**File → Packages → Reset Package Caches** and **Resolve Package Versions**.
+
+The committed `Package.resolved` now includes **AMSMB2 4.0.3**,
+the public PrismCore/FFmpeg adapter (`prismcore-dynamic`), and
+**Swift Atomics 1.2.0**. The generated local Xcode project points to
+untracked `Vendor/FFmpegApple`: **do not commit this generated project**.
+
+#### Xcode Cloud configuration
+
+In Xcode Cloud, grant its GitHub App access to the private
+`albaintor/home-media-catalog-ios` repository. Use `main`,
+the shared `HomeMediaCatalog` scheme, an Xcode release supporting
+Swift 6, and automatic signing using the correct Apple Developer team.
+Keep these identifiers (the marketing rename does not alter signing):
+
+| Capability | Identifier |
+| --- | --- |
+| iOS app | `fr.albaintor.HomeKodiLibrary` |
+| Share extension | `fr.albaintor.HomeKodiLibrary.MediaShareExtension` |
+| App Group | `group.fr.albaintor.HomeMediaCatalog` |
+| iCloud | `iCloud.fr.albaintor.HomeMediaCatalog` |
+
+The checked-in executable `ci_scripts/ci_post_clone.sh` installs XcodeGen
+if necessary, repairs and verifies downloaded FFmpeg frameworks, and
+regenerates the local Xcode project **before package resolution**.
+The full [public Xcode Cloud troubleshooting guide](docs/ios-xcode-cloud.md)
+covers the GitHub permission flow, dependency cache problems, code signing,
+the package lockfile and build validation.
+
+#### StoreKit and the 10 evaluation sessions
+
+Under **App Store Connect → Monetization → In-App Purchases**, add a
+**non-consumable** product to the existing app (Bundle ID
+`fr.albaintor.HomeKodiLibrary`):
+
+| Property | Value |
+| --- | --- |
+| Reference name | Home Media Catalog — Video Player |
+| Product ID | `fr.albaintor.HomeKodiLibrary.video_player_unlock` |
+| Type | Non-Consumable, lifetime |
+| France price point | €2 (or nearest offered Apple price point) |
+| English product name | Unlock video player |
+| French product name | Débloquer le lecteur vidéo |
+
+Complete the localizations, descriptions, review screenshot, tax/banking
+agreements and review details. Sandbox and TestFlight validation are
+required before distribution. The app reads **StoreKit's real localized
+price**; missing App Store Connect configuration leaves the buy action
+unavailable. The **11th playback session** requires purchase; catalogue
+and Kodi remote playback remain free.
+
+#### Reset trial sessions while developing
+
+In a **Debug build installed with Xcode** select **Settings → Video player
+access → Reset evaluation trials** and confirm. This restores **10 free
+sessions** by deleting the UserDefaults trial count and the precise
+Keychain backup; it does **not** revoke or reset a StoreKit purchase.
+The control is not compiled into Release/TestFlight/App Store builds.
+Deleting and reinstalling the app alone may preserve its Keychain counter.
+
+Read the full public [StoreKit and developer testing guide](docs/ios-storekit.md)
+for restoring purchases, cancelled or pending transactions, 10-session
+counting, and physical-device testing.
+
+**Distribution status:** a successful SwiftPM/Xcode build is not a
+licensing certificate; FFmpeg/MPVKit dependency licences, relinking
+requirements, device archives, StoreKit approval and testing remain
+release gates.
 
 ### Legal notices and third-party licences
 
@@ -170,6 +245,8 @@ See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). No
 ## Documentation
 
 - [Server installation, configuration, updates and troubleshooting](docs/installation.md)
+- [iOS / Xcode Cloud setup, SwiftPM recovery and signing](docs/ios-xcode-cloud.md)
+- [iOS StoreKit purchases, trial and Debug reset](docs/ios-storekit.md)
 - [Features and usage](docs/features.md) · [AI search and model setup](docs/ai-search.md)
 - [Home Assistant access](docs/home-assistant.md)
 - [REST API](docs/api.md) · [OpenAPI schema](docs/openapi-v1.json)
