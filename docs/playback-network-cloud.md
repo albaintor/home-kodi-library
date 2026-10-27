@@ -1,185 +1,183 @@
-# Sources réseau et cloud
+# Network and cloud sources
 
-## Découverte locale
+## Local discovery
 
-L'application iOS découvre les services SMB/NFS/FTP/SFTP par Bonjour sur le réseau local.
-Le serveur propose \`GET /api/v1/playback/discovery\` pour détecter les annonces SSDP
-UPnP sur **son propre réseau local** (durée limitée à 1,8 seconde, sans accéder aux
-URL retournées). Sur Docker isolé en bridge ou réseau bloquant le multicast,
-la découverte peut rester vide. Autoriser le réseau local dans les réglages iOS.
+The iOS app discovers SMB/NFS/FTP/SFTP services using Bonjour on the local network.
+The server exposes `GET /api/v1/playback/discovery` to discover UPnP SSDP announcements
+on **the server's own local network** (the scan is limited to 1.8 seconds and does
+not fetch advertised URLs). Discovery may return no results in an isolated
+Docker bridge network or where multicast is blocked. Allow local-network
+access in iOS Settings.
 
-## Configuration d'une source
+## Configuring a source
 
-Les attributs protocolaires sont conservés dans la base SQLite côté serveur
-(\`host\`, \`port\`, \`share\`, \`username\`, \`workgroup\`). Les mots de passe, quand
-ils sont renseignés, sont chiffrés côté serveur avec Fernet. L'API ne renvoie
-que \`has_password\`. L'application iOS ne conserve **aucun secret** en cache
-hors connexion. Le mot de passe est conservé si une modification n'en saisit
-pas de nouveau.
+Protocol-specific properties are stored in the server's SQLite database
+(`host`, `port`, `share`, `username`, `workgroup`). Passwords, when provided,
+are encrypted server-side using Fernet. The API only returns `has_password`.
+The iOS app does **not** cache server secrets for offline use.
+Updating a source without a new password preserves the existing one.
 
-La configuration persistante n'est pas encore un navigateur de dossiers SMB,
-NFS ou FTP. Les fichiers SMB peuvent également être sélectionnés via Fichiers
-sur iOS, puis importés localement pour lecture sans serveur.
+Persisting a source configuration does not itself implement SMB, NFS or FTP
+directory browsing. SMB files can also be selected using the iOS Files app,
+then imported locally for playback without the Home Media Catalog server.
 
-## Connexions OAuth
+## OAuth connections
 
-Fournisseurs : Google Drive, OneDrive, Dropbox, Box et pCloud.
-iCloud Drive : **intégration native via Fichiers**, sans OAuth tiers.
+Providers: Google Drive, OneDrive, Dropbox, Box and pCloud.
+iCloud Drive uses **native Files integration**, with no third-party OAuth.
 
-### OneDrive sans domaine public (méthode recommandée)
+### OneDrive without a public domain (recommended method)
 
-Application Microsoft Entra déjà enregistrée pour Home Media Catalog :
-`145e06bb-b35b-4d96-8cf8-4077cd5e5528` (identifiant public, **pas un secret**).
-Le serveur l'utilise par défaut. Il est possible de le remplacer avec
-`ONEDRIVE_CLIENT_ID` ou dans les réglages avancés du fournisseur.
+Microsoft Entra application already registered for Home Media Catalog:
+`145e06bb-b35b-4d96-8cf8-4077cd5e5528` (a public client ID, **not a secret**).
+The server uses it by default. Override it using `ONEDRIVE_CLIENT_ID`
+or the provider's advanced settings.
 
-Dans **Microsoft Entra → Inscriptions d’applications → Authentification**,
-activer **Autoriser les flux de clients publics : Oui**. Les comptes pris en
-charge doivent inclure les comptes personnels Microsoft. Dans **Autorisations
-d’API**, ajouter **Microsoft Graph → Déléguées → Files.Read**.
-Aucun client secret ni URI de redirection ni domaine Internet n’est demandé
-pour ce parcours.
+In **Microsoft Entra → App registrations → Authentication**, enable
+**Allow public client flows: Yes**. Supported account types must include
+personal Microsoft accounts. Under **API permissions**, add
+**Microsoft Graph → Delegated permissions → Files.Read**.
+This flow requires no client secret, redirect URI or public Internet domain.
 
-Depuis l’interface web ou iOS, sélectionner **OneDrive → Connecter sans
-domaine** : le serveur récupère un code temporaire auprès de Microsoft,
-l’utilisateur saisit ce code sur `https://microsoft.com/devicelogin`, et
-l’interface attend la validation au rythme demandé par Microsoft. Les jetons
-sont chiffrés sur le NAS, jamais transmis au navigateur ni au téléphone.
-L’accès à Internet **sortant** du NAS est nécessaire ; aucun port entrant ne
-doit être ouvert. Ce parcours ne survit pas à un redémarrage serveur pendant
-les quelques minutes de validation.
+From either the web interface or iOS, select
+**OneDrive → Connect without a domain**. The server requests a temporary
+code from Microsoft; the user enters it at
+`https://microsoft.com/devicelogin`, and the interface polls at the interval
+specified by Microsoft. Tokens are encrypted on the NAS and never sent
+to the browser or phone.
 
-Endpoints admin : `POST /api/v1/playback/cloud/{id}/device/start` puis
-`POST /api/v1/playback/cloud/{id}/device/poll` avec `request_id`.
-Le serveur respecte `interval` et `slow_down`, expire les demandes et ne
-retourne aucun `device_code` ni jeton Microsoft.
+The NAS needs **outbound Internet access**; no incoming port needs to be
+opened. An in-progress verification does not survive a server restart.
 
-### Autres fournisseurs et ancien retour OAuth HTTPS
+Admin endpoints: `POST /api/v1/playback/cloud/{id}/device/start`, followed
+by `POST /api/v1/playback/cloud/{id}/device/poll` with `request_id`.
+The server respects `interval` and `slow_down`, expires requests and never
+returns the Microsoft `device_code` or access tokens to the client.
 
-Configurer sur le serveur ces variables d'environnement :
+### Other providers and the HTTPS OAuth callback
 
-- \`CLOUD_OAUTH_REDIRECT_URL=https://votre-domaine/api/v1/playback/cloud/callback\`
-  (HTTPS public accessible depuis le navigateur de l'iPhone, doit correspondre
-  exactement aux URI autorisées des applications enregistrées chez les fournisseurs).
-- \`CLOUD_OAUTH_CLIENTS\` : objet JSON dont chaque clé est un fournisseur,
-  et chaque valeur contient \`client_id\` et, si nécessaire, \`client_secret\`.
-  Exemple : \`{"google_drive":{"client_id":"...","client_secret":"..."},"dropbox":{"client_id":"..."}}\`.
-- \`PLAYBACK_ENCRYPTION_KEY\` : clé Fernet URL-safe base64 facultative mais
-  recommandée (\`python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"\`).
-  En son absence, clé dérivée d'API_TOKEN. Une rotation de l'API_TOKEN sans
-  clé dédiée rend les credentials existants illisibles.
+Configure these environment variables on the server:
 
-L'API administrateur \`POST /api/v1/playback/cloud/{location_id}/authorize\`
-retourne une URL d'autorisation. Le navigateur suit le consentement, le serveur
-échange le code OAuth et conserve **uniquement dans SQLite côté serveur** les
-jetons chiffrés. \`GET /api/v1/playback/cloud/status\` ne divulgue aucun jeton,
-et \`DELETE /api/v1/playback/cloud/{location_id}\` déconnecte localement.
+- `CLOUD_OAUTH_REDIRECT_URL=https://your-domain/api/v1/playback/cloud/callback`
+  (a public HTTPS address reachable from the iPhone's browser; it must
+  exactly match an authorized redirect URI in each provider's application).
+- `CLOUD_OAUTH_CLIENTS`: a JSON object keyed by provider, with a
+  `client_id` and, where required, a `client_secret`. Example:
+  `{"google_drive":{"client_id":"...","client_secret":"..."},"dropbox":{"client_id":"..."}}`.
+- `PLAYBACK_ENCRYPTION_KEY`: optional but recommended, a URL-safe base64
+  Fernet key generated using
+  `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+  Without it, the key is derived from `API_TOKEN`; rotating `API_TOKEN`
+  without a dedicated encryption key makes stored credentials unreadable.
 
-La fenêtre de connexion expire après 10 minutes et ne fonctionne pas après
-un redémarrage serveur avant retour du fournisseur. La déconnexion côté serveur
-ne révoque pas les autorisations externes ; elles se gèrent chez le fournisseur.
+The admin endpoint `POST /api/v1/playback/cloud/{location_id}/authorize`
+returns an authorization URL. After the browser obtains consent, the server
+exchanges the OAuth code and stores encrypted tokens **only in its SQLite
+database**. `GET /api/v1/playback/cloud/status` never exposes tokens, and
+`DELETE /api/v1/playback/cloud/{location_id}` disconnects that account locally.
 
-**Périmètre actuel :** connexion OAuth, conservation chiffrée et renouvellement
-automatique des jetons, navigation en lecture seule, récupération des vignettes
-et streaming HTTP Range par ticket temporaire pour Google Drive, OneDrive,
-Dropbox, Box et pCloud. Les fichiers cloud ne sont pas synchronisés localement.
-Le fonctionnement réel doit être testé avec chaque compte/fournisseur, notamment
-les redirections CDN, quotas et renouvellements des jetons.
+An authorization attempt expires after 10 minutes and cannot survive a server
+restart before the provider callback. Disconnecting on the server does not
+revoke the external grant; manage provider-side authorizations separately.
 
+**Current scope:** OAuth sign-in, encrypted storage and automatic token
+refresh, read-only browsing, thumbnail retrieval and HTTP Range streaming
+through temporary tickets for Google Drive, OneDrive, Dropbox, Box and
+pCloud. Cloud files are not automatically synchronized into offline storage.
+Real-world testing is required for each provider and account, particularly
+CDN redirects, quotas and token refresh.
 
-## Plusieurs comptes par fournisseur
+## Multiple accounts per provider
 
-Chaque compte cloud est un **emplacement distinct**, identifié par un UUID.
-Le fournisseur (`google_drive`, `dropbox`, `onedrive`, etc.) n'est jamais
-une clé de compte. Plusieurs emplacements d'un même fournisseur peuvent être
-connectés en parallèle, chacun avec ses propres identifiants OAuth chiffrés.
-La reconnexion et la déconnexion agissent sur l'emplacement sélectionné, sans
-invalider les autres comptes.
+Each cloud account is a **separate playback location**, identified by a UUID.
+The provider (`google_drive`, `dropbox`, `onedrive`, etc.) is never used
+as an account key. Several accounts of the same provider can be connected
+simultaneously, each with independent encrypted OAuth credentials.
+Reconnecting and disconnecting affect only the selected location.
 
-Dans **Paramètres → Réseau et cloud → Services cloud** (web), utiliser
-**Ajouter un compte** sous Google Drive, Dropbox ou OneDrive. Chaque compte
-est ensuite affiché individuellement avec son adresse lorsque le fournisseur
-la fournit, et ses boutons **Reconnecter** / **Déconnecter**.
+On the **web**, open **Settings → Network and cloud → Cloud services**,
+then use **Add account** for Google Drive, Dropbox or OneDrive.
+Each account is listed independently, with its email when the provider
+makes one available, and individual **Reconnect** / **Disconnect** controls.
 
-Sur **iOS**, ouvrir **Services cloud → fournisseur → Ajouter un autre compte**.
-Les comptes gérés par le serveur sont utilisables sur le web et sur les
-appareils iOS connectés au même serveur. Les comptes **directement autorisés sur
-l'iPhone** sont distincts, stockés par compte dans le Trousseau et ne sont pas
-partagés avec le serveur. Les anciennes autorisations directes continuent
-d'être reconnues après mise à jour.
+On **iOS**, open **Cloud services → provider → Add another account**.
+Server-managed accounts are available to the web client and iOS devices
+connected to that server. Accounts **authorized directly on the iPhone**
+are separate: their credentials are stored per account in the iOS Keychain
+and are not shared with the server. Existing native authorizations remain
+recognizable after upgrading the app.
 
 ### Google Drive
 
-1. Dans Google Cloud Console, activer **Google Drive API**, créer/configurer
-   l'écran de consentement OAuth et autoriser le scope
+1. In Google Cloud Console, enable the **Google Drive API**, configure the
+   OAuth consent screen and request
    `https://www.googleapis.com/auth/drive.readonly`.
-2. Créer des identifiants **OAuth 2.0 – Application Web**, avec l'URI de
-   redirection exact :
-   `https://votre-domaine/api/v1/playback/cloud/callback`.
-3. Dans les réglages web du catalogue, sous **Configuration développeur des
-   applications cloud**, enregistrer le `client_id`, le `client_secret`
-   et cette URI HTTPS sous **Google Drive**, puis ajouter autant de comptes
-   Google que nécessaire.
-4. Les dossiers, métadonnées et fichiers binaires sont consultés en lecture
-   seule. Les fichiers Google Docs/Sheets natifs ne sont pas des médias vidéo
-   binaires et ne sont pas lus par le lecteur.
+2. Create **OAuth 2.0 credentials → Web application**, registering the exact
+   redirect URI `https://your-domain/api/v1/playback/cloud/callback`.
+3. Under the catalogue's web settings,
+   **Advanced → Cloud OAuth application configuration**, save the
+   `client_id`, `client_secret` and HTTPS redirect for **Google Drive**.
+   You can then authorize as many Google accounts as needed.
+4. Files, folders and metadata are accessed read-only. Native Google
+   Docs/Sheets files are not binary video files and cannot be played
+   by the media player.
 
-**Attention :** `drive.readonly` est un scope Google restreint. Selon le mode
-de publication de votre application OAuth, Google peut imposer utilisateurs
-de test, validation OAuth et vérification de sécurité. Sans cette configuration,
-le consentement peut être bloqué par Google, indépendamment du code iOS ou web.
+**Important:** `drive.readonly` is a restricted Google OAuth scope.
+Depending on your application's publishing status, Google may require
+test users, OAuth verification and a security assessment. Without the
+necessary configuration, Google can block consent independently of the
+iOS and web implementations.
 
 ### Dropbox
 
-1. Créer une app **Scoped access** dans la Dropbox App Console.
-2. Activer **files.metadata.read** et **files.content.read** ; enregistrer
-   exactement `https://votre-domaine/api/v1/playback/cloud/callback` dans
-   les URI de redirection.
-3. Dans les paramètres web du catalogue, enregistrer l'**App key** comme
-   `client_id` sous **Dropbox** (et l'App secret si utilisé), puis ajouter
-   plusieurs comptes Dropbox depuis **Ajouter un compte**.
-4. Le flux OAuth demande un jeton renouvelable (`token_access_type=offline`).
-   La navigation et le streaming s'effectuent en lecture seule ; le navigateur
-   ne reçoit jamais le jeton OAuth enregistré sur le NAS.
+1. Create a **Scoped access** app in the Dropbox App Console.
+2. Enable **files.metadata.read** and **files.content.read** and register
+   `https://your-domain/api/v1/playback/cloud/callback` as an exact
+   OAuth redirect URI.
+3. In the catalogue's web settings, save the **App key** as Dropbox's
+   `client_id` (and the App secret where applicable), then use
+   **Add account** to authorize multiple Dropbox accounts.
+4. OAuth requests a renewable token (`token_access_type=offline`).
+   Browsing and streaming are read-only; the web browser never receives
+   the OAuth token stored on the NAS.
 
-Pour les deux services, **iOS utilise par défaut les comptes OAuth du serveur**.
-Un flux OAuth natif direct est également disponible avec des clients OAuth
-publics distincts configurés dans `OAuth.local.xcconfig` au moment de la
-compilation. Un client web OAuth ne peut pas être utilisé comme client iOS
-natif sans configuration adaptée chez le fournisseur.
+For both providers, **iOS can use server-managed OAuth accounts**.
+Direct native OAuth is also available with separate public OAuth clients
+configured at build time in `OAuth.local.xcconfig`.
+A web OAuth client cannot be used as a native iOS client without
+provider-specific configuration.
 
-## Modèle hybride retenu (iOS + web)
+## Hybrid architecture (iOS and web)
 
-- Les adresses, ports, chemins de partage et noms sont des **descripteurs**
-  centralisés sur le serveur, copiés dans l'application pour usage autonome.
-  Lorsque l'API des emplacements n'est pas encore déployée (HTTP 404), la
-  création iOS est conservée localement et mise en attente de synchronisation.
-- Le **mot de passe saisi sur iOS** est conservé dans le trousseau de l'iPhone.
-  Il n'est **pas** envoyé dans le descripteur synchronisé. Le serveur peut
-  disposer d'un **autre secret**, enregistré depuis ses propres paramètres
-  web dans sa base chiffrée. Ne pas confondre les deux.
-- **iOS OneDrive (voie recommandée)** : flux Device Code sur le serveur,
-  sans domaine ni redirection. Le code s'affiche dans l'app, l'utilisateur
-  ouvre Microsoft, autorise Files.Read, et l'app interroge le serveur selon
-  l'intervalle indiqué. Navigation et streaming utilisent ensuite les API
-  authentifiées et les tickets HTTP Range existants.
-- **iOS autres fournisseurs (ancien parcours)** : OAuth côté serveur avec
-  `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios` et retour
-  HTTPS enregistré chez le fournisseur.
-- **iOS (option autonome)** : la connexion directe à Microsoft Graph ou aux
-  autres fournisseurs reste possible si des clients OAuth publics natifs sont
-  explicitement enregistrés, et insérés dans `OAuth.local.xcconfig` au build.
-  Sans client natif, le bouton de connexion directe n'est pas présenté.
-- **Fichiers iOS (repli)** : les extensions File Provider d'OneDrive, Dropbox,
-  Google Drive, etc., utilisent leur propre authentification. Un média choisi
-  depuis Fichiers peut être importé pour lecture **hors ligne**, sans identifiant
-  OAuth propre à Home Media Catalog. Ce n'est pas du streaming direct.
-- **Configuration OneDrive sans domaine** : dans Microsoft Entra,
-  activer les flux de clients publics et les autorisations déléguées Files.Read.
-  L'application utilise le client ID public ; aucun secret ni URI HTTPS
-  n'est nécessaire. Les autres fournisseurs gardent pour l'instant leurs
-  propres consoles OAuth et leurs retours HTTPS.
+- Addresses, ports, share paths and names are **source descriptors**
+  centralized on the server and cached on the device for standalone use.
+  If the locations API is not yet deployed (HTTP 404), iOS stores new
+  descriptors locally and queues them for later synchronization.
+- **Passwords entered on iOS** remain in the iPhone Keychain. They are
+  **not** sent as part of synchronized source descriptors. The server
+  may store a **different credential** in its encrypted database,
+  entered independently via its web settings.
+- **iOS OneDrive (recommended server-managed route):** the server uses
+  Microsoft's Device Code flow without a public domain or redirect.
+  The app displays the code, the user grants `Files.Read`, and iOS
+  polls the server at the specified interval. Browsing and streaming
+  then use authenticated API endpoints and temporary HTTP Range tickets.
+- **Other providers with server-managed OAuth:** iOS invokes
+  `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios` using
+  a provider-registered HTTPS callback.
+- **Standalone iOS option:** direct connections to Microsoft Graph
+  and other cloud providers require public native OAuth clients
+  embedded in `OAuth.local.xcconfig` at build time. The native
+  sign-in option is hidden unless its client is configured.
+- **iOS Files fallback:** extensions supplied by the OneDrive, Dropbox
+  and Google Drive apps use their own authentication. An item selected
+  in Files can be imported for **offline playback**, without an OAuth
+  identity owned by Home Media Catalog. Importing is not direct streaming.
+- **OneDrive without a domain:** in Microsoft Entra, enable public client
+  flows and delegated `Files.Read` access. Device Code sign-in needs
+  no client secret or HTTPS redirect. Other providers still require
+  their own OAuth registrations and HTTPS callbacks.
 
-**Limite actuelle :** la présence d'un emplacement enregistré ne signifie
-pas qu'il peut être parcouru. Les adaptateurs SMB, FTP, NFS, UPnP et les APIs
-cloud de navigation/streaming restent distincts des écrans de configuration.
+**Current limitation:** saving a location descriptor does not guarantee
+that it can be browsed. SMB, FTP, NFS, UPnP and cloud browsing/streaming
+adapters are separate from the configuration screens.
