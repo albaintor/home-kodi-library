@@ -172,3 +172,28 @@ def test_no_external_ids_show_must_have_matching_database_provenance():
     assert 'verified_show = (' in source
     assert 'str(imported_database).casefold() == database.casefold()' in source
     assert 'kind == "tvshow"' in source
+
+
+
+def test_watched_and_personal_rating_are_updated_together_in_myvideos():
+    config = {"host": "nas", "username": "kodi",
+              "mariadb_write_enabled": True, "database": "MyVideos136"}
+    connection = FakeConnection()
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect",
+               return_value=connection):
+        outcome = write_kodi_mariadb(
+            {"config": config}, {"kind": "movie", "title": "Film"},
+            [{"metadata": {"kodi_id": 11}, "identifiers": {"tmdb": "123"}}],
+            {"watched": True, "user_rating": 7.5},
+        )
+    statements = connection.query.statements
+    assert "MyVideos136" in outcome
+    assert connection.committed and not connection.rolled_back
+    rating_updates = [(query, args) for query, args in statements
+                      if query.startswith("UPDATE movie SET userrating")]
+    play_updates = [(query, args) for query, args in statements
+                    if query.startswith("UPDATE files SET playCount")]
+    assert len(rating_updates) == 1
+    assert rating_updates[0][1] == (8, 11)
+    assert len(play_updates) == 1
+    assert play_updates[0][1] == [7]

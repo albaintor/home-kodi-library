@@ -245,3 +245,33 @@ def test_auto_retry_registered_when_server_mariadb_settings_change(client, admin
     assert updated.status_code == 200, updated.text
     assert sql.call_count == 1
     assert client.get("/api/v1/writebacks/status", headers=admin).json()["pending_count"] == 0
+
+
+
+def test_server_mariadb_fallback_clears_pending_for_watch_and_personal_rating(client, admin):
+    sid, mid = kodi_fixture(client, admin)
+    with (
+        patch(
+            "home_media_catalog.writeback._write_kodi",
+            new_callable=AsyncMock,
+            side_effect=KodiUnavailable("Kodi n'est plus joignable"),
+        ),
+        patch(
+            "home_media_catalog.writeback.write_kodi_mariadb",
+            return_value="Écriture MyVideos confirmée",
+        ) as sql,
+    ):
+        response = client.patch(
+            f"/api/v1/media/{mid}/personal",
+            json={"watched": True, "user_rating": 8},
+            headers=admin,
+        )
+    assert response.status_code == 200, response.text
+    assert response.json()["writeback"][0]["method"] == "mariadb"
+    assert response.json()["writeback"][0]["status"] == "updated"
+    assert response.json()["writeback_state"][0]["status"] == "updated"
+    assert client.get("/api/v1/writebacks/status", headers=admin).json()["pending_count"] == 0
+    assert sql.call_count == 1
+    args = sql.call_args.args
+    assert args[0]["id"] == sid
+    assert args[3] == {"watched": True, "user_rating": 8}
