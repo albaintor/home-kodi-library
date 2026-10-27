@@ -477,3 +477,58 @@ def test_cloud_account_email_uses_location_identity_and_never_exposes_tokens(tmp
         assert all("private-token" not in str(value) for value in oauth._account_labels.values())
 
     asyncio.run(check())
+
+
+def test_multiple_accounts_per_google_drive_and_dropbox_are_independent(client, admin, monkeypatch):
+    """Each cloud instance has its own location UUID and OAuth credential."""
+    from home_media_catalog.playback_cloud import CloudOAuth
+
+    async def label(_self, location_id, provider):
+        return f"{location_id[:8]}@{provider}.example"
+
+    monkeypatch.setattr(CloudOAuth, "account_email", label)
+    store = client.app.state.store
+    accounts = {}
+    for provider in ("google_drive", "dropbox"):
+        for number in (1, 2):
+            response = client.post(
+                "/api/v1/playback/locations", headers=admin,
+                json={"name": f"{provider} {number}", "kind": provider, "target": ""},
+            )
+            assert response.status_code == 201
+            location_id = response.json()["id"]
+            accounts.setdefault(provider, []).append(location_id)
+            store.set_playback_cloud_token(
+                location_id, provider, "encrypted-test-credential-" + location_id
+            )
+
+    response = client.get("/api/v1/playback/cloud/status", headers=admin)
+    assert response.status_code == 200
+    connected = {item["id"]: item for item in response.json() if item["connected"]}
+    for provider, location_ids in accounts.items():
+        assert len(set(location_ids)) == 2
+        for location_id in location_ids:
+            assert connected[location_id]["provider"] == provider
+            assert connected[location_id]["account_email"].startswith(location_id[:8])
+            assert store.playback_cloud_credentials(location_id)["provider"] == provider
+
+    # Disconnect exactly one Google Drive, preserving the other three tokens.
+    first_google, second_google = accounts["google_drive"]
+    response = client.delete(f"/api/v1/playback/cloud/{first_google}", headers=admin)
+    assert response.status_code == 204
+    assert store.playback_cloud_credentials(first_google) is None
+    assert store.playback_cloud_credentials(second_google) is not None
+    for location_id in accounts["dropbox"]:
+        assert store.playback_cloud_credentials(location_id) is not None
+
+
+def test_web_settings_can_add_and_reconnect_each_provider_instance():
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parents[1] /
+              "home_media_catalog/static/app.js").read_text()
+    assert "const accounts=locations.filter(row=>row.kind===kind)" in script
+    assert "data-cloud-place-id" in script
+    assert "data-web-cloud-disconnect" in script
+    assert "Ajouter un compte "+"" in script
+    assert "locations.find(row=>row.kind===kind)" not in script
