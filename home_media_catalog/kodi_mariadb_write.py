@@ -128,27 +128,37 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                         if not common:
                             expected_file = str(metadata.get("file") or "")
                             stored_file_id = metadata.get("file_id") or row.get("idFile")
-                            if not expected_file or not stored_file_id or kind == "tvshow":
-                                raise ConnectorError(
-                                    "Aucun identifiant externe ni fichier commun : "
-                                    "repli SQL refusé par sécurité."
-                                )
-                            cursor.execute(
-                                "SELECT p.strPath, f.strFilename FROM files f "
-                                "JOIN path p ON p.idPath=f.idPath "
-                                "WHERE f.idFile=%s",
-                                (stored_file_id,),
+                            # TV shows are aggregates with no file of their
+                            # own. An exact saved database provenance plus an
+                            # exact title and Kodi ID identifies this library
+                            # even when no external ID exists.
+                            verified_show = (
+                                kind == "tvshow"
+                                and imported_database
+                                and str(imported_database).casefold() == database.casefold()
                             )
-                            file_row = cursor.fetchone()
-                            if (
-                                file_row is None or
-                                str(file_row.get("strPath") or "") +
-                                str(file_row.get("strFilename") or "") != expected_file
-                            ):
-                                raise ConnectorError(
-                                    "Le chemin vidéo ne correspond pas à l'import Kodi : "
-                                    "écriture SQL refusée."
+                            if not verified_show:
+                                if not expected_file or not stored_file_id or kind == "tvshow":
+                                    raise ConnectorError(
+                                        "Aucun identifiant externe ni fichier commun : "
+                                        "repli SQL refusé par sécurité."
+                                    )
+                                cursor.execute(
+                                    "SELECT p.strPath, f.strFilename FROM files f "
+                                    "JOIN path p ON p.idPath=f.idPath "
+                                    "WHERE f.idFile=%s",
+                                    (stored_file_id,),
                                 )
+                                file_row = cursor.fetchone()
+                                if (
+                                    file_row is None or
+                                    str(file_row.get("strPath") or "") +
+                                    str(file_row.get("strFilename") or "") != expected_file
+                                ):
+                                    raise ConnectorError(
+                                        "Le chemin vidéo ne correspond pas à l'import Kodi : "
+                                        "écriture SQL refusée."
+                                    )
                         file_ids = []
                         if kind in ("movie", "episode"):
                             if row["idFile"] is not None:
