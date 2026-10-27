@@ -1,5 +1,6 @@
 """Integration tests for Kodi's remote scan and guarded MariaDB fallback."""
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -74,6 +75,43 @@ def test_fallback_is_used_only_on_unavailable_jsonrpc_and_audited(client, admin)
     assert audit[0]["method"] == "mariadb"
     assert audit[0]["fields"] == ["watched"]
     assert "a-nonempty-private-password" not in str(audit)
+
+
+def test_mariadb_fallback_runs_after_global_jsonrpc_deadline(client, admin):
+    """Exhausting the per-source JSON-RPC budget must not skip enabled SQL fallback."""
+    sid, mid = kodi_fixture(client, admin)
+    another = client.post(
+        "/api/v1/players",
+        headers=admin,
+        json={"name": "Chambre", "source_id": sid, "host": "other-kodi"},
+    )
+    assert another.status_code == 201, another.text
+
+    async def stalled_jsonrpc(*args, **kwargs):
+        await asyncio.sleep(2)
+
+    with (
+        patch("home_media_catalog.writeback._write_kodi", side_effect=stalled_jsonrpc),
+        patch(
+            "home_media_catalog.writeback.write_kodi_mariadb",
+            return_value="Repli MariaDB appliqué",
+        ) as sql,
+    ):
+        response = client.patch(
+            f"/api/v1/media/{mid}/personal",
+            json={"watched": True},
+            headers=admin,
+        )
+    assert response.status_code == 200, response.text
+    result = response.json()["writeback"][0]
+    assert result["status"] == "updated"
+    assert result["method"] == "mariadb"
+    assert "jsonrpc:unavailable" in result["attempts"]
+    assert result["attempts"][-1] == "mariadb:updated"
+    sql.assert_called_once()
+    assert sql.call_args.args[0]["config"]["mariadb_write_enabled"] is True
+    assert sql.call_args.args[0]["config"]["password"] == "a-nonempty-private-password"
+    assert client.get("/api/v1/writebacks/status", headers=admin).json()["pending_count"] == 0
 
 
 def test_explicitly_enabled_mariadb_fallback_handles_kodi_write_rejection(client, admin):
