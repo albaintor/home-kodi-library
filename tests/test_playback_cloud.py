@@ -492,7 +492,8 @@ def test_multiple_accounts_per_google_drive_and_dropbox_are_independent(client, 
     for provider in ("google_drive", "dropbox"):
         for number in (1, 2):
             response = client.post(
-                "/api/v1/playback/locations", headers=admin,
+                "/api/v1/playback/locations",
+                headers=admin,
                 json={"name": f"{provider} {number}", "kind": provider, "target": ""},
             )
             assert response.status_code == 201
@@ -525,10 +526,9 @@ def test_multiple_accounts_per_google_drive_and_dropbox_are_independent(client, 
 def test_web_settings_can_add_and_reconnect_each_provider_instance():
     from pathlib import Path
 
-    script = (Path(__file__).resolve().parents[1] /
-              "home_media_catalog/static/app.js").read_text()
+    script = (Path(__file__).resolve().parents[1] / "home_media_catalog/static/app.js").read_text()
     assert "const accounts=locations.filter(row=>row.kind===kind)" in script
     assert "data-cloud-place-id" in script
     assert "data-web-cloud-disconnect" in script
-    assert "Ajouter un compte "+"" in script
+    assert "Ajouter un compte " in script
     assert "locations.find(row=>row.kind===kind)" not in script
