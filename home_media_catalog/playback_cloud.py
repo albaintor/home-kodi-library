@@ -357,9 +357,12 @@ class CloudOAuth:
             params["scope"] = PROVIDERS[provider][2]
         if provider == "google_drive":
             params["access_type"] = "offline"
-            params["prompt"] = "consent"
+            params["prompt"] = "select_account consent"
         if provider == "dropbox":
             params["token_access_type"] = "offline"
+            # A new location must be able to authorize a different account,
+            # even when Dropbox already has a browser SSO session.
+            params["force_reauthentication"] = "true"
         return PROVIDERS[provider][0] + "?" + urlencode(params)
 
     async def complete(self, *, state: str, code: str, error: str, hostname: str = "") -> str:
