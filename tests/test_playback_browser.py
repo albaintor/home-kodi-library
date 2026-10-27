@@ -250,8 +250,9 @@ def test_cloud_browse_follows_provider_pagination(monkeypatch, provider):
             if len(calls) == 1:
                 assert params["pageSize"] == 200
                 assert "pageToken" not in params
-                return Response({"files": [{"id": "movie1", "name": "First.mkv"}],
-                                 "nextPageToken": "page-two"})
+                return Response(
+                    {"files": [{"id": "movie1", "name": "First.mkv"}], "nextPageToken": "page-two"}
+                )
             assert params["pageToken"] == "page-two"
             return Response({"files": [{"id": "movie2", "name": "Second.mp4"}]})
 
@@ -262,20 +263,29 @@ def test_cloud_browse_follows_provider_pagination(monkeypatch, provider):
             if len(calls) == 1:
                 assert url.endswith("/files/list_folder")
                 assert json["limit"] == 200
-                return Response({"entries": [{".tag": "file", "name": "First.mkv",
-                                              "path_display": "/First.mkv"}],
-                                 "has_more": True, "cursor": "cursor-two"})
+                return Response(
+                    {
+                        "entries": [
+                            {".tag": "file", "name": "First.mkv", "path_display": "/First.mkv"}
+                        ],
+                        "has_more": True,
+                        "cursor": "cursor-two",
+                    }
+                )
             assert url.endswith("/files/list_folder/continue")
             assert json == {"cursor": "cursor-two"}
-            return Response({"entries": [{".tag": "file", "name": "Second.mp4",
-                                          "path_display": "/Second.mp4"}],
-                             "has_more": False})
+            return Response(
+                {
+                    "entries": [
+                        {".tag": "file", "name": "Second.mp4", "path_display": "/Second.mp4"}
+                    ],
+                    "has_more": False,
+                }
+            )
 
     monkeypatch.setattr(playback_browser.httpx, "AsyncClient", lambda **_: HTTP())
     result = asyncio.run(
-        playback_browser.cloud_browse(
-            {"kind": provider, "id": "account-2"}, "", None, Crypto()
-        )
+        playback_browser.cloud_browse({"kind": provider, "id": "account-2"}, "", None, Crypto())
     )
     assert [file["name"] for file in result] == ["First.mkv", "Second.mp4"]
     assert len(calls) == 2
