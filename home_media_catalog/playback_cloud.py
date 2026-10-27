@@ -49,7 +49,7 @@ PROVIDERS = {
     "dropbox": (
         "https://www.dropbox.com/oauth2/authorize",
         "https://api.dropboxapi.com/oauth2/token",
-        "",
+        "files.metadata.read files.content.read",
     ),
     "box": (
         "https://account.box.com/api/oauth2/authorize",
