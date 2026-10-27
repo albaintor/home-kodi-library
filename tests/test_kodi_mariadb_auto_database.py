@@ -34,6 +34,8 @@ class FakeCursor:
         sql = self.statements[-1][0]
         if sql.startswith("SELECT idMovie, c00"):
             return {"idMovie": 11, "c00": "Film", "userrating": 0, "idFile": 7}
+        if sql.startswith("SELECT p.strPath, f.strFilename"):
+            return {"strPath": "/movies/", "strFilename": "film.mkv"}
         return None
 
 
@@ -109,3 +111,52 @@ def test_auto_database_refuses_mismatched_identifiers_before_update():
     assert connection.rolled_back
     assert not connection.committed
     assert not any(sql.startswith("UPDATE ") for sql, _ in connection.query.statements)
+
+
+
+def test_without_shared_external_id_requires_exact_imported_file_path():
+    config = {"host": "nas", "username": "kodi", "mariadb_write_enabled": True,
+              "database": "MyVideos136"}
+    connection = FakeConnection()
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect",
+               return_value=connection):
+        result = write_kodi_mariadb(
+            {"config": config}, {"kind": "movie", "title": "Film"},
+            [{"metadata": {"kodi_id": 11, "file_id": 7, "file": "/movies/film.mkv"},
+              "identifiers": {}}],
+            {"watched": True},
+        )
+    assert "MyVideos136" in result
+    assert connection.committed
+
+
+def test_without_external_id_or_file_path_refuses_mariadb_write():
+    config = {"host": "nas", "username": "kodi", "mariadb_write_enabled": True,
+              "database": "MyVideos136"}
+    connection = FakeConnection()
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect",
+               return_value=connection):
+        with pytest.raises(ConnectorError, match="Aucun identifiant externe ni fichier commun"):
+            write_kodi_mariadb(
+                {"config": config}, {"kind": "movie", "title": "Film"},
+                [{"metadata": {"kodi_id": 11}, "identifiers": {}}],
+                {"watched": True},
+            )
+    assert connection.rolled_back
+    assert not connection.committed
+
+
+def test_auto_schema_cannot_write_into_a_different_imported_database():
+    config = {"host": "nas", "username": "kodi", "mariadb_write_enabled": True,
+              "database": ""}
+    connection = FakeConnection()
+    with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect",
+               return_value=connection):
+        with pytest.raises(ConnectorError, match="ne correspond pas"):
+            write_kodi_mariadb(
+                {"config": config}, {"kind": "movie", "title": "Film"},
+                [{"metadata": {"kodi_id": 11, "database": "MyVideos131"},
+                  "identifiers": {"tmdb": "123"}}],
+                {"user_rating": 8},
+            )
+    assert not connection.committed

@@ -87,6 +87,13 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                     # Preflight every identity and file ID before updating anything.
                     targets = []
                     for kodi_id, edition in ids.items():
+                        metadata = edition.get("metadata") or {}
+                        imported_database = metadata.get("database")
+                        if imported_database and str(imported_database).casefold() != database.casefold():
+                            raise ConnectorError(
+                                "La base MyVideos sélectionnée ne correspond pas à celle de l'import. "
+                                "Resynchronisez la source avant d'écrire."
+                            )
                         cursor.execute(
                             f"SELECT {id_col}, c00, userrating"
                             + (", idFile" if kind in ("movie", "episode") else "")
@@ -113,12 +120,35 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                             raise ConnectorError(
                                 "Identifiants externes contradictoires : écriture refusée."
                             )
-                        # A matching Kodi numeric ID and title alone are not sufficient to
-                        # prove this is the same library. Require a matching external ID.
+                        # Old Kodi imports can lack external IDs entirely.
+                        # When that happens, require the imported *exact* video
+                        # path to match the same file row in this MyVideos DB,
+                        # in addition to the already checked ID and title.
+                        # Never rely on the numeric ID and title alone.
                         if not common:
-                            raise ConnectorError(
-                                "Aucun identifiant externe commun : repli SQL refusé par sécurité."
+                            expected_file = str(metadata.get("file") or "")
+                            stored_file_id = metadata.get("file_id") or row.get("idFile")
+                            if not expected_file or not stored_file_id or kind == "tvshow":
+                                raise ConnectorError(
+                                    "Aucun identifiant externe ni fichier commun : "
+                                    "repli SQL refusé par sécurité."
+                                )
+                            cursor.execute(
+                                "SELECT p.strPath, f.strFilename FROM files f "
+                                "JOIN path p ON p.idPath=f.idPath "
+                                "WHERE f.idFile=%s",
+                                (stored_file_id,),
                             )
+                            file_row = cursor.fetchone()
+                            if (
+                                file_row is None or
+                                str(file_row.get("strPath") or "") +
+                                str(file_row.get("strFilename") or "") != expected_file
+                            ):
+                                raise ConnectorError(
+                                    "Le chemin vidéo ne correspond pas à l'import Kodi : "
+                                    "écriture SQL refusée."
+                                )
                         file_ids = []
                         if kind in ("movie", "episode"):
                             if row["idFile"] is not None:
