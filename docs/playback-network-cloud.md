@@ -87,6 +87,67 @@ Le fonctionnement réel doit être testé avec chaque compte/fournisseur, notamm
 les redirections CDN, quotas et renouvellements des jetons.
 
 
+## Plusieurs comptes par fournisseur
+
+Chaque compte cloud est un **emplacement distinct**, identifié par un UUID.
+Le fournisseur (`google_drive`, `dropbox`, `onedrive`, etc.) n'est jamais
+une clé de compte. Plusieurs emplacements d'un même fournisseur peuvent être
+connectés en parallèle, chacun avec ses propres identifiants OAuth chiffrés.
+La reconnexion et la déconnexion agissent sur l'emplacement sélectionné, sans
+invalider les autres comptes.
+
+Dans **Paramètres → Réseau et cloud → Services cloud** (web), utiliser
+**Ajouter un compte** sous Google Drive, Dropbox ou OneDrive. Chaque compte
+est ensuite affiché individuellement avec son adresse lorsque le fournisseur
+la fournit, et ses boutons **Reconnecter** / **Déconnecter**.
+
+Sur **iOS**, ouvrir **Services cloud → fournisseur → Ajouter un autre compte**.
+Les comptes gérés par le serveur sont utilisables sur le web et sur les
+appareils iOS connectés au même serveur. Les comptes **directement autorisés sur
+l'iPhone** sont distincts, stockés par compte dans le Trousseau et ne sont pas
+partagés avec le serveur. Les anciennes autorisations directes continuent
+d'être reconnues après mise à jour.
+
+### Google Drive
+
+1. Dans Google Cloud Console, activer **Google Drive API**, créer/configurer
+   l'écran de consentement OAuth et autoriser le scope
+   `https://www.googleapis.com/auth/drive.readonly`.
+2. Créer des identifiants **OAuth 2.0 – Application Web**, avec l'URI de
+   redirection exact :
+   `https://votre-domaine/api/v1/playback/cloud/callback`.
+3. Dans les réglages web du catalogue, sous **Configuration développeur des
+   applications cloud**, enregistrer le `client_id`, le `client_secret`
+   et cette URI HTTPS sous **Google Drive**, puis ajouter autant de comptes
+   Google que nécessaire.
+4. Les dossiers, métadonnées et fichiers binaires sont consultés en lecture
+   seule. Les fichiers Google Docs/Sheets natifs ne sont pas des médias vidéo
+   binaires et ne sont pas lus par le lecteur.
+
+**Attention :** `drive.readonly` est un scope Google restreint. Selon le mode
+de publication de votre application OAuth, Google peut imposer utilisateurs
+de test, validation OAuth et vérification de sécurité. Sans cette configuration,
+le consentement peut être bloqué par Google, indépendamment du code iOS ou web.
+
+### Dropbox
+
+1. Créer une app **Scoped access** dans la Dropbox App Console.
+2. Activer **files.metadata.read** et **files.content.read** ; enregistrer
+   exactement `https://votre-domaine/api/v1/playback/cloud/callback` dans
+   les URI de redirection.
+3. Dans les paramètres web du catalogue, enregistrer l'**App key** comme
+   `client_id` sous **Dropbox** (et l'App secret si utilisé), puis ajouter
+   plusieurs comptes Dropbox depuis **Ajouter un compte**.
+4. Le flux OAuth demande un jeton renouvelable (`token_access_type=offline`).
+   La navigation et le streaming s'effectuent en lecture seule ; le navigateur
+   ne reçoit jamais le jeton OAuth enregistré sur le NAS.
+
+Pour les deux services, **iOS utilise par défaut les comptes OAuth du serveur**.
+Un flux OAuth natif direct est également disponible avec des clients OAuth
+publics distincts configurés dans `OAuth.local.xcconfig` au moment de la
+compilation. Un client web OAuth ne peut pas être utilisé comme client iOS
+natif sans configuration adaptée chez le fournisseur.
+
 ## Modèle hybride retenu (iOS + web)
 
 - Les adresses, ports, chemins de partage et noms sont des **descripteurs**
