@@ -385,17 +385,32 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                 # IDs are provider opaque IDs, not local file paths.
                 if "/" in parent or "'" in parent:
                     raise HTTPException(422, "Invalid Google Drive folder ID.")
-                response = await client.get(
-                    "https://www.googleapis.com/drive/v3/files",
-                    headers=headers,
-                    params={
+                nodes = []
+                next_page = None
+                visited = set()
+                for _ in range(100):
+                    params = {
                         "q": f"'{parent}' in parents and trashed = false",
                         "fields": "nextPageToken,files(id,name,mimeType,size)",
-                        "page_size": 200,
-                    },
-                )
-                response.raise_for_status()
-                nodes = response.json().get("files", [])
+                        "pageSize": 200,
+                    }
+                    if next_page:
+                        params["pageToken"] = next_page
+                    response = await client.get(
+                        "https://www.googleapis.com/drive/v3/files",
+                        headers=headers, params=params,
+                    )
+                    response.raise_for_status()
+                    batch = response.json()
+                    nodes.extend(batch.get("files", []))
+                    next_page = batch.get("nextPageToken")
+                    if not next_page:
+                        break
+                    if next_page in visited:
+                        raise HTTPException(502, "Google Drive returned a repeated page token.")
+                    visited.add(next_page)
+                else:
+                    raise HTTPException(413, "Too many Google Drive items in this folder.")
                 return [
                     {
                         "name": x["name"],
@@ -422,12 +437,28 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                     for x in response.json().get("value", [])
                 ]
             if kind == "dropbox":
-                response = await client.post(
-                    "https://api.dropboxapi.com/2/files/list_folder",
-                    headers=headers,
-                    json={"path": "/" + path if path else "", "limit": 200},
-                )
-                response.raise_for_status()
+                nodes = []
+                cursor = None
+                visited = set()
+                for _ in range(100):
+                    if cursor:
+                        endpoint = "https://api.dropboxapi.com/2/files/list_folder/continue"
+                        payload = {"cursor": cursor}
+                    else:
+                        endpoint = "https://api.dropboxapi.com/2/files/list_folder"
+                        payload = {"path": "/" + path if path else "", "limit": 200}
+                    response = await client.post(endpoint, headers=headers, json=payload)
+                    response.raise_for_status()
+                    page = response.json()
+                    nodes.extend(page.get("entries", []))
+                    if not page.get("has_more"):
+                        break
+                    cursor = page.get("cursor")
+                    if not cursor or cursor in visited:
+                        raise HTTPException(502, "Dropbox returned an invalid folder cursor.")
+                    visited.add(cursor)
+                else:
+                    raise HTTPException(413, "Too many Dropbox items in this folder.")
                 return [
                     {
                         "name": x["name"],
@@ -435,7 +466,7 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                         "is_dir": x.get(".tag") == "folder",
                         "size": x.get("size", 0),
                     }
-                    for x in response.json().get("entries", [])
+                    for x in nodes
                 ]
             if kind == "box":
                 response = await client.get(
