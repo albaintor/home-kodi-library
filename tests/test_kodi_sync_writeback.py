@@ -210,3 +210,38 @@ def test_mariadb_writer_secret_redacted(client, admin):
     assert source["config"]["has_password"] is True
     assert "has_write_password" not in source["config"]
     assert source["config"]["mariadb_write_enabled"] is True
+
+
+
+
+def test_auto_retry_registered_when_server_mariadb_settings_change(client, admin):
+    sid, mid = kodi_fixture(client, admin)
+    with patch(
+        "home_media_catalog.writeback._write_kodi", new_callable=AsyncMock,
+        side_effect=KodiUnavailable("Kodi offline"),
+    ), patch(
+        "home_media_catalog.writeback.write_kodi_mariadb",
+        side_effect=ConnectorError("MariaDB offline"),
+    ):
+        response = client.patch(
+            f"/api/v1/media/{mid}/personal", headers=admin, json={"watched": True}
+        )
+    assert response.status_code == 200
+    assert response.json()["writeback_state"][0]["status"] == "pending"
+    with patch(
+        "home_media_catalog.writeback._write_kodi", new_callable=AsyncMock,
+        side_effect=KodiUnavailable("Kodi offline"),
+    ), patch(
+        "home_media_catalog.writeback.write_kodi_mariadb",
+        return_value="Repli MariaDB appliqué",
+    ) as sql:
+        updated = client.put(
+            f"/api/v1/sources/{sid}", headers=admin,
+            json={"name": "Kodi NAS", "type": "kodi",
+                  "config": {"host": "nas", "database": "MyVideos131",
+                             "username": "reader", "password": None,
+                             "mariadb_write_enabled": True, "port": 3307}},
+        )
+    assert updated.status_code == 200, updated.text
+    assert sql.call_count == 1
+    assert client.get("/api/v1/writebacks/status", headers=admin).json()["pending_count"] == 0

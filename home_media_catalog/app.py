@@ -1084,6 +1084,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await asyncio.to_thread(store.record_writebacks, media_id, changes, result, replay=True)
         return {"pending_id": pending_id, "media_id": media_id, "result": result[0]}
 
+    async def retry_pending_source_writebacks(source_id: str) -> None:
+        """Retry only this source's pending records after its SQL settings change."""
+        async with personal_edit_lock:
+            pending = await asyncio.to_thread(store.pending_writebacks, limit=500)
+            for item in pending:
+                if item["source_id"] != source_id:
+                    continue
+                try:
+                    await replay_writeback_item(item["id"])
+                except HTTPException as exc:
+                    _LOG.warning(
+                        "Pending Kodi writeback %s cannot be replayed: %s",
+                        item["id"], exc.detail,
+                    )
+                except Exception:
+                    _LOG.exception(
+                        "Unexpected source writeback retry error for %s", item["id"]
+                    )
+
     @app.post(
         API + "/writebacks/pending/{pending_id}/retry",
         response_model=ReplayResponse,
@@ -2028,10 +2047,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Sources"],
         dependencies=[Depends(writable)],
     )
-    def update_source(source_id: str, data: SourceInput):
+    def update_source(source_id: str, data: SourceInput, background_tasks: BackgroundTasks):
         if source_id in sync.active:
             raise HTTPException(409, "Wait for this source's current job before editing it.")
-        if not store.source(source_id):
+        previous = store.source(source_id, private=True)
+        if not previous:
             raise HTTPException(404, "Unknown source.")
         if data.type == "kodi" and bool(data.config.host) != bool(data.config.username):
             raise HTTPException(422, "MariaDB fallback requires both host and username.")
@@ -2047,9 +2067,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # MyVideos schema in both read and write mode. The SQL writer
         # verifies the record identity before any UPDATE.
         try:
-            return store.save_source(unsecret(data), source_id)
+            saved = store.save_source(unsecret(data), source_id)
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
+        # A pending edit produced before SQL fallback was enabled cannot be
+        # sent again via an idempotent PATCH. Re-evaluate it against the newly
+        # configured *server-side* source credentials without any iOS secrets.
+        if data.type == "kodi" and data.config.mariadb_write_enabled:
+            old_config = previous.get("config") or {}
+            new_config = store.source(source_id, private=True)["config"]
+            fields = ("mariadb_write_enabled", "host", "port", "username",
+                      "password", "database", "tls", "ca_file")
+            if any(old_config.get(key) != new_config.get(key) for key in fields):
+                background_tasks.add_task(retry_pending_source_writebacks, source_id)
+        return saved
 
     @app.delete(
         API + "/sources/{source_id}",
