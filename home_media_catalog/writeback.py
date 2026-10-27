@@ -284,7 +284,6 @@ async def propagate_personal(
         # Multiple players can share one Kodi database. Only one success needed.
         errors = []
         attempts = []
-        offline = True
         deadline = asyncio.get_running_loop().time() + 1.0
         for player in candidates:
             remaining = deadline - asyncio.get_running_loop().time()
@@ -314,18 +313,19 @@ async def propagate_personal(
                 attempts.append("jsonrpc:unavailable")
                 errors.append(str(exc))
             except ConnectorError as exc:
-                offline = False
                 attempts.append("jsonrpc:rejected")
                 errors.append(str(exc))
             except Exception:
-                offline = False
                 attempts.append("jsonrpc:error")
                 _LOG.exception("Unexpected Kodi writeback error for source %s", source_id)
                 errors.append("Erreur inattendue lors de la mise à jour Kodi.")
         else:
-            # SQL is attempted only when all configured Kodi endpoints are
-            # unreachable and the administrator explicitly enabled fallback.
-            if offline and source.get("config", {}).get("mariadb_write_enabled"):
+            # An explicitly authorized SQL fallback is also appropriate
+            # when Kodi is reachable but refuses library updates. SQL uses
+            # separate server-side credentials and independently verifies
+            # the exact MyVideos media identity before writing. Therefore
+            # JSON-RPC permission failures must not strand pending edits.
+            if source.get("config", {}).get("mariadb_write_enabled"):
                 try:
                     warning = await asyncio.to_thread(
                         write_kodi_mariadb, source, detail, editions, changes

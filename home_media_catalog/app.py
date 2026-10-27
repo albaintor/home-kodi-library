@@ -2012,11 +2012,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if (
             data.type == "kodi"
             and data.config.mariadb_write_enabled
-            and (not data.config.host or not data.config.database)
+            and (not data.config.host or not data.config.username)
         ):
             raise HTTPException(
-                422, "MariaDB write fallback requires a host and explicit MyVideos database."
+                422, "MariaDB write fallback requires a host and username."
             )
+        # An empty database intentionally selects the newest visible
+        # MyVideos schema in both read and write mode. The SQL writer
+        # verifies the record identity before any UPDATE.
         return store.save_source(unsecret(data))
 
     @app.put(
@@ -2035,11 +2038,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if (
             data.type == "kodi"
             and data.config.mariadb_write_enabled
-            and (not data.config.host or not data.config.database)
+            and (not data.config.host or not data.config.username)
         ):
             raise HTTPException(
-                422, "MariaDB write fallback requires a host and explicit MyVideos database."
+                422, "MariaDB write fallback requires a host and username."
             )
+        # An empty database intentionally selects the newest visible
+        # MyVideos schema in both read and write mode. The SQL writer
+        # verifies the record identity before any UPDATE.
         try:
             return store.save_source(unsecret(data), source_id)
         except ValueError as exc:

@@ -76,7 +76,7 @@ def test_fallback_is_used_only_on_unavailable_jsonrpc_and_audited(client, admin)
     assert "a-nonempty-private-password" not in str(audit)
 
 
-def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
+def test_explicitly_enabled_mariadb_fallback_handles_kodi_write_rejection(client, admin):
     sid, mid = kodi_fixture(client, admin)
     with (
         patch(
@@ -84,19 +84,43 @@ def test_jsonrpc_rejection_never_triggers_sql_fallback(client, admin):
             new_callable=AsyncMock,
             side_effect=ConnectorError("UpdateData refusé"),
         ),
-        patch("home_media_catalog.writeback.write_kodi_mariadb") as sql,
+        patch(
+            "home_media_catalog.writeback.write_kodi_mariadb",
+            return_value="Repli SQL appliqué",
+        ) as sql,
     ):
         response = client.patch(
             f"/api/v1/media/{mid}/personal", json={"user_rating": 9}, headers=admin
         )
-    assert response.status_code == 200
+    assert response.status_code == 200, response.text
     result = response.json()["writeback"][0]
-    assert result["status"] == "failed"
-    assert result["attempts"] == ["jsonrpc:rejected"]
-    sql.assert_not_called()
-    assert (
-        client.get(f"/api/v1/media/{mid}/writeback", headers=admin).json()[0]["status"] == "failed"
+    assert result["status"] == "updated"
+    assert result["method"] == "mariadb"
+    assert result["attempts"] == ["jsonrpc:rejected", "mariadb:updated"]
+    assert response.json()["writeback_state"][0]["status"] == "updated"
+    sql.assert_called_once()
+    assert client.get("/api/v1/writebacks/status", headers=admin).json()["pending_count"] == 0
+
+
+def test_server_allows_automatic_myvideos_with_enabled_writeback(client, admin):
+    response = client.post(
+        "/api/v1/sources",
+        headers=admin,
+        json={"name": "Auto Kodi", "type": "kodi",
+              "config": {"host": "nas", "username": "reader",
+                         "database": "", "mariadb_write_enabled": True}},
     )
+    assert response.status_code == 201, response.text
+    assert response.json()["config"]["mariadb_write_enabled"] is True
+    assert response.json()["config"]["database"] == ""
+    source_id = response.json()["id"]
+    edited = client.put(
+        f"/api/v1/sources/{source_id}", headers=admin,
+        json={"name": "Auto Kodi", "type": "kodi",
+              "config": {"host": "nas", "username": "reader",
+                         "database": "", "mariadb_write_enabled": True}},
+    )
+    assert edited.status_code == 200, edited.text
 
 
 def test_kodi_scan_finished_triggers_local_sync(client, admin):
