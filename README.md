@@ -4,32 +4,7 @@
 
 **Bring your Kodi library and physical movie collection together.**
 
-Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
-
-## Home Media Catalog naming and compatibility
-
-The repository is named `home-media-catalog`, the Python module is
-`home_media_catalog` (previously `kodi_library`), and the Python
-distribution is `home-media-catalog`. Docker commands and deployment
-files have been updated accordingly.
-
-Upgrading an existing NAS installation preserves the `library` Compose
-service, the `./data:/data` volume, `.env` configuration keys, API
-tokens, paired devices, and `/api/v1/…` routes. The
-`home-kodi-library` service identifier and JSON backup format, along
-with the `kodi_library_preferences_v1` and `kodi_library_view` browser
-preference keys, are intentionally retained for iOS compatibility and
-data preservation.
-
-The default Docker container name is now `home-media-catalog`.
-Both `HOME_MEDIA_CATALOG_CONTAINER_NAME` and the legacy
-`KODI_LIBRARY_CONTAINER_NAME` environment variables are supported.
-The image is named `home-media-catalog:local`. To rebuild an existing
-installation, run `docker compose up -d --build --force-recreate library`
-and check `/healthz`; do not remove `.env` or `./data`.
-
-Kodi-specific modules, such as `connectors/kodi.py`, keep their names
-because they identify the actual Kodi integration.
+Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its (optional) Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
 
 
 ## Highlights
