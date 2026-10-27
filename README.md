@@ -6,30 +6,30 @@
 
 Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
 
-## Renommage Home Media Catalog et compatibilité
+## Home Media Catalog naming and compatibility
 
-Le dépôt se nomme `home-media-catalog`, le module Python
-`home_media_catalog` (anciennement `kodi_library`) et la distribution
-Python `home-media-catalog`. Les commandes Docker et les fichiers de
-déploiement ont été mis à jour.
+The repository is named `home-media-catalog`, the Python module is
+`home_media_catalog` (previously `kodi_library`), and the Python
+distribution is `home-media-catalog`. Docker commands and deployment
+files have been updated accordingly.
 
-Une mise à jour NAS conserve le service Compose `library`, le volume
-`./data:/data`, les clés de la configuration `.env`, les jetons, les
-appairages et les chemins d’API `/api/v1/…`. L'identifiant de service
-`home-kodi-library`, le format des sauvegardes JSON `home-kodi-library`
-et les clés de préférences navigateur `kodi_library_preferences_v1` /
-`kodi_library_view` sont volontairement conservés pour garantir la
-compatibilité de l’application iOS et la conservation des données.
+Upgrading an existing NAS installation preserves the `library` Compose
+service, the `./data:/data` volume, `.env` configuration keys, API
+tokens, paired devices, and `/api/v1/…` routes. The
+`home-kodi-library` service identifier and JSON backup format, along
+with the `kodi_library_preferences_v1` and `kodi_library_view` browser
+preference keys, are intentionally retained for iOS compatibility and
+data preservation.
 
-Le nom Docker par défaut devient `home-media-catalog`, avec prise en
-charge de `HOME_MEDIA_CATALOG_CONTAINER_NAME` et de l'ancienne variable
-`KODI_LIBRARY_CONTAINER_NAME`. L'image se nomme
-`home-media-catalog:local`. Pour reconstruire une installation existante,
-utiliser `docker compose up -d --build --force-recreate library` puis
-vérifier `/healthz`, sans supprimer `.env` ou `./data`.
+The default Docker container name is now `home-media-catalog`.
+Both `HOME_MEDIA_CATALOG_CONTAINER_NAME` and the legacy
+`KODI_LIBRARY_CONTAINER_NAME` environment variables are supported.
+The image is named `home-media-catalog:local`. To rebuild an existing
+installation, run `docker compose up -d --build --force-recreate library`
+and check `/healthz`; do not remove `.env` or `./data`.
 
-Les modules Kodi, par exemple `connectors/kodi.py`, gardent leur nom :
-ils désignent une intégration métier.
+Kodi-specific modules, such as `connectors/kodi.py`, keep their names
+because they identify the actual Kodi integration.
 
 
 ## Highlights
