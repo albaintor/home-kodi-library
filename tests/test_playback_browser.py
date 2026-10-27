@@ -216,6 +216,7 @@ def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
 @pytest.mark.parametrize("provider", ["google_drive", "dropbox"])
 def test_cloud_browse_follows_provider_pagination(monkeypatch, provider):
     import asyncio
+
     from home_media_catalog import playback_browser
 
     class Crypto:
