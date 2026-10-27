@@ -398,7 +398,8 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                         params["pageToken"] = next_page
                     response = await client.get(
                         "https://www.googleapis.com/drive/v3/files",
-                        headers=headers, params=params,
+                        headers=headers,
+                        params=params,
                     )
                     response.raise_for_status()
                     batch = response.json()
