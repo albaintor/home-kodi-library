@@ -116,6 +116,8 @@ def test_oauth_pkce_and_single_use_callback(tmp_path):
     state = query["state"][0]
     assert query["client_id"] == ["test-client"]
     assert query["token_access_type"] == ["offline"]
+    assert query["force_reauthentication"] == ["true"]
+    assert query["scope"] == ["files.metadata.read files.content.read"]
     assert query["code_challenge_method"] == ["S256"]
     assert query["code_challenge"][0]
     assert "access_token" not in url
