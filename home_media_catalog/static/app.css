@@ -577,3 +577,15 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .network-browser-items.is-grid .network-browser-tile-icon:has(img){width:100%;height:114px;display:flex;align-items:center;justify-content:center}
 .network-browser-items.is-list .network-browser-tile-icon:has(img){width:68px;height:54px;display:flex;align-items:center;justify-content:center}
 .network-browser-items.is-list .network-browser-thumbnail{width:68px;height:54px;max-height:54px;object-fit:cover}
+
+/* Grid cards are <button>s, which vertically centre their content by default:
+   cards with fewer badges pushed their poster down and away from the ⋯ action
+   button. Anchor every card to the top so posters and actions line up per row. */
+.poster-grid .media-card-entry{transition:transform .17s ease}
+.poster-grid .media-card-entry:hover{transform:translateY(-3px)}
+.poster-grid .media-card{display:flex;flex-direction:column;justify-content:flex-start;align-items:stretch}
+.poster-grid .media-card:hover{transform:none}
+.poster-grid .media-card>.poster{flex:none}
+.poster-grid .media-card>span{display:block;min-width:0}
+.poster-grid .media-actions-trigger{top:8px;left:8px}
+@media(max-width:700px){.poster-grid .media-actions-trigger{top:6px;left:6px}}
