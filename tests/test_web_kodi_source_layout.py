@@ -12,3 +12,10 @@ def test_kodi_source_settings_actions_are_a_full_width_second_row():
     assert "max-width:none;width:100%;justify-content:flex-start" in stylesheet
     assert ".kodi-source-card>.connection-actions button{flex:0 0 auto}" in stylesheet
     assert ".source-kodi-instances{grid-column:1/-1;" in stylesheet
+
+
+def test_mariadb_write_fallback_keeps_automatic_myvideos_database_valid():
+    js = (ROOT / "home_media_catalog/static/app.js").read_text(encoding="utf-8")
+    assert "if(fallback.mariadb_write_enabled&&!fallback.host)" in js
+    assert "fallback.mariadb_write_enabled&&(!fallback.host||!fallback.database)" not in js
+    assert "Une base vide utilise automatiquement le MyVideos le plus récent" in js
