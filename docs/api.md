@@ -47,6 +47,11 @@ contract and keep the discovery handshake backwards-readable.
 | GET/POST | `/players` | List/create a Kodi playback target |
 | PUT/DELETE | `/players/{id}` | Update/remove a target |
 | POST | `/players/{id}/play` | Play media, with optional edition and resume |
+| POST | `/players/{id}/local-play` | Short-lived ticket to stream a Kodi file (byte ranges via Kodi VFS) |
+| GET | `/players/{id}/local-media/{ticket}/probe` | Web player: duration, video details, audio/subtitle tracks and chapters (FFprobe) |
+| GET | `/players/{id}/local-media/{ticket}/subtitles/{stream}.vtt` | Text subtitle stream as WebVTT (extracted once, cached) |
+| GET | `/players/{id}/local-media/{ticket}/stream.mp4` | Fragmented MP4 from `start` seconds with `audio` stream, optional burned-in bitmap `subtitle`, `copy=h264,hevc` codecs the client can decode and `height` cap |
+| GET | `/playback/media/{location_id}/probe`, `/subtitles/{stream}.vtt`, `/stream.mp4` | Same three operations for a file in an SMB/NFS/FTP/SFTP playback location (`path` query parameter) |
 | GET | `/openapi.json` | Typed OpenAPI contract; authentication required |
 
 `/healthz` exposes only process health without authentication. `/docs` is protected and exposes Swagger UI; its Swagger assets are served from FastAPI's default CDN.

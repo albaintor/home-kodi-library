@@ -64,6 +64,25 @@ Full file paths are visible on media pages, with a **Copy path** action (on HTTP
 
 If no player is associated with the source, the media page offers **Configure a Kodi player**. The Kodi-logo button opens playback options: player, file/version, and resume position. HTTP API and file-read permission tests are available for saved players under **Settings**. Playback launch errors remain visible in the playback dialog. A successful command means Kodi accepted it; access to the file still depends on Kodi's media storage permissions.
 
-Web browsers do not provide native SMB/NFS playback. Opening these protocol links depends on a local protocol handler and its share permissions. `file://` links are also restricted from web pages. There is no universal local-playback link; users can open the path in a compatible player with access to media files. This release does **not** stream or transcode video files over HTTP. [Browser protocol handlers](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Kodi Player.Open](https://kodi.wiki/view/JSON-RPC_API/v13.11).
+Web browsers do not provide native SMB/NFS playback. Opening these protocol links depends on a local protocol handler and its share permissions. `file://` links are also restricted from web pages. There is no universal local-playback link; users can open the path in a compatible player with access to media files. To watch in the browser, use the web player described below. [Browser protocol handlers](https://developer.mozilla.org/en-US/docs/Web/API/Navigator/registerProtocolHandler) · [Kodi Player.Open](https://kodi.wiki/view/JSON-RPC_API/v13.11).
+
+## Web video player
+
+**Play in the browser** (Kodi playback dialog) and files opened from the network explorer use a full-window player modelled on the iOS app's controls:
+
+- **Audio tracks**, **subtitles** (size S–XL and ±timing offset) and **chapters** (list, markers on the timeline, previous/next), detected server-side with FFprobe.
+- Aspect ratio (fit, fill, stretch, zoom), playback speed, conversion quality, technical details, Picture in Picture, full screen and Media Session (keyboard media keys / lock screen).
+- Keyboard: Space/K play-pause, ←/→ or J/L ±10 s, ↑/↓ volume, M mute, F full screen, C subtitles, A audio, N/P or Page Down/Up chapters, I details.
+- The volume, preferred audio/subtitle languages, subtitle size and aspect mode are remembered per browser. Forced subtitles in the spoken language are enabled automatically.
+
+Three playback modes, shown in the top-right chip:
+
+| Mode | When | Server cost |
+| --- | --- | --- |
+| **Direct** | MP4/MOV/WebM whose codecs the browser can decode, with the default audio track (or any track in Safari). | None (HTTP ranges). |
+| **Remux** | MKV/AVI/TS, or another audio track: video copied (H.264, or HEVC when the browser supports it), audio converted to stereo AAC. | Low. |
+| **Conversion** | Video the browser cannot decode, bitmap subtitles (PGS/VobSub/DVB, burned in), or *Always convert video*. HDR is tone-mapped when FFmpeg has `zscale`. | High: at most three concurrent streams. |
+
+Seeking in Remux/Conversion restarts the server stream at the requested time (positions already buffered stay instant). Text subtitles (SRT, ASS, mov_text, WebVTT) are extracted to WebVTT in a single sequential read of the file and cached under `DATA_DIR/subtitles`; on a large remux over a slow share the first extraction can take a while. Picture in Picture shows the video without the player's subtitle overlay.
 
 For Docker deployment, permissions, updates and troubleshooting, see [server installation](installation.md).

@@ -1,5 +1,6 @@
 import { startKodiRemote, stopKodiRemote, showKodiRemote } from './remote.js';
 import { startI18n, displayLocale, tr, localizedPrompt, localizedConfirm } from './i18n.js';
+import { MediaPlayer } from './player.js';
 startI18n();
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -73,6 +74,21 @@ const moreObserver = 'IntersectionObserver' in window ? new IntersectionObserver
   if(entries.some(entry=>entry.isIntersecting)&&!state.loading&&!state.loadError&&state.hasMore&&!$('app').hidden&&!document.querySelector('dialog[open]')) loadMedia({append:true});
 },{rootMargin:'600px 0px'}) : null;
 let toastTimer;
+// Track-aware player shared by Kodi files and network locations.
+async function fetchMedia(address, kind) {
+  const response=await fetch(address,{credentials:'same-origin'});
+  if(!response.ok) {
+    let message=`HTTP ${response.status}`;
+    try { const detail=(await response.json()).detail; if(typeof detail==='string')message=detail; } catch { /* Not JSON. */ }
+    throw new Error(tr(message));
+  }
+  return kind==='json'?response.json():response.text();
+}
+const mediaPlayer=new MediaPlayer({fetchJSON:address=>fetchMedia(address,'json'),fetchText:address=>fetchMedia(address,'text')});
+function openPlayer(source) {
+  lockPage();
+  return mediaPlayer.open({...source,onClose:()=>setTimeout(releasePage)});
+}
 function toast(message) { $('toast').textContent=tr(message); $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,5500); }
 function error(message) { $('error-banner').textContent=tr(message); $('error-banner').hidden=false; }
 // The application shell stays loaded while the API/server is unreachable.
@@ -596,7 +612,7 @@ function playbackMarkup(item) {
   let controls;
   if(state.role!=='admin')controls='<p class="hint">Un accès administrateur est nécessaire pour lancer la lecture.</p>';
   else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier.</p><button class="secondary" data-action="connections">Configurer une instance Kodi</button>';
-  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><div id="browser-video-wrapper" hidden><video id="browser-video" playsinline controls preload="metadata" style="display:block;width:100%;max-height:65vh;background:#000;border-radius:10px"></video><p class="hint">Lecture HTML5 : MP4/H.264 ou HEVC selon le navigateur. Les fichiers MKV et les pistes audio spécialisées peuvent ne pas être pris en charge.</p></div><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
+  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><p class="hint">Lecteur web : pistes audio, sous-titres et chapitres. Les fichiers MKV ou les pistes audio non lisibles par le navigateur sont remuxés ou convertis à la volée par le serveur.</p><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
   return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Kodi lit le fichier avec ses propres accès au NAS.</p>`;
 }
 function savePlaybackDraft() {
@@ -616,14 +632,6 @@ function openPlayback() {
     $('play-resume').checked=draft.resume;
   }
   showDialog('play-dialog');
-  const video=$('browser-video');
-  if(video)video.addEventListener('error',()=>{
-    const error=video.error;
-    const reason=error?.code===4
-      ? 'Format ou codec non pris en charge par ce navigateur. Essayez la lecture sur Kodi.'
-      : 'Lecture impossible dans le navigateur (code '+(error?.code||'inconnu')+').';
-    if($('play-status'))$('play-status').textContent=reason;
-  });
 }
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
@@ -1595,27 +1603,21 @@ function networkPlay(entry){
     networkBrowseError('Navigation disponible, mais le streaming direct de ce fournisseur n’est pas encore pris en charge.');
     return;
   }
-  const video=$('network-browser-video');
-  video.pause();
-  // HTML5 video cannot reliably demux Matroska, AVI or MPEG-TS. Use the
-  // server's progressive FFmpeg fragmented-MP4 stream for those containers.
-  // The original file remains remote and is never staged in the browser.
-  const transcode=/\.(mkv|avi|ts|m2ts|mpg|mpeg)$/i.test(entry.name);
-  const endpoint=transcode?'playback/browser-video/':'playback/stream/';
-  video.src=url('api/v1/'+endpoint+encodeURIComponent(browser.selected.id)+
-    '?path='+encodeURIComponent(entry.path));
-  $('network-browser-player').hidden=false;
-  networkBrowseError(transcode?'Conversion MKV → MP4 en streaming (initialisation de FFmpeg)…':'');
-  video.load();
-  video.addEventListener('playing',()=>networkBrowseError(''),{once:true});
-  void video.play().catch(()=>networkBrowseError(
-    'Lecture indisponible : vérifiez la réponse du serveur ou les capacités du navigateur.'
-  ));
+  const query='?path='+encodeURIComponent(entry.path);
+  const base='api/v1/playback/media/'+encodeURIComponent(browser.selected.id);
+  networkBrowseError('');
+  void openPlayer({
+    title:entry.name.replace(/\.[^.]+$/,''),
+    subtitle:browser.selected.name||'',
+    extension:entry.name.split('.').pop(),
+    directURL:url('api/v1/playback/stream/'+encodeURIComponent(browser.selected.id)+query),
+    probeURL:url(base+'/probe'+query),
+    subtitleURL:index=>url(`${base}/subtitles/${index}.vtt${query}`),
+    streamURL:params=>url(`${base}/stream.mp4${query}&${new URLSearchParams(params)}`),
+  });
 }
 async function openNetworkBrowser(id=null){
   showDialog('network-browser-dialog');
-  $('network-browser-player').hidden=true;
-  $('network-browser-video').pause();
   if(networkExplorer.locations.length===0)await refreshNetworkHome();
   await networkOpenRoot(id);
 }
@@ -1633,15 +1635,6 @@ $('network-browser-list').addEventListener('click',()=>{
 });
 $('network-browser-more').addEventListener('click',()=>{
   networkExplorer.shown+=80;renderNetworkBrowser();
-});
-$('network-browser-close-video').addEventListener('click',()=>{
-  const player=$('network-browser-video');
-  player.pause();player.removeAttribute('src');player.load();
-  $('network-browser-player').hidden=true;
-});
-$('network-browser-dialog').addEventListener('close',()=>{
-  const player=$('network-browser-video');
-  player.pause();player.removeAttribute('src');player.load();
 });
 // Missing/unsupported frames retain a normal file icon; do not display a broken image.
 $('network-browser-items').addEventListener('error',event=>{
@@ -2575,36 +2568,25 @@ document.addEventListener('click',async event=>{
          !ticket.path.startsWith(`/api/v1/players/${playerId}/local-stream/`)) {
         throw new Error('Le serveur a renvoyé une URL de lecture invalide.');
       }
-      const video=$('browser-video');
-      const wrapper=$('browser-video-wrapper');
-      if(!video||!wrapper)throw new Error('Lecteur HTML5 indisponible.');
-      const videoURL=url(ticket.path);
-      if(new URL(videoURL).origin!==location.origin)throw new Error('URL de streaming non autorisée.');
-      video.pause();
-      video.src=videoURL;
-      wrapper.hidden=false;
-      const metadataMs=Number(ticket.resolution_ms)||0;
-      const resumeAt= $('play-resume')?.checked ? Number(ticket.resume_seconds)||0 : 0;
-      video.onloadedmetadata=()=>{
-        // Seeking before the first frame can cost another Kodi VFS file open.
-        // Make that step explicit and diagnose it separately from URL creation.
-        if(resumeAt>0 && Number.isFinite(video.duration) && video.duration>resumeAt) {
-          video.currentTime=resumeAt;
-        }
-        console.info('Kodi browser playback metadata ms',Math.round(performance.now()-startingAt));
-      };
-      video.onplaying=()=>{
-        const elapsed=((performance.now()-startingAt)/1000).toFixed(1);
-        if(result){
-          result.textContent='Lecture démarrée en '+elapsed+' s (résolution catalogue '+metadataMs+' ms).';
-        }
-      };
-      video.load();
-      result.textContent='Ouverture du flux Kodi en cours…';
-      try {await video.play();}
-      catch(e) {
-        result.textContent='La lecture automatique est indisponible : appuyez sur ▶ dans le lecteur. Certains formats restent incompatibles.';
-      }
+      const streamURL=url(ticket.path);
+      if(new URL(streamURL).origin!==location.origin)throw new Error('URL de streaming non autorisée.');
+      const mediaBase=ticket.path.replace(/\/local-stream\/([^/]+)\/[^/]+$/,'/local-media/$1');
+      const item=state.detail;
+      const resumeAt=$('play-resume')?.checked?Number(ticket.resume_seconds)||0:0;
+      console.info('Kodi browser playback ticket ms',Math.round(performance.now()-startingAt),'catalogue ms',Number(ticket.resolution_ms)||0);
+      result.textContent='';
+      if($('play-dialog').open)$('play-dialog').close();
+      void openPlayer({
+        title:item.title,
+        subtitle:item.kind==='episode'?`S${item.season??0} · E${item.episode??0}`:[item.year,$('play-edition')?.selectedOptions[0]?.textContent].filter(Boolean).join(' · '),
+        artwork:item.artwork?.poster?url(item.artwork.poster):null,
+        extension:ticket.path.split('.').pop(),
+        resume:resumeAt,
+        directURL:streamURL,
+        probeURL:url(mediaBase+'/probe'),
+        subtitleURL:index=>url(`${mediaBase}/subtitles/${index}.vtt`),
+        streamURL:params=>url(`${mediaBase}/stream.mp4?${new URLSearchParams(params)}`),
+      });
       return;
     }
     if(button.id==='play-button') {
@@ -2623,14 +2605,6 @@ document.addEventListener('click',async event=>{
       showKodiRemote(target);
     }
   }catch(e){if(result){result.textContent=e.message;result.className='error-text play-status';}if(button.dataset.sync||button.dataset.scanKodi){const status=$('job-status');if(status){status.hidden=false;status.textContent='Échec : '+e.message;}}toast(e.message);}finally{button.disabled=false;}
-});
-$('play-dialog')?.addEventListener('close',()=>{
-  const video=$('browser-video');
-  if(video){
-    video.pause();
-    video.removeAttribute('src');
-    video.load();
-  }
 });
 $('connections-button').addEventListener('click',connections);
 $('lists-button').addEventListener('click',()=>openLists());

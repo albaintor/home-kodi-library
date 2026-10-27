@@ -94,9 +94,10 @@ from .models import (
     WatchStatus,
     WritebackStatus,
 )
-from .playback_browser import browse_location, stream_location
+from .playback_browser import _credentials, browse_location, safe_path, stream_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
+from .playback_media import media_stream, network_source, parse_video_copy, probe, subtitle_vtt
 from .playback_thumbnails import thumbnail_location
 from .playback_transcode import browser_transcode
 from .players import play
@@ -181,6 +182,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     app.state.store, app.state.auth, app.state.sync = store, auth, sync
     app.state.artwork = Artwork(settings)
+    app.state.data_dir = settings.data_dir
     thumbnails = ListThumbnails(store, app.state.artwork, settings.data_dir)
     app.state.list_thumbnails = thumbnails
     enrichment_lock = asyncio.Lock()
@@ -1371,6 +1373,72 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown playback location.")
         return await browser_transcode(
             location, path, store, cloud_auth, settings.playback_nfs_mounts
+        )
+
+    async def network_media(location_id: str, path: str):
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        if location["kind"] not in {"smb", "nfs", "ftp", "sftp"}:
+            raise HTTPException(501, "Track-aware playback is not available for this source.")
+        relative = safe_path(path)
+        secret = await asyncio.to_thread(_credentials, store, cloud_auth, location["id"])
+        try:
+            source = await asyncio.wait_for(
+                asyncio.to_thread(
+                    network_source, location, relative, secret, settings.playback_nfs_mounts
+                ),
+                timeout=18,
+            )
+        except TimeoutError as exc:
+            raise HTTPException(504, "Timed out opening the remote media.") from exc
+        return source, await probe(source)
+
+    @app.get(
+        API + "/playback/media/{location_id}/probe",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_media_probe(location_id: str, path: str):
+        """Audio/subtitle tracks, chapters and video details for the web player."""
+        return (await network_media(location_id, path))[1]
+
+    @app.get(
+        API + "/playback/media/{location_id}/subtitles/{stream_index}.vtt",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_media_subtitle(location_id: str, stream_index: int, path: str):
+        source, info = await network_media(location_id, path)
+        file = await subtitle_vtt(source, info, stream_index, settings.data_dir)
+        return FileResponse(
+            file, media_type="text/vtt", headers={"Cache-Control": "private, max-age=3600"}
+        )
+
+    @app.get(
+        API + "/playback/media/{location_id}/stream.mp4",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_media_stream(
+        location_id: str,
+        path: str,
+        start: float = Query(0, ge=0),
+        audio: int | None = Query(None, ge=0),
+        subtitle: int | None = Query(None, ge=0),
+        copy: str = Query("", max_length=40),
+        height: int = Query(1080, ge=240, le=2160),
+    ):
+        """Seekable fragmented MP4 with the selected audio track."""
+        source, info = await network_media(location_id, path)
+        return await media_stream(
+            source,
+            info,
+            start=start,
+            audio=audio,
+            subtitle=subtitle,
+            video_copy=parse_video_copy(copy),
+            max_height=height,
         )
 
     @app.get(

@@ -14,12 +14,13 @@ from collections import OrderedDict
 from urllib.parse import quote, urlsplit
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi.responses import FileResponse, StreamingResponse
 
 from .auth import authenticated
 from .connectors.base import ConnectorError
 from .models import PlayInput
+from .playback_media import kodi_source, media_stream, parse_video_copy, probe, subtitle_vtt
 from .players import connection, endpoint
 from .utils import identifiers
 
@@ -304,4 +305,63 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
         status_code=upstream.status_code,
         headers=exposed,
         media_type=media_type,
+    )
+
+
+# Browser player: track list, chapters, WebVTT subtitles and a seekable,
+# browser-compatible stream for the same short-lived ticket. Unlike the raw
+# byte-range route above (used by AVPlayer), these also require the session.
+async def _ticket_source(request: Request, player_id: str, ticket: str):
+    item = _TICKETS.get(ticket)
+    if not item or item["player_id"] != player_id or item["expires"] <= time.monotonic():
+        raise HTTPException(403, "Stream ticket is invalid or expired.")
+    player = _lookup(request, player_id)
+    config = player["config"]
+    base = endpoint(config).removesuffix("/jsonrpc")
+    url = f"{base}/vfs/{quote(item['file'], safe='')}"
+    auth = (config["username"], config.get("password") or "") if config.get("username") else None
+    source = await asyncio.to_thread(kodi_source, url, auth, f"kodi:{player_id}:{item['file']}")
+    return source, await probe(source)
+
+
+@router.get("/{player_id}/local-media/{ticket}/probe")
+async def local_media_probe(
+    player_id: str, ticket: str, request: Request, _=Depends(authenticated)
+):
+    _, info = await _ticket_source(request, player_id, ticket)
+    return info
+
+
+@router.get("/{player_id}/local-media/{ticket}/subtitles/{stream_index}.vtt")
+async def local_media_subtitle(
+    player_id: str, ticket: str, stream_index: int, request: Request, _=Depends(authenticated)
+):
+    source, info = await _ticket_source(request, player_id, ticket)
+    path = await subtitle_vtt(source, info, stream_index, request.app.state.data_dir)
+    return FileResponse(
+        path, media_type="text/vtt", headers={"Cache-Control": "private, max-age=3600"}
+    )
+
+
+@router.get("/{player_id}/local-media/{ticket}/stream.mp4")
+async def local_media_stream(
+    player_id: str,
+    ticket: str,
+    request: Request,
+    start: float = Query(0, ge=0),
+    audio: int | None = Query(None, ge=0),
+    subtitle: int | None = Query(None, ge=0),
+    copy: str = Query("", max_length=40),
+    height: int = Query(1080, ge=240, le=2160),
+    _=Depends(authenticated),
+):
+    source, info = await _ticket_source(request, player_id, ticket)
+    return await media_stream(
+        source,
+        info,
+        start=start,
+        audio=audio,
+        subtitle=subtitle,
+        video_copy=parse_video_copy(copy),
+        max_height=height,
     )
