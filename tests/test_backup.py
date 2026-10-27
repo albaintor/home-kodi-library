@@ -77,3 +77,60 @@ def test_invalid_backup_is_rejected_without_partial_import(client, admin):
     assert client.post("/api/v1/backup", headers=admin, json=broken).status_code == 422
     assert store.detail(work_id)["title"] == "Example film"
     assert len(store.lists()) == 1
+
+
+
+def test_catalogue_cleanup_merges_duplicate_sources_and_preserves_other_settings(client, admin):
+    store, source_id, work_id, list_id = _library(client)
+    first = store.save_source({
+        "name": "Primary Kodi", "type": "kodi",
+        "config": {"host": "nas.local", "port": 3306, "mariadb_write_enabled": True}
+    })
+    second = store.save_source({
+        "name": "Another name, same SQL server", "type": "kodi",
+        "config": {"host": "NAS.LOCAL", "port": 3306}
+    })
+    from home_media_catalog.connectors.base import Record
+    store.apply_snapshot(first["id"], [Record("movie:7", "movie", "Movie", year=2021)])
+    store.apply_snapshot(second["id"], [Record("movie:7", "movie", "Movie", year=2021)])
+    pre = client.get("/api/v1/catalogue/maintenance/preview", headers=admin)
+    assert pre.status_code == 200
+    assert pre.json()["duplicate_sources"] == 1
+    denied = client.post("/api/v1/catalogue/maintenance/clean", headers=admin)
+    assert denied.status_code == 422
+    done = client.post(
+        "/api/v1/catalogue/maintenance/clean",
+        headers={**admin, "X-Confirm-Catalogue-Maintenance": "clean"},
+    )
+    assert done.status_code == 200, done.text
+    assert done.json()["merged_sources"] == 1
+    assert done.json()["backup"].endswith(".db")
+    assert (store.path.parent / done.json()["backup"]).is_file()
+    remaining = store.sources()
+    assert sum(src["type"] == "kodi" for src in remaining) == 1
+    assert store.media()["total"] >= 2
+    assert store.detail(work_id)["personal"]["user_rating"] == 9.0
+    second_pass = client.post(
+        "/api/v1/catalogue/maintenance/clean",
+        headers={**admin, "X-Confirm-Catalogue-Maintenance": "clean"},
+    )
+    assert second_pass.status_code == 200
+    assert second_pass.json()["merged_sources"] == 0
+
+
+def test_catalogue_reset_preserves_access_but_clears_catalogue(client, admin):
+    store, source_id, work_id, list_id = _library(client)
+    store.register_device_token("phone-token", "iPhone", "admin")
+    denied = client.post("/api/v1/catalogue/maintenance/reset", headers=admin)
+    assert denied.status_code == 422
+    response = client.post(
+        "/api/v1/catalogue/maintenance/reset",
+        headers={**admin, "X-Confirm-Catalogue-Maintenance": "reset"},
+    )
+    assert response.status_code == 200, response.text
+    assert store.media()["total"] == 0
+    assert store.sources() == []
+    assert store.player("missing") is None
+    assert client.get("/api/v1/catalogue/maintenance/preview", headers=admin).status_code == 200
+    assert (store.path.parent / response.json()["backup"]).exists()
+    assert client.get("/api/v1/auth/session", headers=admin).status_code == 200

@@ -388,6 +388,218 @@ class Store:
                 )
         self.path.chmod(0o600)
 
+
+    # Maintenance is intentionally scoped to the Home Media Catalog SQLite
+    # catalogue. It never issues SQL DELETE against Kodi/MyVideos MariaDB.
+    @staticmethod
+    def _endpoint(config: dict, *, kodi: bool = False) -> str:
+        host = str(config.get("host") or "").strip().lower().rstrip(".")
+        if not host:
+            return ""
+        port = int(config.get("port") or (8080 if kodi else 3306))
+        return f"{host}:{port}" + (":https" if config.get("tls") else ":http") if kodi else f"{host}:{port}"
+
+    @classmethod
+    def _duplicate_source_map(cls, conn: sqlite3.Connection) -> dict[str, str]:
+        sources = [dict(r) for r in conn.execute("SELECT rowid,* FROM sources ORDER BY rowid")]
+        players = [dict(r) for r in conn.execute("SELECT source_id,config FROM players")]
+        endpoints = defaultdict(set)
+        for row in players:
+            endpoint = cls._endpoint(json.loads(row["config"]), kodi=True)
+            if endpoint:
+                endpoints[row["source_id"]].add(endpoint)
+        duplicates = {}
+        canonical: list[dict] = []
+        for source in sources:
+            kind = source["type"]
+            config = json.loads(source["config"])
+            matched = []
+            for existing in canonical:
+                if existing["type"] != kind:
+                    continue
+                if kind != "kodi":
+                    matched.append(existing)
+                    continue
+                maria = cls._endpoint(config)
+                other_maria = cls._endpoint(json.loads(existing["config"]))
+                if (maria and maria == other_maria) or endpoints[source["id"]].intersection(
+                    endpoints[existing["id"]]
+                ):
+                    matched.append(existing)
+            # An ambiguous Kodi endpoint cannot be reconciled safely.
+            if len(matched) == 1:
+                duplicates[source["id"]] = matched[0]["id"]
+            else:
+                canonical.append(source)
+        return duplicates
+
+    def catalogue_maintenance_preview(self) -> dict[str, Any]:
+        with self.connect() as conn:
+            mappings = self._duplicate_source_map(conn)
+            orphan_works = conn.execute(
+                "SELECT COUNT(*) FROM works w WHERE NOT EXISTS("
+                "SELECT 1 FROM records r WHERE r.work_id=w.id)"
+            ).fetchone()[0]
+            duplicate_records = sum(
+                conn.execute(
+                    "SELECT COUNT(*) FROM records r WHERE r.source_id=? "
+                    "AND EXISTS(SELECT 1 FROM records k WHERE k.source_id=? "
+                    "AND k.external_key=r.external_key)",
+                    (old, canonical),
+                ).fetchone()[0]
+                for old, canonical in mappings.items()
+            )
+            return {
+                "duplicate_sources": len(mappings),
+                "duplicate_records": duplicate_records,
+                "orphan_works": orphan_works,
+                "orphan_players": conn.execute(
+                    "SELECT COUNT(*) FROM players p WHERE NOT EXISTS "
+                    "(SELECT 1 FROM sources s WHERE s.id=p.source_id)"
+                ).fetchone()[0],
+                "orphan_records": conn.execute(
+                    "SELECT COUNT(*) FROM records r WHERE NOT EXISTS "
+                    "(SELECT 1 FROM sources s WHERE s.id=r.source_id) "
+                    "OR NOT EXISTS(SELECT 1 FROM works w WHERE w.id=r.work_id)"
+                ).fetchone()[0],
+                "sources": conn.execute("SELECT COUNT(*) FROM sources").fetchone()[0],
+                "works": conn.execute("SELECT COUNT(*) FROM works").fetchone()[0],
+            }
+
+    def _maintenance_backup(self, label: str) -> str:
+        # SQLite's online backup includes committed WAL pages and does not
+        # require stopping the server process. Backups are chmod 0600 since
+        # the catalogue includes credentials and access metadata.
+        filename = self.path.with_name(
+            self.path.stem + "." + label + "." +
+            datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f") + ".db"
+        )
+        with sqlite3.connect(self.path) as original, sqlite3.connect(filename) as target:
+            original.backup(target)
+        filename.chmod(0o600)
+        return filename.name
+
+    def maintain_catalogue(self, *, reset: bool = False) -> dict[str, Any]:
+        backup = self._maintenance_backup("before-reset" if reset else "before-cleanup")
+        if reset:
+            with self.connect() as conn:
+                # Preserve server credentials/device tokens, playback network
+                # locations, cloud credentials, OAuth apps and other settings.
+                for table in ("sources", "works", "lists", "jobs", "catalogue_meta"):
+                    conn.execute(f"DELETE FROM {table}")
+                conn.execute("DELETE FROM writeback_audit")
+                conn.execute("DELETE FROM works_fts")
+                conn.execute("DELETE FROM works_title_fts")
+            return {"status": "reset", "backup": backup,
+                    "preserved": ["device_tokens", "playback_locations",
+                                  "playback_cloud_credentials", "playback_oauth_apps"]}
+        removed_sources = 0
+        skipped_ambiguous = 0
+        collapsed_records = 0
+        with self.connect() as conn:
+            mappings = self._duplicate_source_map(conn)
+            for old_id, keep_id in mappings.items():
+                # Canonical server source configuration and UUID win.
+                # Colliding external keys are duplicates of the same imported
+                # source. Preserve personal values and playlist membership.
+                rows = conn.execute(
+                    "SELECT id,work_id,external_key FROM records WHERE source_id=?",
+                    (old_id,),
+                ).fetchall()
+                for record in rows:
+                    same = conn.execute(
+                        "SELECT work_id FROM records WHERE source_id=? AND external_key=?",
+                        (keep_id, record["external_key"]),
+                    ).fetchone()
+                    if same:
+                        keep_work, drop_work = same["work_id"], record["work_id"]
+                        if keep_work != drop_work:
+                            current = conn.execute(
+                                "SELECT user_rating,watched FROM personal WHERE work_id=?",
+                                (drop_work,),
+                            ).fetchone()
+                            if current:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO personal(work_id,user_rating,watched) VALUES(?,?,?)",
+                                    (keep_work, current["user_rating"], current["watched"]),
+                                )
+                                conn.execute(
+                                    "UPDATE personal SET user_rating=COALESCE(user_rating,?),"
+                                    "watched=COALESCE(watched,?) WHERE work_id=?",
+                                    (current["user_rating"], current["watched"], keep_work),
+                                )
+                            conn.execute(
+                                "INSERT OR IGNORE INTO list_items(list_id,work_id,position) "
+                                "SELECT list_id,?,position FROM list_items WHERE work_id=?",
+                                (keep_work, drop_work),
+                            )
+                        conn.execute("DELETE FROM records WHERE id=?", (record["id"],))
+                        collapsed_records += 1
+                    else:
+                        conn.execute(
+                            "UPDATE records SET source_id=? WHERE id=?", (keep_id, record["id"])
+                        )
+                for player in conn.execute(
+                    "SELECT id,config FROM players WHERE source_id=?", (old_id,)
+                ).fetchall():
+                    endpoint = self._endpoint(json.loads(player["config"]), kodi=True)
+                    existing = [
+                        self._endpoint(json.loads(item["config"]), kodi=True)
+                        for item in conn.execute(
+                            "SELECT config FROM players WHERE source_id=?", (keep_id,)
+                        )
+                    ]
+                    if endpoint and endpoint in existing:
+                        conn.execute("DELETE FROM players WHERE id=?", (player["id"],))
+                    else:
+                        conn.execute(
+                            "UPDATE players SET source_id=? WHERE id=?", (keep_id, player["id"])
+                        )
+                # Keep old queued writebacks when there is no corresponding
+                # canonical work/source pair. A collision is retained in the
+                # canonical entry, rather than replacing an already pending edit.
+                for row in conn.execute(
+                    "SELECT id,work_id,changes FROM writeback_pending WHERE source_id=?", (old_id,)
+                ).fetchall():
+                    collision = conn.execute(
+                        "SELECT id,changes FROM writeback_pending WHERE work_id=? AND source_id=?",
+                        (row["work_id"], keep_id),
+                    ).fetchone()
+                    if collision:
+                        existing = json.loads(collision["changes"])
+                        for key, value in json.loads(row["changes"]).items():
+                            existing.setdefault(key, value)
+                        conn.execute("UPDATE writeback_pending SET changes=? WHERE id=?",
+                                     (encode(existing), collision["id"]))
+                        conn.execute("DELETE FROM writeback_pending WHERE id=?", (row["id"],))
+                    else:
+                        conn.execute("UPDATE writeback_pending SET source_id=? WHERE id=?",
+                                     (keep_id, row["id"]))
+                conn.execute("UPDATE writeback_audit SET source_id=? WHERE source_id=?",
+                             (keep_id, old_id))
+                conn.execute("DELETE FROM sources WHERE id=?", (old_id,))
+                removed_sources += 1
+            # SQLite FK cascades clean normal orphans. Legacy databases can
+            # also contain dangling rows written while FK checks were disabled.
+            conn.execute("DELETE FROM records WHERE source_id NOT IN (SELECT id FROM sources) "
+                         "OR work_id NOT IN (SELECT id FROM works)")
+            conn.execute("DELETE FROM players WHERE source_id NOT IN (SELECT id FROM sources)")
+            conn.execute("DELETE FROM list_items WHERE list_id NOT IN (SELECT id FROM lists) "
+                         "OR work_id NOT IN (SELECT id FROM works)")
+            self._prune(conn)
+            # Make search indexes consistent after collapsing duplicate works.
+            for table in ("works_fts", "works_title_fts"):
+                conn.execute(f"DELETE FROM {table} WHERE work_id NOT IN (SELECT id FROM works)")
+            stale = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if stale:
+                raise RuntimeError("Foreign-key errors remain; maintenance rolled back.")
+        return {
+            "status": "cleaned", "backup": backup,
+            "merged_sources": removed_sources,
+            "merged_records": collapsed_records,
+            "ambiguous_sources_skipped": skipped_ambiguous,
+        }
+
     @contextmanager
     def connect(self):
         conn = sqlite3.connect(self.path, timeout=30)
