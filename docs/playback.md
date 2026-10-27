@@ -1,36 +1,54 @@
-# Lecture — configuration des emplacements
+# Playback — configuring source locations
 
-L'API `/api/v1/playback/locations` stocke dans SQLite, sur le serveur, les descripteurs de sources (`id`, `name`, `kind`, `target`). Lecture : client authentifié ; création, modification, suppression : administrateur. Le client iOS conserve une copie des seuls descripteurs par URL de serveur pour pouvoir afficher l'onglet Lecture sans réseau. Les secrets ne figurent pas dans cette synchronisation.
+The `/api/v1/playback/locations` API stores source descriptors
+(`id`, `name`, `kind`, `target`) in the server's SQLite database.
+Authenticated clients can read them; creating, updating and deleting
+locations requires administrator access. The iOS client caches descriptors
+per server URL so the Playback tab can display them without a connection.
+Secrets are excluded from this synchronization.
 
-## Prise en charge actuelle
+## Supported playback sources
 
-- Fichiers déjà téléchargés ou importés sur iOS : lus par le lecteur AVPlayer/PrismCore, sans serveur.
-- Fichiers obtenus depuis l'app Fichiers et ses fournisseurs (iCloud Drive, OneDrive, Google Drive, Dropbox, SMB si l'utilisateur s'y connecte dans Fichiers) : importés dans le conteneur de l'app pour lecture hors ligne. Les fournisseurs doivent être configurés séparément dans Fichiers.
-- URL HTTP ou HTTPS de fichier multimédia : lecture en streaming sur iOS lorsque joignable.
-- Descripteurs FTP et NFS : sauvegardés et synchronisés, mais **ni navigation ni passerelle serveur** actuellement. Ils nécessiteront un adaptateur dédié côté serveur (ou un montage NFS + un serveur HTTP sécurisé). Les chemins SMB ne sont pas montés ou accessibles automatiquement depuis le serveur.
-- Les identifiants NAS et autorisations OAuth des clouds ne sont pas gérés par cette API. Ne pas insérer d'identifiants dans `target`.
+- Videos already downloaded or imported on iOS: played through
+  AVPlayer/PrismCore without the server.
+- Videos selected through the iOS Files app and its providers (iCloud Drive,
+  OneDrive, Google Drive, Dropbox, and SMB when configured in Files): can be
+  imported into the app container for offline playback. Provider accounts
+  are configured separately in Files.
+- HTTP and HTTPS media URLs: streamed on iOS when reachable.
+- FTP and NFS source descriptors: stored and synchronized independently
+  of their browsing/streaming adapters. Direct protocol access and
+  server-side gateways require appropriate configured adapters or mounts.
+  SMB paths do not automatically become visible to the server.
+- NAS credentials and cloud OAuth authorizations are managed by
+  separate secure connector mechanisms, **not** by this descriptors API.
+  Never put credentials in `target`.
 
-**Limite importante :** cette première version n'implémente pas un explorateur réseau multi-protocole ni un moteur OAuth partagé entre iOS et le serveur. Elle prépare les emplacements centralisés, l'onglet Lecture et l'accès hors ligne. Les fichiers importés sont copiés (consommation d'espace de stockage iOS).
+An early version of the locations API supported only descriptor storage.
+The full network explorer and cloud OAuth implementations are separate
+components; they must be configured and supported for browsing to work.
+Importing a file creates a local copy and consumes iOS device storage.
 
-Toute future passerelle de fichiers devra valider les chemins, appliquer une liste de sources autorisées, protéger les requêtes Range et utiliser des tickets de lecture temporaires sans divulguer les secrets des partages.
+All file gateways must validate paths, enforce an allowlist of source
+locations, protect HTTP Range requests and use short-lived playback
+tickets that do not expose shared-folder credentials.
 
+## Cleaning the Kodi media library
 
-## Nettoyage de la médiathèque Kodi
+The admin-only `POST /api/v1/sources/{source_id}/clean` operation starts
+`VideoLibrary.Clean` through JSON-RPC WebSocket on the Kodi instance
+associated with the source. Optional `player_id` selects a specific
+instance. Cleaning is separate from `/scan` and `/sync`.
 
-La commande `POST /api/v1/sources/{source_id}/clean` (administrateur requis)
-déclenche `VideoLibrary.Clean` par JSON-RPC WebSocket sur l'instance
-associée à la source Kodi. Le paramètre optionnel `player_id` sélectionne
-une instance précise. L'action est distincte de `/scan` et de `/sync`.
+The server waits for `VideoLibrary.OnCleanStarted` followed by
+`VideoLibrary.OnCleanFinished` before resynchronizing the catalogue.
+If the WebSocket connection or completion confirmation fails, the
+local catalogue remains unchanged; a SQL fallback is not misreported
+as a successful cleanup. For multi-edition Kodi libraries, synchronization
+uses MariaDB when configured to avoid losing version information
+not exposed by JSON-RPC.
 
-Le serveur attend `VideoLibrary.OnCleanStarted` puis
-`VideoLibrary.OnCleanFinished` avant de synchroniser à nouveau le
-catalogue. Si la connexion WebSocket ou la confirmation échoue, le
-catalogue local reste inchangé ; aucun repli SQL n'est présenté comme
-un nettoyage réussi. Pour les bibliothèques Kodi multi-éditions, la
-synchronisation utilise MariaDB si configurée, afin de ne pas écraser les
-informations de versions absentes du JSON-RPC.
-
-**Attention :** vérifier l'accessibilité de tous les montages SMB/NFS et
-disques avant le nettoyage, sinon Kodi risque de retirer de sa médiathèque
-des entrées toujours valides. L'action ne supprime pas les fichiers vidéo
-physiques. Progression et erreurs : `GET /api/v1/jobs/{job_id}`.
+**Warning:** verify that every SMB/NFS mount and disk is accessible
+before cleaning. Otherwise Kodi may remove valid entries from its
+library. The operation does **not** delete physical video files.
+Progress and errors: `GET /api/v1/jobs/{job_id}`.
