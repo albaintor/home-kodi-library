@@ -100,7 +100,7 @@ def test_auto_database_refuses_mismatched_identifiers_before_update():
     connection.query.mismatch = True
     with patch("home_media_catalog.kodi_mariadb_write.pymysql.connect",
                return_value=connection):
-        with pytest.raises(ConnectorError, match="identifiants externes contradictoires"):
+        with pytest.raises(ConnectorError, match="Identifiants externes contradictoires"):
             write_kodi_mariadb(
                 {"config": config}, {"kind": "movie", "title": "Film"},
                 [{"metadata": {"kodi_id": 11}, "identifiers": {"tmdb": "123"}}],
