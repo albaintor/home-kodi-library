@@ -1761,7 +1761,9 @@ async function renderPlaybackCloudSettings() {
             : '<button type="button" class="secondary" data-web-cloud-connect="'+esc(kind)+'" data-cloud-place-id="'+esc(place.id)+'"'+
               (disabled||!configured?' disabled':'')+'>Reconnecter</button>')+
           (state.role==='admin'?'<button class="secondary" type="button" data-web-cloud-disconnect="'+
-            esc(place.id)+'"'+(active?'':' disabled')+'>Déconnecter</button>':'')+
+            esc(place.id)+'"'+(active?'':' disabled')+'>Déconnecter</button>'+
+            '<button class="secondary" type="button" data-web-cloud-remove="'+
+            esc(place.id)+'">Supprimer ce compte</button>':'')+
           '</div></div>';
       }).join('');
       const addButtons=kind==='onedrive'
@@ -1883,6 +1885,18 @@ async function renderPlaybackCloudSettings() {
       }catch(e){
         if(run===deviceRun)message.textContent=e.message||String(e);
       }finally{button.disabled=false;}
+      return;
+    }
+    const remove=button.dataset.webCloudRemove;
+    if(remove){
+      const place=locations.find(row=>row.id===remove);
+      if(!place||!window.confirm('Supprimer le compte cloud « '+place.name+' » et son autorisation sur ce serveur ?'))return;
+      button.disabled=true;
+      try{
+        await api('playback/locations/'+encodeURIComponent(remove),{method:'DELETE'});
+        await load();
+        message.textContent='Compte cloud supprimé du serveur.';
+      }catch(e){message.textContent=e.message||String(e);button.disabled=false;}
       return;
     }
     const kind=button.dataset.webCloudConnect;
