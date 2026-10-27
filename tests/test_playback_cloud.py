@@ -525,7 +525,7 @@ def test_multiple_accounts_per_google_drive_and_dropbox_are_independent(client, 
         assert store.playback_cloud_credentials(location_id) is not None
 
 
-def test_web_settings_can_add_and_reconnect_each_provider_instance():
+def test_web_settings_can_add_and_reconnect_onedrive_instances():
     from pathlib import Path
 
     script = (Path(__file__).resolve().parents[1] / "home_media_catalog/static/app.js").read_text()
@@ -534,3 +534,15 @@ def test_web_settings_can_add_and_reconnect_each_provider_instance():
     assert "data-web-cloud-disconnect" in script
     assert "Ajouter un compte " in script
     assert "locations.find(row=>row.kind===kind)" not in script
+
+
+def test_web_only_offers_onedrive_cloud_provider():
+    """Unsupported cloud services must not appear in settings or file browsers."""
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parents[1] / "home_media_catalog/static/app.js").read_text()
+    assert "const playbackCloudProviders=[['onedrive','OneDrive']];" in script
+    assert "const browsableLocationKinds=new Set(['smb','nfs','ftp','sftp','onedrive']);" in script
+    assert "locations.filter(l=>browsableLocationKinds.has(l.kind))" in script
+    assert "browser.locations.filter(loc=>browsableLocationKinds.has(loc.kind))" in script
+    assert "networkExplorer.locations=(await api('playback/locations')).filter(" in script
