@@ -90,122 +90,21 @@ The project now includes **more than collection management**:
 - **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
-Read the **public** [Xcode Cloud / iOS build instructions](docs/ios-xcode-cloud.md), [StoreKit / evaluation guide](docs/ios-storekit.md), and [network/cloud playback guide](docs/playback-network-cloud.md). The native source repository is private; these guides are public.
 
-### iOS evaluation, purchase and support (development version)
+### iOS evaluation, purchase and support
 
 The iOS/iPadOS client offers **10 free full-screen video playback sessions**
 for local files, NAS/SMB, cloud and network sources, including experimental
-MEMC modes. Remaining sessions are displayed under the video title while
-the on-screen controls are visible. The **11th playback session** requires
-one **non-consumable lifetime purchase** to unlock the entire native video
-player, including MEMC. The planned French price is **€2** (actual price
-and availability are provided by the App Store through StoreKit 2). Kodi
-remote control, cataloguing and AI search stay free.
+MEMC modes. The **non-consumable lifetime purchase** unlocks the entire native video
+player, including MEMC.  Kodi remote control, cataloguing and AI search stay free.
 
-The in-app product identifier is
-`fr.albaintor.HomeKodiLibrary.video_player_unlock` because the underlying
-app bundle identifier is intentionally preserved across the rename. The
-purchase will not be available until it has been configured in
-App Store Connect; a missing product produces an unavailable state and a
-retry control, not a fake price. Purchase and restore are not claims of
-App Store approval.
 
 The native **Settings → Support** section links to this project's
 [home page](https://github.com/albaintor/home-media-catalog) and
 [issue tracker](https://github.com/albaintor/home-media-catalog/issues).
-The main collection context menu uses **Play on...** (French:
-**Lire sur...**) with a generic media-playback icon; this still launches
+The main collection context menu uses **Play on...** with a generic media-playback icon; this still launches
 the Kodi player selector.
 
-#### Local iOS build and package resolution
-
-The native iOS source repository is private. For developers with access,
-after updating its `main` branch, quit Xcode and run:
-
-```bash
-cd /path/to/home-media-catalog-ios
-git switch main
-git pull --ff-only
-brew install xcodegen
-zsh scripts/resolve_local_packages.sh
-```
-
-This corrects `Missing package product 'AMSMB2'` and
-`Missing package product 'PrismCore'` caused by a stale/unresolved package
-graph: it prepares checksum-verified FFmpeg frameworks, generates the
-**local** Xcode project, then runs `xcodebuild -resolvePackageDependencies`.
-Reopen `HomeMediaCatalog.xcodeproj` when done. If required, use
-**File → Packages → Reset Package Caches** and **Resolve Package Versions**.
-
-The committed `Package.resolved` pins the two **remote** SwiftPM
-dependencies: **AMSMB2 4.0.3** and **Swift Atomics 1.2.0**. The iOS
-Xcode project currently references **local** `Vendor/FFmpegApple`
-as the PrismCore package, which is created by the helper script.
-This directory is not committed to Git; avoid committing generated
-Xcode changes after a local rebuild.
-
-#### Xcode Cloud configuration
-
-In Xcode Cloud, grant its GitHub App access to the private
-`albaintor/home-media-catalog-ios` repository. Use `main`,
-the shared `HomeMediaCatalog` scheme, an Xcode release supporting
-Swift 6, and automatic signing using the correct Apple Developer team.
-Keep these identifiers (the marketing rename does not alter signing):
-
-| Capability | Identifier |
-| --- | --- |
-| iOS app | `fr.albaintor.HomeKodiLibrary` |
-| Share extension | `fr.albaintor.HomeKodiLibrary.MediaShareExtension` |
-| App Group | `group.fr.albaintor.HomeMediaCatalog` |
-| iCloud | `iCloud.fr.albaintor.HomeMediaCatalog` |
-
-The checked-in executable `ci_scripts/ci_post_clone.sh` installs XcodeGen
-if necessary, repairs and verifies downloaded FFmpeg frameworks, and
-regenerates the local Xcode project **before package resolution**.
-The full [public Xcode Cloud troubleshooting guide](docs/ios-xcode-cloud.md)
-covers the GitHub permission flow, dependency cache problems, code signing,
-the package lockfile and build validation.
-
-#### StoreKit and the 10 evaluation sessions
-
-Under **App Store Connect → Monetization → In-App Purchases**, add a
-**non-consumable** product to the existing app (Bundle ID
-`fr.albaintor.HomeKodiLibrary`):
-
-| Property | Value |
-| --- | --- |
-| Reference name | Home Media Catalog — Video Player |
-| Product ID | `fr.albaintor.HomeKodiLibrary.video_player_unlock` |
-| Type | Non-Consumable, lifetime |
-| France price point | €2 (or nearest offered Apple price point) |
-| English product name | Unlock video player |
-| French product name | Débloquer le lecteur vidéo |
-
-Complete the localizations, descriptions, review screenshot, tax/banking
-agreements and review details. Sandbox and TestFlight validation are
-required before distribution. The app reads **StoreKit's real localized
-price**; missing App Store Connect configuration leaves the buy action
-unavailable. The **11th playback session** requires purchase; catalogue
-and Kodi remote playback remain free.
-
-#### Reset trial sessions while developing
-
-In a **Debug build installed with Xcode** select **Settings → Video player
-access → Reset evaluation trials** and confirm. This restores **10 free
-sessions** by deleting the UserDefaults trial count and the precise
-Keychain backup; it does **not** revoke or reset a StoreKit purchase.
-The control is not compiled into Release/TestFlight/App Store builds.
-Deleting and reinstalling the app alone may preserve its Keychain counter.
-
-Read the full public [StoreKit and developer testing guide](docs/ios-storekit.md)
-for restoring purchases, cancelled or pending transactions, 10-session
-counting, and physical-device testing.
-
-**Distribution status:** a successful SwiftPM/Xcode build is not a
-licensing certificate; FFmpeg/MPVKit dependency licences, relinking
-requirements, device archives, StoreKit approval and testing remain
-release gates.
 
 ### Legal notices and third-party licences
 
@@ -236,9 +135,6 @@ Home Media Catalog now includes an **optional network/cloud media browser and vi
 ## Support
 
 If you have any issues check first if it has not already been reported then [raise a ticket](https://github.com/albaintor/home-media-catalog/issues)
-
-
-
 
 
 
