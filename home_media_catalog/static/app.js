@@ -1420,13 +1420,12 @@ function networkPathLabel() {
   return networkExplorer.selected.name+
     (nodes.length?' / '+nodes.map(x=>x.name).join(' / '):'');
 }
+const browsableLocationKinds=new Set(['smb','nfs','ftp','sftp','onedrive']);
 function networkHomeMarkup(locations) {
-  const allowed=locations.filter(l=>['smb','nfs','ftp','sftp','onedrive',
-    'google_drive','dropbox','box','pcloud','icloud'].includes(l.kind));
+  const allowed=locations.filter(l=>browsableLocationKinds.has(l.kind));
   return allowed.slice(0,12).map(loc=>
     '<button class="network-home-entry" type="button" data-network-home-open="'+esc(loc.id)+'">'+
-      '<span aria-hidden="true">'+(['onedrive','google_drive','dropbox','box','pcloud','icloud']
-        .includes(loc.kind)?'☁':'▣')+'</span>'+
+      '<span aria-hidden="true">'+(loc.kind==='onedrive'?'☁':'▣')+'</span>'+
       '<strong>'+esc(loc.name)+'</strong>'+
       '<small>'+esc(loc.kind.toUpperCase())+'</small>'+
     '</button>'
@@ -1434,7 +1433,8 @@ function networkHomeMarkup(locations) {
 }
 async function refreshNetworkHome() {
   try {
-    networkExplorer.locations=await api('playback/locations');
+    networkExplorer.locations=(await api('playback/locations')).filter(
+      loc=>browsableLocationKinds.has(loc.kind));
     $('network-home-locations').innerHTML=networkHomeMarkup(networkExplorer.locations);
   }catch(e){
     $('network-home-locations').textContent='Sources indisponibles : '+e.message;
@@ -1526,10 +1526,10 @@ function renderNetworkBrowser() {
   $('network-browser-grid').setAttribute('aria-pressed',String(browser.view==='grid'));
   $('network-browser-list').setAttribute('aria-pressed',String(browser.view==='list'));
   if(!browser.selected){
-    box.innerHTML=browser.locations.map(loc=>
+    box.innerHTML=browser.locations.filter(loc=>browsableLocationKinds.has(loc.kind)).map(loc=>
       '<button type="button" class="network-browser-tile" data-network-source="'+esc(loc.id)+'">'+
       '<span class="network-browser-tile-icon">'+
-      (['onedrive','google_drive','dropbox','box','pcloud','icloud'].includes(loc.kind)?'☁':'▣')+
+      (loc.kind==='onedrive'?'☁':'▣')+
       '</span><strong>'+esc(loc.name)+'</strong><small>'+esc(loc.kind.toUpperCase())+
       '</small></button>'
     ).join('')||'<p class="hint">Aucune source enregistrée.</p>';
@@ -1663,10 +1663,7 @@ $('network-browser-items').addEventListener('click',event=>{
   if(item.is_dir)void networkOpenFolder(item.path,item.name);
   else networkPlay(item);
 });
-const playbackCloudProviders=[
-  ['dropbox','Dropbox'],['google_drive','Google Drive'],['box','Box'],
-  ['onedrive','OneDrive'],['pcloud','pCloud']
-];
+const playbackCloudProviders=[['onedrive','OneDrive']];
 async function renderPlaybackCloudSettings() {
   const container=$('connection-content');
   if(!container)return;
@@ -1677,7 +1674,7 @@ async function renderPlaybackCloudSettings() {
     '<p class="hint">Pour OneDrive, le code de connexion Microsoft fonctionne sur réseau local, sans domaine ni popup OAuth. Le serveur conserve les jetons chiffrés pour la navigation et la lecture.</p>'+
     '<div id="playback-cloud-web-list"></div>'+
     '<details id="playback-cloud-developer-options"><summary>Configuration développeur des applications cloud (avancé)</summary>'+
-    '<p class="hint">OneDrive : seul un identifiant public Entra est nécessaire avec le code de connexion ; activez les flux de clients publics. Les autres fournisseurs utilisent encore un retour HTTPS OAuth.</p>'+
+    '<p class="hint">OneDrive : seul un identifiant public Entra est nécessaire avec le code de connexion ; activez les flux de clients publics.</p>'+
     '<div id="playback-cloud-developer-list"></div>'+
     '<form id="playback-cloud-app-form" class="connection-form" hidden>'+
     '<strong class="wide" id="playback-cloud-app-title"></strong>'+
