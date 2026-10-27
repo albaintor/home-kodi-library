@@ -26,8 +26,9 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
     if not config.get("mariadb_write_enabled"):
         raise ConnectorError("Repli MariaDB non activé pour cette source Kodi.")
     database = config.get("database") or ""
-    if not re.fullmatch(r"MyVideos[0-9]+", database):
-        raise ConnectorError("Le repli MariaDB exige un nom de base MyVideos explicite.")
+    automatic_database = not bool(database)
+    if database and not re.fullmatch(r"MyVideos[0-9]+", database, flags=re.IGNORECASE):
+        raise ConnectorError("Le nom de base doit être au format MyVideos suivi d'un numéro.")
     username = config.get("username") or ""
     password = config.get("password") or ""
     if not username:
@@ -49,7 +50,7 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                 port=config.get("port", 3306),
                 user=username,
                 password=password,
-                database=database,
+                database=database or None,
                 connect_timeout=5,
                 read_timeout=15,
                 write_timeout=15,
@@ -61,6 +62,20 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
         ) as conn:
             try:
                 with conn.cursor() as cursor:
+                    if automatic_database:
+                        cursor.execute("SHOW DATABASES")
+                        visible = [
+                            (int(match.group(1)), name)
+                            for row in cursor.fetchall()
+                            for name in [str(next(iter(row.values())))]
+                            if (match := re.fullmatch(r"MyVideos([0-9]+)", name, flags=re.IGNORECASE))
+                        ]
+                        if not visible:
+                            raise ConnectorError(
+                                "Aucune base MyVideos visible : impossible de sélectionner automatiquement la base."
+                            )
+                        database = max(visible, key=lambda item: (item[0], item[1]))[1]
+                        conn.select_db(database)
                     ids = {}
                     for edition in editions:
                         kodi_id = edition.get("metadata", {}).get("kodi_id")
@@ -159,8 +174,10 @@ def write_kodi_mariadb(source: dict, detail: dict, editions: list[dict], changes
                             cursor.execute(sql, file_ids)
                     conn.commit()
                     return (
-                        "Repli MariaDB direct appliqué ; Kodi ne reçoit aucune notification "
-                        "JSON-RPC. Un rafraîchissement des vues Kodi peut être nécessaire."
+                        f"Repli MariaDB appliqué sur {database}"
+                        + (" (sélection automatique)" if automatic_database else "")
+                        + " ; Kodi ne reçoit aucune notification JSON-RPC."
+                        + " Un rafraîchissement des vues Kodi peut être nécessaire."
                     )
             except Exception:
                 conn.rollback()
