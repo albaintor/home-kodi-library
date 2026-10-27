@@ -211,3 +211,70 @@ def test_onedrive_cloud_range_proxy_keeps_bearer_token_off_cdn(monkeypatch):
 
     assert asyncio.run(read()) == b"abcd"
     assert len(seen) == 2
+
+
+@pytest.mark.parametrize("provider", ["google_drive", "dropbox"])
+def test_cloud_browse_follows_provider_pagination(monkeypatch, provider):
+    import asyncio
+    from home_media_catalog import playback_browser
+
+    class Crypto:
+        async def credentials(self, location_id, kind):
+            assert location_id == "account-2" and kind == provider
+            return {"access_token": "private-bearer"}
+
+    calls = []
+
+    class Response:
+        def __init__(self, data):
+            self.data = data
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return self.data
+
+    class HTTP:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_):
+            pass
+
+        async def get(self, url, *, headers, params):
+            assert provider == "google_drive"
+            assert headers["Authorization"] == "Bearer private-bearer"
+            calls.append((url, params))
+            if len(calls) == 1:
+                assert params["pageSize"] == 200
+                assert "pageToken" not in params
+                return Response({"files": [{"id": "movie1", "name": "First.mkv"}],
+                                 "nextPageToken": "page-two"})
+            assert params["pageToken"] == "page-two"
+            return Response({"files": [{"id": "movie2", "name": "Second.mp4"}]})
+
+        async def post(self, url, *, headers, json):
+            assert provider == "dropbox"
+            assert headers["Authorization"] == "Bearer private-bearer"
+            calls.append((url, json))
+            if len(calls) == 1:
+                assert url.endswith("/files/list_folder")
+                assert json["limit"] == 200
+                return Response({"entries": [{".tag": "file", "name": "First.mkv",
+                                              "path_display": "/First.mkv"}],
+                                 "has_more": True, "cursor": "cursor-two"})
+            assert url.endswith("/files/list_folder/continue")
+            assert json == {"cursor": "cursor-two"}
+            return Response({"entries": [{".tag": "file", "name": "Second.mp4",
+                                          "path_display": "/Second.mp4"}],
+                             "has_more": False})
+
+    monkeypatch.setattr(playback_browser.httpx, "AsyncClient", lambda **_: HTTP())
+    result = asyncio.run(
+        playback_browser.cloud_browse(
+            {"kind": provider, "id": "account-2"}, "", None, Crypto()
+        )
+    )
+    assert [file["name"] for file in result] == ["First.mkv", "Second.mp4"]
+    assert len(calls) == 2
