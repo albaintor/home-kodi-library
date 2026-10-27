@@ -23,8 +23,7 @@ then imported locally for playback without the Home Media Catalog server.
 
 ## OAuth connections
 
-Providers: Google Drive, OneDrive, Dropbox, Box and pCloud.
-iCloud Drive uses **native Files integration**, with no third-party OAuth.
+Only **OneDrive** is currently enabled as an integrated cloud provider in the web and iOS interfaces. Other connector code is retained for future work but its providers are not selectable. iCloud Drive remains available through the separate **Apple Files integration**, without third-party OAuth in Home Media Catalog.
 
 ### OneDrive without a public domain (recommended method)
 
@@ -54,49 +53,38 @@ by `POST /api/v1/playback/cloud/{id}/device/poll` with `request_id`.
 The server respects `interval` and `slow_down`, expires requests and never
 returns the Microsoft `device_code` or access tokens to the client.
 
-### Other providers and the HTTPS OAuth callback
+### Optional OneDrive HTTPS OAuth callback
 
-Configure these environment variables on the server:
+The recommended OneDrive Device Code flow above works without a public domain.
+For installations using an HTTPS OAuth callback instead, the server accepts:
 
-- `CLOUD_OAUTH_REDIRECT_URL=https://your-domain/api/v1/playback/cloud/callback`
-  (a public HTTPS address reachable from the iPhone's browser; it must
-  exactly match an authorized redirect URI in each provider's application).
-- `CLOUD_OAUTH_CLIENTS`: a JSON object keyed by provider, with a
-  `client_id` and, where required, a `client_secret`. Example:
-  `{"google_drive":{"client_id":"...","client_secret":"..."},"dropbox":{"client_id":"..."}}`.
-- `PLAYBACK_ENCRYPTION_KEY`: optional but recommended, a URL-safe base64
-  Fernet key generated using
+- `CLOUD_OAUTH_REDIRECT_URL=https://your-domain/api/v1/playback/cloud/callback` (must match the redirect URI registered in Microsoft Entra).
+- `CLOUD_OAUTH_CLIENTS`: for example, `{"onedrive":{"client_id":"..."}}`, with a client secret where applicable.
+- `PLAYBACK_ENCRYPTION_KEY`: optional but recommended; use a URL-safe
+  Fernet key generated with
   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-  Without it, the key is derived from `API_TOKEN`; rotating `API_TOKEN`
-  without a dedicated encryption key makes stored credentials unreadable.
+  Without a dedicated key, rotating `API_TOKEN` makes stored credentials unreadable.
 
-The admin endpoint `POST /api/v1/playback/cloud/{location_id}/authorize`
-returns an authorization URL. After the browser obtains consent, the server
-exchanges the OAuth code and stores encrypted tokens **only in its SQLite
-database**. `GET /api/v1/playback/cloud/status` never exposes tokens, and
-`DELETE /api/v1/playback/cloud/{location_id}` disconnects that account locally.
+`POST /api/v1/playback/cloud/{location_id}/authorize` returns a URL for the
+optional browser authorization flow. Tokens are kept encrypted in SQLite.
+`GET /api/v1/playback/cloud/status` never exposes them, and
+`DELETE /api/v1/playback/cloud/{location_id}` disconnects the selected account
+locally. OAuth authorization attempts expire after 10 minutes or a server restart.
 
-An authorization attempt expires after 10 minutes and cannot survive a server
-restart before the provider callback. Disconnecting on the server does not
-revoke the external grant; manage provider-side authorizations separately.
-
-**Current scope:** OAuth sign-in, encrypted storage and automatic token
-refresh, read-only browsing, thumbnail retrieval and HTTP Range streaming
-through temporary tickets for Google Drive, OneDrive, Dropbox, Box and
-pCloud. Cloud files are not automatically synchronized into offline storage.
-Real-world testing is required for each provider and account, particularly
-CDN redirects, quotas and token refresh.
+**Supported scope:** OneDrive read-only browsing, thumbnails and HTTP Range
+streaming through temporary tickets. Cloud files are not automatically cached
+for offline playback. Other cloud connectors are not supported in this release.
 
 ## Multiple accounts per provider
 
 Each cloud account is a **separate playback location**, identified by a UUID.
-The provider (`google_drive`, `dropbox`, `onedrive`, etc.) is never used
+The provider name (`onedrive`) is never used
 as an account key. Several accounts of the same provider can be connected
 simultaneously, each with independent encrypted OAuth credentials.
 Reconnecting and disconnecting affect only the selected location.
 
 On the **web**, open **Settings → Network and cloud → Cloud services**,
-then use **Add account** for Google Drive, Dropbox or OneDrive.
+then use **Add account** for OneDrive.
 Each account is listed independently, with its email when the provider
 makes one available, and individual **Reconnect** / **Disconnect** controls.
 
@@ -106,46 +94,6 @@ connected to that server. Accounts **authorized directly on the iPhone**
 are separate: their credentials are stored per account in the iOS Keychain
 and are not shared with the server. Existing native authorizations remain
 recognizable after upgrading the app.
-
-### Google Drive
-
-1. In Google Cloud Console, enable the **Google Drive API**, configure the
-   OAuth consent screen and request
-   `https://www.googleapis.com/auth/drive.readonly`.
-2. Create **OAuth 2.0 credentials → Web application**, registering the exact
-   redirect URI `https://your-domain/api/v1/playback/cloud/callback`.
-3. Under the catalogue's web settings,
-   **Advanced → Cloud OAuth application configuration**, save the
-   `client_id`, `client_secret` and HTTPS redirect for **Google Drive**.
-   You can then authorize as many Google accounts as needed.
-4. Files, folders and metadata are accessed read-only. Native Google
-   Docs/Sheets files are not binary video files and cannot be played
-   by the media player.
-
-**Important:** `drive.readonly` is a restricted Google OAuth scope.
-Depending on your application's publishing status, Google may require
-test users, OAuth verification and a security assessment. Without the
-necessary configuration, Google can block consent independently of the
-iOS and web implementations.
-
-### Dropbox
-
-1. Create a **Scoped access** app in the Dropbox App Console.
-2. Enable **files.metadata.read** and **files.content.read** and register
-   `https://your-domain/api/v1/playback/cloud/callback` as an exact
-   OAuth redirect URI.
-3. In the catalogue's web settings, save the **App key** as Dropbox's
-   `client_id` (and the App secret where applicable), then use
-   **Add account** to authorize multiple Dropbox accounts.
-4. OAuth requests a renewable token (`token_access_type=offline`).
-   Browsing and streaming are read-only; the web browser never receives
-   the OAuth token stored on the NAS.
-
-For both providers, **iOS can use server-managed OAuth accounts**.
-Direct native OAuth is also available with separate public OAuth clients
-configured at build time in `OAuth.local.xcconfig`.
-A web OAuth client cannot be used as a native iOS client without
-provider-specific configuration.
 
 ## Hybrid architecture (iOS and web)
 
@@ -162,21 +110,17 @@ provider-specific configuration.
   The app displays the code, the user grants `Files.Read`, and iOS
   polls the server at the specified interval. Browsing and streaming
   then use authenticated API endpoints and temporary HTTP Range tickets.
-- **Other providers with server-managed OAuth:** iOS invokes
-  `POST /api/v1/playback/cloud/{id}/authorize?return_to=ios` using
-  a provider-registered HTTPS callback.
-- **Standalone iOS option:** direct connections to Microsoft Graph
-  and other cloud providers require public native OAuth clients
-  embedded in `OAuth.local.xcconfig` at build time. The native
-  sign-in option is hidden unless its client is configured.
-- **iOS Files fallback:** extensions supplied by the OneDrive, Dropbox
-  and Google Drive apps use their own authentication. An item selected
-  in Files can be imported for **offline playback**, without an OAuth
-  identity owned by Home Media Catalog. Importing is not direct streaming.
-- **OneDrive without a domain:** in Microsoft Entra, enable public client
-  flows and delegated `Files.Read` access. Device Code sign-in needs
-  no client secret or HTTPS redirect. Other providers still require
-  their own OAuth registrations and HTTPS callbacks.
+- **Optional OneDrive HTTPS OAuth:** the server can also use a registered
+  HTTPS callback when one is configured; Device Code is recommended.
+- **Standalone iOS OneDrive:** direct Microsoft Graph connections require
+  a public native OAuth client configured in `OAuth.local.xcconfig`.
+  The direct sign-in option is hidden unless that client is configured.
+- **iOS Files fallback:** Files can use any installed File Provider extension
+  to import a file for **offline playback**. Files authorization is separate
+  from Home Media Catalog cloud integrations. Importing is not direct streaming.
+- **OneDrive without a domain:** enable public client flows and delegated
+  `Files.Read` permission in Microsoft Entra. No client secret or public
+  HTTPS redirect is required for Device Code sign-in.
 
 **Current limitation:** saving a location descriptor does not guarantee
 that it can be browsed. SMB, FTP, NFS, UPnP and cloud browsing/streaming
