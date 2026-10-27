@@ -285,6 +285,7 @@ async def propagate_personal(
         errors = []
         attempts = []
         deadline = asyncio.get_running_loop().time() + 1.0
+        jsonrpc_updated = False
         for player in candidates:
             remaining = deadline - asyncio.get_running_loop().time()
             if remaining <= 0:
@@ -296,6 +297,7 @@ async def propagate_personal(
                     _write_kodi(player, detail, editions, changes), timeout=remaining
                 )
                 attempts.append("jsonrpc:updated")
+                jsonrpc_updated = True
                 results.append(
                     {
                         **entry,
@@ -319,7 +321,7 @@ async def propagate_personal(
                 attempts.append("jsonrpc:error")
                 _LOG.exception("Unexpected Kodi writeback error for source %s", source_id)
                 errors.append("Erreur inattendue lors de la mise à jour Kodi.")
-        else:
+        if not jsonrpc_updated:
             # An explicitly authorized SQL fallback is also appropriate
             # when Kodi is reachable but refuses library updates. SQL uses
             # separate server-side credentials and independently verifies
