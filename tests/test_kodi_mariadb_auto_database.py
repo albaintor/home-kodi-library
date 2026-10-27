@@ -163,8 +163,6 @@ def test_auto_schema_cannot_write_into_a_different_imported_database():
 
 
 def test_no_external_ids_show_must_have_matching_database_provenance():
-    config = {"host": "nas", "username": "kodi", "mariadb_write_enabled": True,
-              "database": "MyVideos136"}
     # A TV show with no identifiers is safe only when it came from the very
     # same imported MyVideos schema. Movie/episode still require matching file.
     import inspect
