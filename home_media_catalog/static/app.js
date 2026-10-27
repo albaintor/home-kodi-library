@@ -1739,27 +1739,42 @@ async function renderPlaybackCloudSettings() {
     const byId=new Map(statuses.map(row=>[row.id,row]));
     const providerByKind=new Map(providers.map(row=>[row.provider,row]));
     list.innerHTML=playbackCloudProviders.map(([kind,label])=>{
-      const place=locations.find(row=>row.kind===kind);
-      const status=place?byId.get(place.id):null;
+      const accounts=locations.filter(row=>row.kind===kind);
       const provider=providerByKind.get(kind);
       const configured=provider?.configured===true;
       const deviceReady=kind==='onedrive'&&provider?.device_configured===true;
-      const note=status?.connected?'Connecté':deviceReady?'Connexion sans domaine disponible':
-        configured?'Autorisation nécessaire':
+      const note=deviceReady?'Connexion sans domaine disponible':
+        configured?'Application OAuth configurée':
         (provider?.device_reason||provider?.reason||'Configuration administrateur requise');
       const disabled=state.role!=='admin';
+      const accountCards=accounts.map(place=>{
+        const status=byId.get(place.id);
+        const displayName=status?.account_email||place.username||place.name||label;
+        const active=status?.connected===true;
+        return '<div class="connection-card"><div><strong>'+esc(displayName)+'</strong>'+
+          '<p class="hint">'+esc(label)+' · '+(active?'Connecté':'Non connecté')+
+          (displayName!==place.name?' · '+esc(place.name):'')+'</p></div>'+
+          '<div class="connection-actions">'+
+          (kind==='onedrive'&&deviceReady
+            ? '<button type="button" class="secondary" data-web-cloud-device="onedrive" data-cloud-place-id="'+esc(place.id)+'"'+
+              (disabled?' disabled':'')+'>Reconnecter</button>'
+            : '<button type="button" class="secondary" data-web-cloud-connect="'+esc(kind)+'" data-cloud-place-id="'+esc(place.id)+'"'+
+              (disabled||!configured?' disabled':'')+'>Reconnecter</button>')+
+          (state.role==='admin'?'<button class="secondary" type="button" data-web-cloud-disconnect="'+
+            esc(place.id)+'"'+(active?'':' disabled')+'>Déconnecter</button>':'')+
+          '</div></div>';
+      }).join('');
+      const addButtons=kind==='onedrive'
+        ? '<button type="button" data-web-cloud-device="onedrive"'+
+          (disabled||!deviceReady?' disabled':'')+'>Ajouter un compte OneDrive</button>'+
+          (configured?'<button type="button" class="secondary" data-web-cloud-connect="onedrive"'+
+            (disabled?' disabled':'')+'>Ajouter via OAuth HTTPS</button>':'')
+        : '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
+          (disabled||!configured?' disabled':'')+'>Ajouter un compte '+esc(label)+'</button>';
       return '<div class="connection-card"><div><strong>'+esc(label)+'</strong>'+
-        '<p class="hint">'+esc(note)+'</p></div><div class="connection-actions">'+
-        (kind==='onedrive'
-          ? '<button type="button" data-web-cloud-device="onedrive"'+
-            (disabled||!deviceReady?' disabled':'')+'>Connecter sans domaine</button>'+
-            (configured?'<button type="button" class="secondary" data-web-cloud-connect="onedrive"'+
-              (disabled?' disabled':'')+'>OAuth HTTPS</button>':'')
-          : '<button type="button" data-web-cloud-connect="'+esc(kind)+'"'+
-            (disabled?' disabled':'')+'>Connecter</button>')+
-        (status?.connected&&state.role==='admin'
-          ? '<button class="secondary" type="button" data-web-cloud-disconnect="'+
-          esc(place.id)+'">Déconnecter</button>':'')+'</div></div>';
+        '<p class="hint">'+esc(note)+' · '+accounts.length+' compte(s)</p></div>'+
+        '<div class="connection-actions">'+addButtons+'</div></div>'+
+        (accountCards||'<p class="hint">Aucun compte de ce service enregistré.</p>');
     }).join('')+'<p><button class="secondary" type="button" data-web-cloud-refresh>Actualiser les connexions</button></p>';
     developerList.innerHTML=state.role==='admin'
       ? playbackCloudProviders.map(([kind,label])=>'<button type="button" class="secondary" data-cloud-app-edit="'+
@@ -1811,10 +1826,15 @@ async function renderPlaybackCloudSettings() {
       button.disabled=true;
       message.textContent='Demande du code de connexion Microsoft…';
       try{
-        let place=locations.find(row=>row.kind==='onedrive');
+        const existingId=button.dataset.cloudPlaceId;
+        let place=existingId?locations.find(row=>row.id===existingId&&row.kind==='onedrive'):null;
+        if(existingId&&!place)throw new Error('Compte OneDrive introuvable.');
         if(!place){
           place=await api('playback/locations',{
-            method:'POST',body:JSON.stringify({name:'OneDrive',kind:'onedrive',target:''})
+            method:'POST',body:JSON.stringify({
+              name:'OneDrive '+(locations.filter(row=>row.kind==='onedrive').length+1),
+              kind:'onedrive',target:''
+            })
           });
         }
         const auth=await api('playback/cloud/'+encodeURIComponent(place.id)+'/device/start',{
@@ -1902,10 +1922,15 @@ async function renderPlaybackCloudSettings() {
         return;
       }
       const label=playbackCloudProviders.find(([value])=>value===kind)?.[1]||kind;
-      let place=locations.find(row=>row.kind===kind);
+      const existingId=button.dataset.cloudPlaceId;
+      let place=existingId?locations.find(row=>row.id===existingId&&row.kind===kind):null;
+      if(existingId&&!place)throw new Error('Compte cloud introuvable.');
       if(!place){
         place=await api('playback/locations',{
-          method:'POST',body:JSON.stringify({name:label,kind,target:''})
+          method:'POST',body:JSON.stringify({
+            name:label+' '+(locations.filter(row=>row.kind===kind).length+1),
+            kind,target:''
+          })
         });
       }
       const auth=await api('playback/cloud/'+encodeURIComponent(place.id)+'/authorize',{method:'POST'});
