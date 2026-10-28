@@ -3021,6 +3021,7 @@ document.addEventListener('change',event=>{
   $('ai-language-key-label').firstChild.textContent='Clé API · '+aiProviderName(select.value);
   const vectorSettings=form.querySelector('[data-openai-vectors]');
   if(vectorSettings)vectorSettings.hidden=select.value!=='openai';
+  if($('ai-reindex'))$('ai-reindex').disabled=true;
   $('ai-test-connection').disabled=true;
 });
 document.addEventListener('change',event=>{
@@ -3028,6 +3029,8 @@ document.addEventListener('change',event=>{
   if(!select)return;
   const custom=$('ai-settings-form')?.querySelector('[data-ai-custom="'+select.dataset.aiModelSelector+'"]');
   if(custom)custom.hidden=select.value!=='custom';
+  if($('ai-test-connection'))$('ai-test-connection').disabled=true;
+  if($('ai-reindex')&&select.dataset.aiModelSelector==='embedding_model')$('ai-reindex').disabled=true;
 });
 
 let aiPreviousPlan=null;
@@ -3061,6 +3064,8 @@ document.addEventListener('submit',async event=>{
       form.elements.api_key.value='';form.elements.clear_api_key.checked=false;
       await refreshAIStatus();
       $('ai-test-connection').disabled=!saved.configured;
+      if($('ai-reindex'))$('ai-reindex').disabled=!saved.configured||saved.provider!=='openai';
+      if(saved.index&&$('ai-index-progress'))$('ai-index-progress').textContent=saved.index.indexed+' / '+saved.index.total;
       $('ai-connection-result').replaceChildren();
     }catch(e){$('ai-settings-result').textContent=e.message;}
     finally{button.disabled=false;}
