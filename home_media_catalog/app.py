@@ -37,14 +37,13 @@ from .ai import (
     interpret_prompt,
     interpret_result_refinement,
 )
-from .ai_hybrid import hybrid_page
+from .ai_single_model import single_model_page
 from .ai_usage import (
     AIBudgetExceeded,
     AIPriceUnavailable,
     AIUsageLedger,
     usage_session,
 )
-from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
@@ -130,11 +129,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     auth = Auth(settings, store)
     ai_config = AIConfiguration(settings.data_dir)
     ai_usage = AIUsageLedger(settings.data_dir)
-    ai_index = SemanticIndex(settings.data_dir)
-    ai_index_lock = asyncio.Lock()
-    ai_index_task: asyncio.Task | None = None
-    ai_index_error: str | None = None
-    ai_index_dirty = asyncio.Event()
     ai_limit = asyncio.Semaphore(3)
     ai_rate_lock = asyncio.Lock()
     ai_attempts: dict[str, deque[float]] = defaultdict(deque)
@@ -146,9 +140,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         await asyncio.to_thread(store.initialize)
         await asyncio.to_thread(auth.load_devices)
         await sync.bootstrap_empty_catalogue()
-        # Reconcile the persisted vector index on every server start. Scheduling
-        # is immediate and non-blocking; unchanged documents cost no API calls.
-        start_ai_index(immediate=True)
         discovery = None
         if settings.discovery_enabled:
             from .discovery import BonjourPublisher
@@ -161,12 +152,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if discovery:
                 await asyncio.to_thread(discovery.stop)
             await sync.close()
-            if ai_index_task and not ai_index_task.done():
-                ai_index_task.cancel()
-                try:
-                    await ai_index_task
-                except asyncio.CancelledError:
-                    pass
 
     app = FastAPI(
         title="Home Media Catalog API",
@@ -387,64 +372,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "tmdb_available": bool(settings.tmdb_api_token.strip()),
         }
 
-    def ai_index_status():
-        docs = store.ai_documents()
-        model = ai_config.vector_index_model()
-        return {
-            **ai_index.status(docs, model),
-            "running": bool(ai_index_task and not ai_index_task.done()),
-            "error": ai_index_error,
-        }
-
-    async def run_ai_index():
-        nonlocal ai_index_error
-        async with ai_index_lock:
-            credentials = ai_config.embedding_credentials()
-            if not credentials:
-                return
-            ai_index_error = None
-            try:
-                documents = await asyncio.to_thread(store.ai_documents)
-                with usage_session(ai_usage, ai_config.status()["monthly_budget_usd"], "indexing"):
-                    await ai_index.refresh(
-                        documents, ai_config.vector_index_model(), credentials[1],
-                        provider=ai_config.status()["embedding_provider"], api_model=credentials[0],
-                    )
-            except (AIBudgetExceeded, AIPriceUnavailable) as exc:
-                ai_index_error = str(exc)
-            except (httpx.HTTPError, ValueError, OSError) as exc:
-                _LOG.warning("AI indexing failed: %s", type(exc).__name__)
-                ai_index_error = "Could not build vector index. Check API key and embedding model."
-
-    async def run_ai_index_debounced(*, immediate: bool = False):
-        # Startup reconciliation begins immediately. Later catalogue changes
-        # retain the debounce to coalesce imports and Kodi synchronizations.
-        while ai_index_dirty.is_set():
-            ai_index_dirty.clear()
-            if not immediate:
-                await asyncio.sleep(3)
-            immediate = False
-            await run_ai_index()
-
-    def start_ai_index(*, immediate: bool = False):
-        nonlocal ai_index_task
-        if not ai_config.embedding_credentials():
-            return
-        ai_index_dirty.set()
-        if ai_index_task is None or ai_index_task.done():
-            ai_index_task = asyncio.create_task(run_ai_index_debounced(immediate=immediate))
-
-    sync.on_catalog_changed = start_ai_index
-
     @app.get(API + "/ai/status", tags=["AI"], dependencies=[Depends(authenticated)])
     def ai_status():
-        return {**ai_config.status(), "index": ai_index_status()}
+        return ai_config.status()
 
     @app.get(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
     def ai_settings():
         return {
             **ai_config.status(),
-            "index": ai_index_status(),
             "usage": ai_usage.status(ai_config.status()["monthly_budget_usd"]),
         }
 
@@ -454,7 +389,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status = ai_config.update(value)
             return {
                 **status,
-                "index": ai_index_status(),
                 "usage": ai_usage.status(status["monthly_budget_usd"]),
             }
         except ValueError as exc:
@@ -489,74 +423,45 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post(API + "/ai/connection/test", tags=["AI"], dependencies=[Depends(writable)])
     async def test_ai_connection():
-        """Probe both configured models, not just a valid HTTP/API token."""
+        """Test only the selected language model; no second model is called."""
         credentials = ai_config.credentials()
         if not credentials:
-            raise HTTPException(503, "Configure and save the language API key first.")
+            raise HTTPException(503, "Configure and save the selected provider API key first.")
         model, key = credentials
-        embedding_credentials = ai_config.embedding_credentials()
-        if not embedding_credentials:
-            raise HTTPException(503, "Configure and save the embedding API key first.")
-        embedding_model, embedding_key = embedding_credentials
-        results = {}
         async with ai_limit:
             try:
                 with usage_session(
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
                     await interpret_prompt(
-                        "Trouve les films après 2015.", model, key, {"genres": [], "formats": []},
-                        **({"provider": ai_config.status()["provider"]}
-                           if ai_config.status()["provider"] != "openai" else {}),
+                        "Trouve les films après 2015.", model, key,
+                        {"genres": [], "formats": []},
+                        **(
+                            {"provider": ai_config.status()["provider"]}
+                            if ai_config.status()["provider"] != "openai" else {}
+                        ),
                     )
-                results["language"] = {"ok": True, "model": model}
+                check = {"ok": True, "model": model}
             except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(
-                    429, "AI budget limit reached or model pricing unknown."
-                ) from None
+                raise HTTPException(429, "AI budget limit reached or model pricing unknown.") from None
             except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("AI language model connection test failed: %s", type(exc).__name__)
-                results["language"] = {
-                    "ok": False,
-                    "model": model,
-                    "reason": ai_probe_failure(exc),
+                _LOG.warning("AI connection test failed: %s", type(exc).__name__)
+                check = {
+                    "ok": False, "model": model, "reason": ai_probe_failure(exc),
                 }
-            try:
-                with usage_session(
-                    ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
-                ):
-                    vectors = await embed(["Test de recherche sémantique."], embedding_model,
-                                          embedding_key, **({"provider": ai_config.status()["embedding_provider"]}
-                                          if ai_config.status()["embedding_provider"] != "openai" else {}))
-                if not vectors or not vectors[0]:
-                    raise ValueError("Empty embedding vector")
-                results["embedding"] = {"ok": True, "model": embedding_model}
-            except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(
-                    429, "AI budget limit reached or model pricing unknown."
-                ) from None
-            except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("AI embedding connection test failed: %s", type(exc).__name__)
-                results["embedding"] = {
-                    "ok": False,
-                    "model": embedding_model,
-                    "reason": ai_probe_failure(exc),
-                }
-        return {"ok": results["language"]["ok"] and results["embedding"]["ok"], **results}
+        return {"ok": check["ok"], "language": check}
 
     @app.post(API + "/ai/index/refresh", tags=["AI"], dependencies=[Depends(writable)])
     async def refresh_ai_index():
-        if not ai_config.embedding_credentials():
-            raise HTTPException(503, "Embedding provider is not configured.")
-        start_ai_index()
-        return {"status": "started", "index": await asyncio.to_thread(ai_index_status)}
+        """Compatibility with older clients: single-model search has no vector index."""
+        return {"status": "not_required",
+                "index": {"indexed": 0, "total": 0, "complete": True, "running": False}}
 
     @app.post(API + "/ai/search", tags=["AI"], dependencies=[Depends(authenticated)])
     async def search_with_ai(value: AISearchInput, request: Request):
         credentials = ai_config.credentials()
-        embedding_credentials = ai_config.embedding_credentials()
-        if not credentials or not embedding_credentials:
-            raise HTTPException(503, "AI language and embedding providers must be configured.")
+        if not credentials:
+            raise HTTPException(503, "AI search is not configured. Use standard search.")
         client_ip = request.client.host if request.client else "unknown"
         async with ai_rate_lock:
             attempts = ai_attempts[client_ip]
@@ -598,15 +503,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             if refinement["operation"] == "expand":
                                 # Reuse the original criteria, not the phrase "add more"
                                 # as a new semantic or lexical query.
-                                more = await hybrid_page(
-                                    store,
-                                    value.previous_plan,
-                                    ai_index,
-                                    ai_config.vector_index_model(),
-                                    embedding_credentials[1],
+                                more = await single_model_page(
+                                    store, value.previous_plan,
+                                    prompt=value.previous_plan.semantic_query or value.prompt,
+                                    model=credentials[0], key=credentials[1],
+                                    provider=ai_config.status()["provider"],
                                     exclude_ids=set(previous_ids),
-                                    embedding_api_model=embedding_credentials[0],
-                                    embedding_provider=ai_config.status()["embedding_provider"],
                                 )
                                 existing = await asyncio.to_thread(
                                     store.media, ids=previous_ids, limit=60
@@ -631,7 +533,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                         "additional titles found."
                                     ),
                                     "note": more.get("note"),
-                                    "index": await asyncio.to_thread(ai_index_status),
                                 }
                             if refinement["operation"] == "filter":
                                 retained_ids = refinement["keep_ids"]
@@ -661,7 +562,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     "relevance_reasons": {},
                                     "assistant_message": refinement["assistant_message"],
                                     "note": None,
-                                    "index": await asyncio.to_thread(ai_index_status),
                                 }
                     if value.previous_plan is None:
                         plan = await interpret_prompt(value.prompt, *credentials, facets,
@@ -673,18 +573,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             **({"provider": ai_config.status()["provider"]}
                                if ai_config.status()["provider"] != "openai" else {}),
                         )
-                    output = await hybrid_page(
-                        store,
-                        plan,
-                        ai_index,
-                        ai_config.vector_index_model(),
-                        embedding_credentials[1],
-                        prompt=value.prompt,
-                        language_model=credentials[0],
-                        language_key=credentials[1],
-                        language_provider=ai_config.status()["provider"],
-                        embedding_provider=ai_config.status()["embedding_provider"],
-                        embedding_api_model=embedding_credentials[0],
+                    output = await single_model_page(
+                        store, plan, prompt=value.prompt,
+                        model=credentials[0], key=credentials[1],
+                        provider=ai_config.status()["provider"],
                     )
             except AIBudgetExceeded as exc:
                 raise HTTPException(429, str(exc)) from None
@@ -693,9 +585,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("AI search failed: %s", type(exc).__name__)
                 raise HTTPException(502, "AI provider unavailable or invalid model.") from None
-        if plan.semantic_query and not output["index"]["complete"]:
-            start_ai_index()  # Lazy refresh discovers episode changes after Kodi sync.
-        output["index"] = await asyncio.to_thread(ai_index_status)
         return output
 
     @app.get(
@@ -1028,7 +917,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 await asyncio.to_thread(store.update_personal, media_id, changes)
                 if "user_rating" in changes:
                     # Personal ratings are embedded; watch-state-only edits are not.
-                    start_ai_index()
+                    pass  # No vector index in single-model mode.
             relevant_source_ids = {edition["source_id"] for edition in detail["editions"]}
             sources = [
                 await asyncio.to_thread(store.source, source_id, private=True)
@@ -1224,7 +1113,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(502, str(exc)) from exc
             if not await asyncio.to_thread(store.save_enrichment, media_id, payload):
                 raise HTTPException(404, "Media was removed during enrichment.")
-            start_ai_index()
+            pass  # No vector index in single-model mode.
             if refresh:
                 photos = [
                     url
