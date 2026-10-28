@@ -51,3 +51,36 @@ def test_playback_location_rejects_embedded_credentials(client, admin):
         ).status_code
         == 422
     )
+
+
+def test_smb_hostname_alias_roundtrip_and_validation(client, admin):
+    endpoint = "/api/v1/playback/locations"
+    payload = {
+        "name": "NAS via IP",
+        "kind": "smb",
+        "target": "smb://192.168.1.20/Movies",
+        "host": "192.168.1.20",
+        "hostname": "Kodi-NAS.local.",
+        "share": "Movies",
+    }
+    created = client.post(endpoint, headers=admin, json=payload)
+    assert created.status_code == 201, created.text
+    location = created.json()
+    assert location["host"] == "192.168.1.20"
+    assert location["hostname"] == "Kodi-NAS.local"
+    location_id = location["id"]
+    assert client.get(endpoint, headers=admin).json()[0]["hostname"] == "Kodi-NAS.local"
+
+    payload["hostname"] = "Other-NAS"
+    updated = client.put(f"{endpoint}/{location_id}", headers=admin, json=payload)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["hostname"] == "Other-NAS"
+    assert client.app.state.store.playback_location(location_id)["hostname"] == "Other-NAS"
+
+    for invalid in ("smb://other", "a/b", "host:445", "some host"):
+        response = client.put(
+            f"{endpoint}/{location_id}", headers=admin,
+            json={**payload, "hostname": invalid},
+        )
+        assert response.status_code == 422, (invalid, response.text)
+    assert client.get(endpoint, headers=admin).json()[0]["hostname"] == "Other-NAS"
