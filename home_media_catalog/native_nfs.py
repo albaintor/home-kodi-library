@@ -3,6 +3,7 @@
 Each request owns an independent libnfs context. This avoids sharing a mutable
 file handle across overlapping HTTP Range requests and keeps seeks isolated.
 """
+
 from __future__ import annotations
 
 import ctypes as C
@@ -17,17 +18,38 @@ class NFSUnavailable(RuntimeError):
 
 
 class _NFSStat(C.Structure):
-    _fields_ = [(field, C.c_uint64) for field in (
-        "dev", "ino", "mode", "nlink", "uid", "gid", "rdev", "size",
-        "blksize", "blocks", "atime", "mtime", "ctime", "atime_nsec",
-        "mtime_nsec", "ctime_nsec", "used",
-    )]
+    _fields_ = [
+        (field, C.c_uint64)
+        for field in (
+            "dev",
+            "ino",
+            "mode",
+            "nlink",
+            "uid",
+            "gid",
+            "rdev",
+            "size",
+            "blksize",
+            "blocks",
+            "atime",
+            "mtime",
+            "ctime",
+            "atime_nsec",
+            "mtime_nsec",
+            "ctime_nsec",
+            "used",
+        )
+    ]
 
 
 class _NFSDirent(C.Structure):
     _fields_ = [
-        ("next", C.c_void_p), ("name", C.c_char_p), ("inode", C.c_uint64),
-        ("type", C.c_uint32), ("mode", C.c_uint32), ("size", C.c_uint64),
+        ("next", C.c_void_p),
+        ("name", C.c_char_p),
+        ("inode", C.c_uint64),
+        ("type", C.c_uint32),
+        ("mode", C.c_uint32),
+        ("size", C.c_uint64),
     ]
 
 
@@ -50,10 +72,8 @@ def _library():
         "nfs_opendir": (C.c_int, [C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p)]),
         "nfs_readdir": (C.POINTER(_NFSDirent), [C.c_void_p, C.c_void_p]),
         "nfs_closedir": (None, [C.c_void_p, C.c_void_p]),
-        "nfs_open": (C.c_int, [C.c_void_p, C.c_char_p, C.c_int,
-                               C.POINTER(C.c_void_p)]),
-        "nfs_pread": (C.c_int, [C.c_void_p, C.c_void_p, C.c_uint64,
-                               C.c_uint64, C.c_void_p]),
+        "nfs_open": (C.c_int, [C.c_void_p, C.c_char_p, C.c_int, C.POINTER(C.c_void_p)]),
+        "nfs_pread": (C.c_int, [C.c_void_p, C.c_void_p, C.c_uint64, C.c_uint64, C.c_void_p]),
         "nfs_close": (C.c_int, [C.c_void_p, C.c_void_p]),
     }
     for symbol, (restype, args) in signatures.items():
@@ -76,8 +96,10 @@ def _remote_root(location: dict) -> tuple[str, str, int]:
 
 
 def _remote_path(relative: str) -> bytes:
-    if relative.startswith("/") or "\\" in relative or any(
-        part in (".", "..") for part in relative.split("/")
+    if (
+        relative.startswith("/")
+        or "\\" in relative
+        or any(part in (".", "..") for part in relative.split("/"))
     ):
         raise ValueError("Invalid path relative to NFS export.")
     return ("/" + relative.strip("/") if relative else "/").encode("utf-8")
@@ -106,7 +128,10 @@ class NativeNFS:
                     self.ctx = ctx
                     break
                 detail = self.lib.nfs_get_error(ctx)
-                errors.append(f"v{version}: " + (detail.decode(errors="replace") if detail else "mount failed"))
+                errors.append(
+                    f"v{version}: "
+                    + (detail.decode(errors="replace") if detail else "mount failed")
+                )
             finally:
                 if self.ctx != ctx:
                     self.lib.nfs_destroy_context(ctx)
@@ -127,7 +152,9 @@ class NativeNFS:
 
     def listing(self, path: str) -> list[dict]:
         directory = C.c_void_p()
-        self._check(self.lib.nfs_opendir(self.ctx, _remote_path(path), C.byref(directory)), "opendir")
+        self._check(
+            self.lib.nfs_opendir(self.ctx, _remote_path(path), C.byref(directory)), "opendir"
+        )
         try:
             entries = []
             while len(entries) < 2000:
@@ -141,10 +168,13 @@ class NativeNFS:
                 # 5 = NF3LNK. Skip links to avoid crossing export boundaries.
                 if item.type == 5 or "/" in name or "\\" in name:
                     continue
-                entries.append({
-                    "name": name, "is_dir": item.type == 2,
-                    "size": int(item.size) if item.type == 1 else 0,
-                })
+                entries.append(
+                    {
+                        "name": name,
+                        "is_dir": item.type == 2,
+                        "size": int(item.size) if item.type == 1 else 0,
+                    }
+                )
             return entries
         finally:
             self.lib.nfs_closedir(self.ctx, directory)
