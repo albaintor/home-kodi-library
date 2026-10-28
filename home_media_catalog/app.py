@@ -389,6 +389,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     def ai_index_status():
+        if ai_config.status()["provider"] != "openai":
+            return None
         docs = store.ai_documents()
         model = ai_config.status()["embedding_model"]
         return {
@@ -400,6 +402,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def run_ai_index():
         nonlocal ai_index_error
         async with ai_index_lock:
+            if ai_config.status()["provider"] != "openai":
+                return
             credentials = ai_config.credentials()
             if not credentials:
                 return
@@ -428,7 +432,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def start_ai_index(*, immediate: bool = False):
         nonlocal ai_index_task
-        if not ai_config.credentials():
+        if ai_config.status()["provider"] != "openai" or not ai_config.credentials():
             return
         ai_index_dirty.set()
         if ai_index_task is None or ai_index_task.done():
@@ -449,9 +453,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         }
 
     @app.put(API + "/ai/settings", tags=["AI"], dependencies=[Depends(writable)])
-    def update_ai_settings(value: AISettingsInput):
+    async def update_ai_settings(value: AISettingsInput):
+        previous = ai_config.status()["provider"]
         try:
             status = ai_config.update(value)
+            if previous == "openai" and status["provider"] != "openai":
+                if ai_index_task and not ai_index_task.done():
+                    ai_index_task.cancel()
+            elif status["provider"] == "openai" and status["configured"]:
+                start_ai_index()
             return {
                 **status,
                 "index": ai_index_status(),
@@ -489,56 +499,56 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post(API + "/ai/connection/test", tags=["AI"], dependencies=[Depends(writable)])
     async def test_ai_connection():
-        """Probe both configured models, not just a valid HTTP/API token."""
+        """Test the active provider and, for OpenAI only, its vector embeddings."""
         credentials = ai_config.credentials()
         if not credentials:
-            raise HTTPException(503, "Configure and save an OpenAI API key first.")
+            raise HTTPException(503, "Configure and save the provider API key first.")
         model, key = credentials
-        embedding_model = ai_config.status()["embedding_model"]
+        provider = ai_config.status()["provider"]
         results = {}
         async with ai_limit:
             try:
                 with usage_session(
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
+                    provider_kwargs = {"provider": provider} if provider != "openai" else {}
                     await interpret_prompt(
-                        "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
+                        "Trouve les films après 2015.", model, key,
+                        {"genres": [], "formats": []}, **provider_kwargs
                     )
                 results["language"] = {"ok": True, "model": model}
             except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(
-                    429, "OpenAI budget limit reached or model pricing unknown."
-                ) from None
+                raise HTTPException(429, "AI budget limit reached or model pricing unknown.") from None
             except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("OpenAI language model connection test failed: %s", type(exc).__name__)
+                _LOG.warning("AI language model connection test failed: %s", type(exc).__name__)
                 results["language"] = {
-                    "ok": False,
-                    "model": model,
-                    "reason": ai_probe_failure(exc),
+                    "ok": False, "model": model, "reason": ai_probe_failure(exc)
                 }
-            try:
-                with usage_session(
-                    ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
-                ):
-                    vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
-                if not vectors or not vectors[0]:
-                    raise ValueError("Empty embedding vector")
-                results["embedding"] = {"ok": True, "model": embedding_model}
-            except (AIBudgetExceeded, AIPriceUnavailable):
-                raise HTTPException(
-                    429, "OpenAI budget limit reached or model pricing unknown."
-                ) from None
-            except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
-                results["embedding"] = {
-                    "ok": False,
-                    "model": embedding_model,
-                    "reason": ai_probe_failure(exc),
-                }
-        return {"ok": results["language"]["ok"] and results["embedding"]["ok"], **results}
+            if provider == "openai":
+                embedding_model = ai_config.status()["embedding_model"]
+                try:
+                    with usage_session(
+                        ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
+                    ):
+                        vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
+                    if not vectors or not vectors[0]:
+                        raise ValueError("Empty embedding vector")
+                    results["embedding"] = {"ok": True, "model": embedding_model}
+                except (AIBudgetExceeded, AIPriceUnavailable):
+                    raise HTTPException(
+                        429, "AI budget limit reached or model pricing unknown."
+                    ) from None
+                except (httpx.HTTPError, ValueError) as exc:
+                    _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
+                    results["embedding"] = {
+                        "ok": False, "model": embedding_model, "reason": ai_probe_failure(exc)
+                    }
+        return {"ok": all(item["ok"] for item in results.values()), **results}
 
     @app.post(API + "/ai/index/refresh", tags=["AI"], dependencies=[Depends(writable)])
     async def refresh_ai_index():
+        if ai_config.status()["provider"] != "openai":
+            return {"status": "not_required", "index": None}
         if not ai_config.credentials():
             raise HTTPException(503, "AI is not configured.")
         start_ai_index()
