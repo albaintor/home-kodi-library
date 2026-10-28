@@ -1228,14 +1228,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Maintenance"],
         dependencies=[Depends(writable)],
     )
-    async def catalogue_maintenance(action: Literal["clean", "reset"], request: Request):
+    async def catalogue_maintenance(action: Literal["clean", "reset", "reset_content"], request: Request):
         if request.headers.get("X-Confirm-Catalogue-Maintenance") != action:
             raise HTTPException(422, "Explicit maintenance confirmation is required.")
         if sync.active:
             raise HTTPException(409, "Wait for source synchronization jobs to finish.")
         async with personal_edit_lock:
             try:
-                return await asyncio.to_thread(store.maintain_catalogue, reset=action == "reset")
+                return await asyncio.to_thread(
+                    store.maintain_catalogue,
+                    reset=action == "reset",
+                    reset_content=action == "reset_content",
+                )
             except (RuntimeError, ValueError) as exc:
                 raise HTTPException(409, str(exc)) from exc
 
