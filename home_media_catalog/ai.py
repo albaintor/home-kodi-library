@@ -1,4 +1,4 @@
-"""Opt-in OpenAI prompt-to-filters search. API secrets never leave the server."""
+"""Opt-in provider-independent prompt-to-filters search. Secrets stay server-side."""
 
 import json
 import os
@@ -7,10 +7,10 @@ import tempfile
 from pathlib import Path
 from threading import RLock
 
-import httpx
 from pydantic import BaseModel, ConfigDict, Field
 
-from .ai_usage import tracked_post
+from .ai_providers import (PROVIDERS, EMBEDDING_PROVIDERS, LANGUAGE_DEFAULTS,
+                           EMBEDDING_DEFAULTS, generate_json)
 
 SCHEMA = {
     "type": "object",
@@ -53,7 +53,11 @@ SCHEMA = {
 
 class AISettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    provider: str = "openai"
+    embedding_provider: str = "openai"
     model: str = Field(default="gpt-4o-mini", min_length=1, max_length=100)
+    embedding_api_key: str | None = Field(default=None, max_length=300)
+    clear_embedding_api_key: bool = False
     api_key: str | None = Field(default=None, max_length=300)
     clear_api_key: bool = False
     embedding_model: str | None = Field(default=None, min_length=1, max_length=100)
@@ -100,51 +104,92 @@ class AIConfiguration:
             pass
         return {}
 
+    def _keys(self, value: dict) -> dict:
+        # The pre-multi-provider format stored the OpenAI secret as api_key.
+        return {**({"openai": value["api_key"]} if value.get("api_key") else {}),
+                **value.get("api_keys", {})}
+
     def status(self) -> dict:
         with self.lock:
             value = self._read()
+            provider = value.get("provider", "openai")
+            embedding_provider = value.get("embedding_provider", "openai")
+            keys = self._keys(value)
+            language_key = keys.get(provider, "")
+            embedding_key = keys.get(embedding_provider, "")
             return {
-                "provider": "openai",
-                "model": value.get("model") or "gpt-4o-mini",
-                "configured": bool(value.get("api_key")),
-                "has_api_key": bool(value.get("api_key")),
-                "embedding_model": value.get("embedding_model") or "text-embedding-3-small",
+                "provider": provider,
+                "embedding_provider": embedding_provider,
+                "model": value.get("model") or LANGUAGE_DEFAULTS[provider],
+                "configured": bool(language_key and embedding_key),
+                "has_api_key": bool(language_key),
+                "has_embedding_api_key": bool(embedding_key),
+                "embedding_model": value.get("embedding_model") or EMBEDDING_DEFAULTS[embedding_provider],
                 "monthly_budget_usd": value.get("monthly_budget_usd", 5.0),
             }
 
     def credentials(self) -> tuple[str, str] | None:
         with self.lock:
-            data = self._read()
-            key = data.get("api_key", "")
-            return (data.get("model") or "gpt-4o-mini", key) if key else None
+            value = self._read()
+            provider = value.get("provider", "openai")
+            key = self._keys(value).get(provider, "")
+            return (value.get("model") or LANGUAGE_DEFAULTS[provider], key) if key else None
+
+    def embedding_credentials(self) -> tuple[str, str] | None:
+        with self.lock:
+            value = self._read()
+            provider = value.get("embedding_provider", "openai")
+            key = self._keys(value).get(provider, "")
+            return (value.get("embedding_model") or EMBEDDING_DEFAULTS[provider], key) if key else None
+
+    def vector_index_model(self) -> str:
+        state = self.status()
+        # Preserve existing OpenAI vector identities during migration.
+        return (state["embedding_model"] if state["embedding_provider"] == "openai"
+                else state["embedding_provider"] + ":" + state["embedding_model"])
 
     def update(self, request: AISettingsInput) -> dict:
+        if request.provider not in PROVIDERS or request.embedding_provider not in EMBEDDING_PROVIDERS:
+            raise ValueError("Unsupported AI provider.")
         if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or (
             request.embedding_model is not None
             and not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model)
         ):
             raise ValueError("Invalid model identifier.")
-        if request.api_key is not None and request.api_key and not request.api_key.strip():
-            raise ValueError("The access key must not be whitespace.")
+        for key in (request.api_key, request.embedding_api_key):
+            if key is not None and key and not key.strip():
+                raise ValueError("The access key must not be whitespace.")
         with self.lock:
             value = self._read()
-            key = "" if request.clear_api_key else value.get("api_key", "")
+            keys = self._keys(value)
+            if request.clear_api_key:
+                keys.pop(request.provider, None)
+            if request.clear_embedding_api_key:
+                keys.pop(request.embedding_provider, None)
             if request.api_key:
-                key = request.api_key.strip()
-            contents = json.dumps(
-                {
-                    "model": request.model,
-                    "api_key": key,
-                    "monthly_budget_usd": (
-                        request.monthly_budget_usd
-                        if request.monthly_budget_usd is not None
-                        else value.get("monthly_budget_usd", 5.0)
-                    ),
-                    "embedding_model": request.embedding_model
-                    or value.get("embedding_model")
-                    or "text-embedding-3-small",
-                }
-            )
+                keys[request.provider] = request.api_key.strip()
+            if request.embedding_api_key:
+                keys[request.embedding_provider] = request.embedding_api_key.strip()
+            previous_provider = value.get("provider", "openai")
+            previous_embedding_provider = value.get("embedding_provider", "openai")
+            contents = json.dumps({
+                "provider": request.provider,
+                "embedding_provider": request.embedding_provider,
+                "model": (LANGUAGE_DEFAULTS[request.provider]
+                          if request.provider != previous_provider and
+                          request.model == LANGUAGE_DEFAULTS["openai"]
+                          else request.model),
+                "api_keys": keys,
+                "monthly_budget_usd": (
+                    request.monthly_budget_usd if request.monthly_budget_usd is not None
+                    else value.get("monthly_budget_usd", 5.0)),
+                "embedding_model": (
+                    request.embedding_model
+                    or (EMBEDDING_DEFAULTS[request.embedding_provider]
+                        if request.embedding_provider != previous_embedding_provider
+                        else value.get("embedding_model"))
+                    or EMBEDDING_DEFAULTS[request.embedding_provider]),
+            })
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
             try:
@@ -192,7 +237,8 @@ def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
 
 
 async def interpret_prompt(
-    prompt: str, model: str, key: str, facets: dict, previous: AISearchPlan | None = None
+    prompt: str, model: str, key: str, facets: dict, previous: AISearchPlan | None = None,
+    *, provider: str = "openai",
 ) -> AISearchPlan:
     instructions = (
         "You translate film library searches into strictly factual filters. "
@@ -224,45 +270,17 @@ async def interpret_prompt(
         "refinement: preserve previous fields and semantic query unless the new user "
         "request changes or removes them; output the complete merged plan. Respond in JSON per schema."
     )
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        response = await tracked_post(
-            client,
-            "https://api.openai.com/v1/responses",
-            headers={"Authorization": "Bearer " + key},
-            json={
-                "model": model,
-                "instructions": instructions,
-                "input": "Available genres: "
-                + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
-                + "\nAvailable formats: "
-                + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
-                + "\nPrevious search plan: "
-                + (previous.model_dump_json(exclude={"assistant_message"}) if previous else "none")
-                + "\nUser search: "
-                + prompt,
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "catalogue_filter",
-                        "strict": True,
-                        "schema": SCHEMA,
-                    }
-                },
-                "store": False,
-                "max_output_tokens": 1800,
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-    chunks = [
-        part.get("text", "")
-        for output in data.get("output", [])
-        for part in output.get("content", [])
-        if part.get("type") == "output_text"
-    ]
-    if not chunks:
-        raise ValueError("The AI provider returned no structured search.")
-    return normalize_plan(AISearchPlan.model_validate_json("".join(chunks)), facets)
+    data = await generate_json(
+        instructions,
+        "Available genres: " + json.dumps(facets.get("genres", [])[:120], ensure_ascii=False)
+        + "\\nAvailable formats: " + json.dumps(facets.get("formats", [])[:120], ensure_ascii=False)
+        + "\\nPrevious search plan: "
+        + (previous.model_dump_json(exclude={"assistant_message"}) if previous else "none")
+        + "\\nUser search: " + prompt,
+        SCHEMA, model, key, provider=provider,
+    )
+    return normalize_plan(AISearchPlan.model_validate(data), facets)
+
 
 
 REFINEMENT_SCHEMA = {
@@ -278,7 +296,8 @@ REFINEMENT_SCHEMA = {
 
 
 async def interpret_result_refinement(
-    prompt: str, model: str, key: str, candidates: list[dict]
+    prompt: str, model: str, key: str, candidates: list[dict],
+    *, provider: str = "openai",
 ) -> dict:
     """Decide whether the user is editing existing hits, without inventing catalogue IDs."""
     instructions = (
@@ -298,41 +317,13 @@ async def interpret_result_refinement(
         "Return a concise assistant_message in the user's language. "
         "Use only titles and metadata actually supplied."
     )
-    async with httpx.AsyncClient(timeout=25.0) as client:
-        response = await tracked_post(
-            client,
-            "https://api.openai.com/v1/responses",
-            headers={"Authorization": "Bearer " + key},
-            json={
-                "model": model,
-                "instructions": instructions,
-                "input": "Current results: "
-                + json.dumps(candidates, ensure_ascii=False)
-                + "\nUser instruction: "
-                + prompt,
-                "text": {
-                    "format": {
-                        "type": "json_schema",
-                        "name": "result_refinement",
-                        "strict": True,
-                        "schema": REFINEMENT_SCHEMA,
-                    }
-                },
-                "store": False,
-                "max_output_tokens": 3400,
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-    chunks = [
-        part.get("text", "")
-        for output in data.get("output", [])
-        for part in output.get("content", [])
-        if part.get("type") == "output_text"
-    ]
-    if not chunks:
-        raise ValueError("No structured result refinement received.")
-    value = json.loads("".join(chunks))
+    value = await generate_json(
+        instructions,
+        "Current results: " + json.dumps(candidates, ensure_ascii=False)
+        + "\\nUser instruction: " + prompt,
+        REFINEMENT_SCHEMA, model, key, provider=provider, max_output_tokens=3400,
+        schema_name="result_refinement",
+    )
     if value.get("operation") not in ("filter", "expand", "search"):
         raise ValueError("Invalid refinement operation.")
     allowed = {item["id"] for item in candidates}
