@@ -506,7 +506,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 ):
                     await interpret_prompt(
                         "Trouve les films après 2015.", model, key, {"genres": [], "formats": []},
-                        provider=ai_config.status()["provider"],
+                        **({"provider": ai_config.status()["provider"]}
+                           if ai_config.status()["provider"] != "openai" else {}),
                     )
                 results["language"] = {"ok": True, "model": model}
             except (AIBudgetExceeded, AIPriceUnavailable):
@@ -525,7 +526,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
                     vectors = await embed(["Test de recherche sémantique."], embedding_model,
-                                          embedding_key, provider=ai_config.status()["embedding_provider"])
+                                          embedding_key, **({"provider": ai_config.status()["embedding_provider"]}
+                                          if ai_config.status()["embedding_provider"] != "openai" else {}))
                 if not vectors or not vectors[0]:
                     raise ValueError("Empty embedding vector")
                 results["embedding"] = {"ok": True, "model": embedding_model}
@@ -590,7 +592,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         if candidates:
                             refinement = await interpret_result_refinement(
                                 value.prompt, credentials[0], credentials[1], candidates,
-                                provider=ai_config.status()["provider"],
+                                **({"provider": ai_config.status()["provider"]}
+                                   if ai_config.status()["provider"] != "openai" else {}),
                             )
                             if refinement["operation"] == "expand":
                                 # Reuse the original criteria, not the phrase "add more"
@@ -662,11 +665,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 }
                     if value.previous_plan is None:
                         plan = await interpret_prompt(value.prompt, *credentials, facets,
-                                                      provider=ai_config.status()["provider"])
+                                                      **({"provider": ai_config.status()["provider"]}
+                                                         if ai_config.status()["provider"] != "openai" else {}))
                     else:
                         plan = await interpret_prompt(
                             value.prompt, *credentials, facets, value.previous_plan,
-                            provider=ai_config.status()["provider"],
+                            **({"provider": ai_config.status()["provider"]}
+                               if ai_config.status()["provider"] != "openai" else {}),
                         )
                     output = await hybrid_page(
                         store,
