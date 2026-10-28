@@ -299,6 +299,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "playback_discovery",
                 "playback_cloud_oauth",
                 "kodi_clean",
+                "media_details_batch",
             ],
         }
 

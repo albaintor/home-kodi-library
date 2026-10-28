@@ -14,8 +14,10 @@ force the app to show an update-required screen before reading the catalogue.
 # server's version identifier includes the model revision automatically.
 DATA_MODEL_VERSION = 6
 
+# Contract 2 requires the bounded rich-detail batch endpoint used by iOS.
+# Keep contract 1 available for older installed app versions.
 MIN_MOBILE_CONTRACT = 1
-MAX_MOBILE_CONTRACT = 1
+MAX_MOBILE_CONTRACT = 2
 
 
 def mobile_compatibility() -> dict[str, int]:

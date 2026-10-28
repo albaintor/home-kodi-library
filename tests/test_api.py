@@ -308,13 +308,13 @@ def test_mobile_contract_announced_without_changing_versioned_endpoint(client, a
     status = client.get("/api/v1/status", headers=admin)
     assert status.status_code == 200
     assert status.json()["api_version"] == "v1"
-    assert status.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert status.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 2}
     assert status.json()["data_model_version"] == 6
     assert status.json()["version"].endswith("+model.6")
 
     discovery = client.get("/api/v1/discovery")
     assert discovery.status_code == 200
-    assert discovery.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert discovery.json()["mobile_compatibility"] == {"min_contract": 1, "max_contract": 2}
     assert discovery.json()["data_model_version"] == status.json()["data_model_version"]
     assert discovery.json()["server_version"] == status.json()["version"]
 
@@ -491,9 +491,29 @@ def test_mobile_discovery_advertises_optional_features_and_contract(client, admi
     assert discovery.status_code == 200
     body = discovery.json()
     assert body["api_version"] == "v1"
-    assert body["mobile_compatibility"] == {"min_contract": 1, "max_contract": 1}
+    assert body["mobile_compatibility"] == {"min_contract": 1, "max_contract": 2}
     assert {"ai_search", "bulk_list_add"} <= set(body["capabilities"])
     assert body["data_model_version"] >= 6
     status = client.get("/api/v1/status", headers=admin).json()
     assert status["version"] == body["server_version"]
     assert status["data_model_version"] == body["data_model_version"]
+
+def test_batch_media_details_matches_individual_endpoint(client, admin):
+    source = client.post(
+        "/api/v1/sources", headers=admin,
+        json={"name": "Batch test", "type": "clz"},
+    )
+    assert source.status_code == 201, source.text
+    source_id = source.json()["id"]
+    from conftest import READ
+    # Unknown media is ignored, as in the store's detail lookup.
+    read = {"Authorization": f"Bearer {READ}"}
+    route = "/api/v1/media/details/batch"
+    assert client.post(route, json={"ids": ["missing"]}).status_code == 401
+    assert client.post(route, headers=read, json={"ids": ["missing"]}).json() == {"items": []}
+    for invalid in [[], [""], ["x"] * 101, "not an array"]:
+        response = client.post(route, headers=read, json={"ids": invalid})
+        assert response.status_code == 422, response.text
+    assert "media_details_batch" in client.get("/api/v1/discovery").json()["capabilities"]
+
+
