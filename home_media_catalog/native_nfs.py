@@ -6,9 +6,9 @@ file handle across overlapping HTTP Range requests and keeps seeks isolated.
 from __future__ import annotations
 
 import ctypes as C
+import stat
 from ctypes.util import find_library
 from functools import lru_cache
-import stat
 from urllib.parse import urlsplit
 
 
