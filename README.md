@@ -9,14 +9,17 @@ Home Media Catalog is a self-hosted catalog with a responsive **web interface** 
 
 ## Highlights
 
-- **Combine** Kodi (read-only MariaDB synchronization) and CLZ Movies, MyMovies, or Filmotech (XML imports), with editions grouped by title.
+- **Combine** Kodi and CLZ Movies, MyMovies, or Filmotech (XML imports), with editions grouped by title.
 - **Explore** movies, TV shows and episodes with posters, cast, formats, advanced filters and optional TMDB metadata.
 - **Organize** your collection using custom lists, personal ratings and watched status.
-- **Play** selected titles on an existing Kodi player, including playback resume.
-- **Access** the same catalog on the web, iOS/iPadOS or through Home Assistant.
+- **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
+- **Play** Kodi titles, local network shared or cloud medias directly on your iPhone.
+- **Access** the same catalog on the web, iOS/iPadOS.
 - **Search with AI (optional)** using natural language, hybrid semantic/keyword matching over film, series and individual episode synopses, and conversational refinements.
 
-The server uses its own **SQLite database**. Importing Kodi content requires an existing external Kodi MyVideos MariaDB/MySQL database, but browsing does not require a Kodi player to be running. Collection-only catalogs do not require Kodi.
+The iOS/iPadOS app doesn't require the server and can work in standalone. Some features such as AI search won't be available.
+
+The server uses its own **database** and when used is kept in sync with the app. Collection-only catalogs do not require Kodi.
 
 ### Web interface
 
@@ -108,9 +111,9 @@ the Kodi player selector.
 
 ### Legal notices and third-party licences
 
-Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. Earlier iOS/MPVKit builds used statically linked FFmpeg components with LGPLv3 obligations. The current development branch uses an experimental dynamically linked FFmpeg adapter; it still requires a pre-release source, binary, licensing and distribution-rights audit.
+Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. Earlier iOS/MPVKit builds used statically linked FFmpeg components with LGPLv3 obligations. The current development branch uses an experimental dynamically linked FFmpeg adapter.
 
-See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). No statement here should be read as certification that a particular iOS binary or Docker release is compliant. Also review rights to media content, artwork, logos and third-party service APIs before distribution.
+See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). 
 
 ## Get started
 
