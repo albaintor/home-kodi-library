@@ -32,7 +32,7 @@ def test_kodi_credentials_are_admin_only_uncached_and_not_in_player_list(client)
     listed = client.get("/api/v1/players", headers=readonly)
     assert listed.status_code == 200
     assert listed.json()[0]["has_password"] is True
-    assert "password" not in listed.text
+    assert all("password" not in item for item in listed.json())
     assert "local-kodi-secret" not in listed.text
 
     assert client.get(path).status_code == 401

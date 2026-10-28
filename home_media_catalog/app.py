@@ -865,8 +865,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(422, "Supply 1 to 100 valid media identifiers.")
         details = store.details_bulk(ids)
         tmdb_available = bool(settings.tmdb_api_token.strip())
-        return {"items": [{**detail, "tmdb_available": tmdb_available}
-                          for detail in details]}
+        # Use exactly the same DTO validation/defaults as GET /media/{id}.
+        return {
+            "items": [
+                MediaDetail.model_validate(
+                    {**detail, "tmdb_available": tmdb_available}
+                ).model_dump(mode="json")
+                for detail in details
+            ]
+        }
 
     @app.get(
         API + "/media/{media_id}",

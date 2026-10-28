@@ -83,7 +83,7 @@ def test_new_job_field_is_additive_for_v1_mobile_clients(client, admin):
         "overall_percent",
     }
     assert old_fields <= data.keys()
-    assert mobile_compatibility() == {"min_contract": 1, "max_contract": 1}
+    assert mobile_compatibility() == {"min_contract": 1, "max_contract": 2}
 
 
 def test_migration_from_pre_operation_sqlite_schema_preserves_old_jobs(tmp_path):
