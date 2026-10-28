@@ -104,8 +104,8 @@ def test_catalogue_cleanup_merges_duplicate_sources_and_preserves_other_settings
     )
     assert done.status_code == 200, done.text
     assert done.json()["merged_sources"] == 1
-    assert done.json()["backup"].endswith(".db")
-    assert (store.path.parent / done.json()["backup"]).is_file()
+    assert "backup" not in done.json()
+    assert not list(store.path.parent.glob("catalogue.before-cleanup.*.db"))
     remaining = store.sources()
     assert sum(src["type"] == "kodi" for src in remaining) == 1
     assert store.media()["total"] >= 2
@@ -132,5 +132,6 @@ def test_catalogue_reset_preserves_access_but_clears_catalogue(client, admin):
     assert store.sources() == []
     assert store.player("missing") is None
     assert client.get("/api/v1/catalogue/maintenance/preview", headers=admin).status_code == 200
-    assert (store.path.parent / response.json()["backup"]).exists()
+    assert "backup" not in response.json()
+    assert not list(store.path.parent.glob("catalogue.before-reset.*.db"))
     assert client.get("/api/v1/auth/session", headers=admin).status_code == 200
