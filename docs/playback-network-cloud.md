@@ -12,14 +12,26 @@ access in iOS Settings.
 ## Configuring a source
 
 Protocol-specific properties are stored in the server's SQLite database
-(`host`, `port`, `share`, `username`, `workgroup`). Passwords, when provided,
+(`host`, `hostname`, `port`, `share`, `username`, `workgroup`).
+For SMB and NFS, `hostname` is an optional **Kodi path alias**; `host`
+remains the actual IP address/network target used for connections. Passwords, when provided,
 are encrypted server-side using Fernet. The API only returns `has_password`.
 The iOS app does **not** cache server secrets for offline use.
 Updating a source without a new password preserves the existing one.
 
-Persisting a source configuration does not itself implement SMB, NFS or FTP
-directory browsing. SMB files can also be selected using the iOS Files app,
-then imported locally for playback without the Home Media Catalog server.
+SMB, FTP, SFTP and NFS have separate read-only browsing adapters. Native
+NFS uses `libnfs14` in the server image and does **not** require an OS mount.
+Installations with an existing `PLAYBACK_NFS_MOUNTS` mapping keep their
+mounted-path implementation for compatibility. All remote file paths are
+relative to their configured export roots; server streaming uses HTTP Range
+tickets to support seeks. On iOS, SMB and NFS playback can stream directly
+without Kodi through localhost HTTP Range bridges.
+
+Example: a Kodi path `nfs://NAS/volume1/Media/film.mkv` matches a source
+with IP `192.168.1.20`, optional hostname `NAS`, and export
+`/volume1/Media`. The app mounts the export and reads `film.mkv`.
+The configured export must be available to the NFS client; server-side
+export permissions (NFSv3/v4, UID/GID and firewall) still apply.
 
 ## OAuth connections
 
@@ -122,6 +134,7 @@ recognizable after upgrading the app.
   `Files.Read` permission in Microsoft Entra. No client secret or public
   HTTPS redirect is required for Device Code sign-in.
 
-**Current limitation:** saving a location descriptor does not guarantee
-that it can be browsed. SMB, FTP, NFS, UPnP and cloud browsing/streaming
-adapters are separate from the configuration screens.
+**Current limitation:** a saved descriptor does not guarantee the NAS
+grants read access. NFS and SMB require reachable servers and valid exports,
+shares and permissions. UPnP and unsupported cloud providers have no native
+browsing/streaming adapters.
