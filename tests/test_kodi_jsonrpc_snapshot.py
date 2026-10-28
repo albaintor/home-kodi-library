@@ -183,6 +183,7 @@ def test_merged_versions_without_mariadb_are_not_overwritten(store):
 
 def test_sync_tries_each_kodi_player_and_prefers_last_success(store):
     from contextlib import asynccontextmanager
+
     from home_media_catalog.connectors.base import Record
     from home_media_catalog.sync import SyncManager
 
@@ -227,6 +228,7 @@ def test_sync_tries_each_kodi_player_and_prefers_last_success(store):
 
 def test_sync_uses_mariadb_when_all_jsonrpc_players_fail(store):
     from contextlib import asynccontextmanager
+
     from home_media_catalog.connectors.base import Record
     from home_media_catalog.sync import SyncManager
 
