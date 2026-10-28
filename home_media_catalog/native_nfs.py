@@ -52,8 +52,8 @@ def _library():
         "nfs_closedir": (None, [C.c_void_p, C.c_void_p]),
         "nfs_open": (C.c_int, [C.c_void_p, C.c_char_p, C.c_int,
                                C.POINTER(C.c_void_p)]),
-        "nfs_pread": (C.c_int, [C.c_void_p, C.c_void_p, C.c_void_p,
-                               C.c_size_t, C.c_uint64]),
+        "nfs_pread": (C.c_int, [C.c_void_p, C.c_void_p, C.c_uint64,
+                               C.c_uint64, C.c_void_p]),
         "nfs_close": (C.c_int, [C.c_void_p, C.c_void_p]),
     }
     for symbol, (restype, args) in signatures.items():
@@ -157,7 +157,7 @@ class NativeNFS:
             while offset < final:
                 count = min(256 * 1024, final - offset)
                 buf = C.create_string_buffer(count)
-                read = self.lib.nfs_pread(self.ctx, handle, buf, count, offset)
+                read = self.lib.nfs_pread(self.ctx, handle, offset, count, buf)
                 self._check(read, "read")
                 if read == 0:
                     break
