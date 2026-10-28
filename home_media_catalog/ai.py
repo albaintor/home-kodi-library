@@ -132,7 +132,7 @@ class AIConfiguration:
                 "has_api_key": bool(keys.get(provider)),
                 "configured_providers": sorted(name for name in PROVIDERS if keys.get(name)),
                 "search_mode": "hybrid_vector" if provider == "openai" else "local_ai",
-                "embedding_model": (value.get("embedding_model") or "text-embedding-3-small") if provider == "openai" else None,
+                "embedding_model": value.get("embedding_model") or "text-embedding-3-small",
                 "monthly_budget_usd": value.get("monthly_budget_usd", 5.0),
             }
 
