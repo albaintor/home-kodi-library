@@ -45,7 +45,6 @@ def _library():
         "nfs_set_nfsport": (None, [C.c_void_p, C.c_int]),
         "nfs_set_autoreconnect": (None, [C.c_void_p, C.c_int]),
         "nfs_set_timeout": (None, [C.c_void_p, C.c_int]),
-        "nfs_set_timeout": (None, [C.c_void_p, C.c_int]),
         "nfs_mount": (C.c_int, [C.c_void_p, C.c_char_p, C.c_char_p]),
         "nfs_stat64": (C.c_int, [C.c_void_p, C.c_char_p, C.POINTER(_NFSStat)]),
         "nfs_opendir": (C.c_int, [C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p)]),
