@@ -27,7 +27,7 @@ def test_switching_providers_preserves_openai_embedding_configuration(tmp_path):
         )
     )
     assert config.status()["search_mode"] == "local_ai"
-    assert config.status()["embedding_model"] is None
+    assert config.status()["embedding_model"] == "text-embedding-3-large"
     assert config.credentials() == ("claude-haiku-4-5", "anthropic-secret")
 
     config.update(AISettingsInput(provider="openai", model="gpt-4o-mini"))
