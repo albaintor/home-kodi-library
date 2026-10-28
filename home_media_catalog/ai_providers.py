@@ -11,7 +11,7 @@ PROVIDERS = ("openai", "anthropic", "gemini")
 LANGUAGE_DEFAULTS = {
     "openai": "gpt-4o-mini",
     "anthropic": "claude-haiku-5-5",
-    "gemini": "gemini-2.5-flash-lite",
+    "gemini": "gemini-3.5-flash-lite",
 }
 
 
@@ -85,7 +85,7 @@ async def generate_json(
                         + json.dumps(schema, ensure_ascii=False) + "\n" + user_input}]}],
                     "generationConfig": {
                         "responseMimeType": "application/json",
-                        "maxOutputTokens": max_output_tokens,
+                        "maxOutputTokens": max_output_tokens * 2 if model.startswith("gemini-3") else max_output_tokens,
                         **(
                             {"thinkingConfig": {"thinkingBudget": 0}}
                             if model.startswith("gemini-2.5-flash")
