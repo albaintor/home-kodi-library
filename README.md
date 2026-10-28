@@ -15,11 +15,10 @@ Home Media Catalog is a self-hosted catalog with a responsive **web interface** 
 - **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
 - **Play** Kodi titles, local network shared or cloud medias directly on your iPhone.
 - **Access** the same catalog on the web, iOS/iPadOS.
-- **Search with AI (optional)** using natural language, hybrid semantic/keyword matching over film, series and individual episode synopses, and conversational refinements.
+- **Search with AI (optional, server required)** using natural language, hybrid semantic/keyword matching over film, series and individual episode synopses, and conversational refinements.
+- **Two Operating Modes** In standalone mode the iOS app directly imports catalogs and synchronizes with Kodi, no server needed. In server mode the app synchronizes with the server (but still directly controls Kodi instances). 
 
-The iOS/iPadOS app doesn't require the server and can work in standalone. Some features such as AI search won't be available.
-
-The server uses its own **database** and when used is kept in sync with the app. Collection-only catalogs do not require Kodi.
+Collection-only catalogs do not require Kodi.
 
 ### Web interface
 
