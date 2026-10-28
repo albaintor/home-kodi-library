@@ -850,6 +850,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     def facets():
         return store.facets()
 
+    @app.post(
+        API + "/media/details/batch",
+        tags=["Catalogue"],
+        dependencies=[Depends(authenticated)],
+    )
+    def media_details_batch(data: dict):
+        """Bounded rich-detail endpoint for mobile catalogue synchronization."""
+        ids = data.get("ids")
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 100
+                or any(not isinstance(value, str) or not value or len(value) > 128
+                       for value in ids)):
+            raise HTTPException(422, "Supply 1 to 100 valid media identifiers.")
+        details = store.details_bulk(ids)
+        tmdb_available = bool(settings.tmdb_api_token.strip())
+        return {"items": [
+            {
+                **detail,
+                "tmdb_available": tmdb_available,
+                "writeback_state": store.writeback_state(detail["id"]),
+            }
+            for detail in details
+        ]}
+
     @app.get(
         API + "/media/{media_id}",
         response_model=MediaDetail,

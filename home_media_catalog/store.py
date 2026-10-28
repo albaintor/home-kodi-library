@@ -2037,122 +2037,139 @@ class Store:
     def detail(self, work_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             conn.execute("BEGIN")
-            row = conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
-            if row is None:
-                return None
-            value = self._summary(row)
-            if row["kind"] == "tvshow":
-                value.update(self._series_episode_progress(conn, [work_id]).get(work_id, {}))
-            value["media_sources"] = self._sources_for_works(conn, [work_id]).get(work_id, [])
-            ids: dict[str, list[str]] = defaultdict(list)
-            for identity in conn.execute(
-                "SELECT namespace,value FROM identifiers WHERE work_id=? ORDER BY namespace,value",
-                (work_id,),
-            ):
-                ids[identity[0]].append(identity[1])
-            editions = []
-            for record in conn.execute(
-                "SELECT r.*,s.name,s.type FROM records r JOIN sources s ON s.id=r.source_id WHERE work_id=? ORDER BY s.type DESC,r.external_key",
-                (work_id,),
-            ):
-                payload = json.loads(record["payload"])
-                editions.append(
-                    {
-                        "id": record["id"],
-                        "source_id": record["source_id"],
-                        "source_name": record["name"],
-                        "source_type": record["type"],
-                        "external_key": record["external_key"],
-                        "identifiers": payload["identifiers"],
-                        "metadata": {
-                            **payload["metadata"],
-                            "formats": payload["formats"],
-                            "collections": payload["collections"],
-                        },
-                        **{
-                            n: payload.get(n)
-                            for n in (
-                                "watched",
-                                "play_count",
-                                "resume_seconds",
-                                "total_seconds",
-                                "date_added",
-                                "last_played",
-                            )
-                        },
-                    }
-                )
-            source_people = []
-            for edition in editions:
-                metadata = edition["metadata"]
-                source_people.extend(metadata.get("people", metadata.get("cast", [])))
-            cached = conn.execute("SELECT * FROM enrichment WHERE work_id=?", (work_id,)).fetchone()
-            enriched = json.loads(cached["payload"]) if cached else {}
-            # Preserve source roles, fill portraits/IDs from matching TMDB names.
-            people = []
-            seen = set()
-            for member in source_people + enriched.get("people", []):
-                key = (
-                    fold(member["name"]),
-                    member.get("category", "cast"),
-                )
-                if key in seen:
-                    if key[1] != "cast" and member.get("role"):
-                        previous = next(
-                            p for p in people if (fold(p["name"]), p.get("category", "cast")) == key
+            return self._detail_in_transaction(conn, work_id)
+
+    def details_bulk(self, work_ids: list[str]) -> list[dict[str, Any]]:
+        """Return details from one consistent, indexed SQLite read transaction."""
+        if len(work_ids) > 100:
+            raise ValueError("Too many requested media details.")
+        with self.connect() as conn:
+            conn.execute("BEGIN")
+            return [
+                detail
+                for work_id in dict.fromkeys(work_ids)
+                if (detail := self._detail_in_transaction(conn, work_id)) is not None
+            ]
+
+    def _detail_in_transaction(
+        self, conn: sqlite3.Connection, work_id: str
+    ) -> dict[str, Any] | None:
+        row = conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
+        if row is None:
+            return None
+        value = self._summary(row)
+        if row["kind"] == "tvshow":
+            value.update(self._series_episode_progress(conn, [work_id]).get(work_id, {}))
+        value["media_sources"] = self._sources_for_works(conn, [work_id]).get(work_id, [])
+        ids: dict[str, list[str]] = defaultdict(list)
+        for identity in conn.execute(
+            "SELECT namespace,value FROM identifiers WHERE work_id=? ORDER BY namespace,value",
+            (work_id,),
+        ):
+            ids[identity[0]].append(identity[1])
+        editions = []
+        for record in conn.execute(
+            "SELECT r.*,s.name,s.type FROM records r JOIN sources s ON s.id=r.source_id WHERE work_id=? ORDER BY s.type DESC,r.external_key",
+            (work_id,),
+        ):
+            payload = json.loads(record["payload"])
+            editions.append(
+                {
+                    "id": record["id"],
+                    "source_id": record["source_id"],
+                    "source_name": record["name"],
+                    "source_type": record["type"],
+                    "external_key": record["external_key"],
+                    "identifiers": payload["identifiers"],
+                    "metadata": {
+                        **payload["metadata"],
+                        "formats": payload["formats"],
+                        "collections": payload["collections"],
+                    },
+                    **{
+                        n: payload.get(n)
+                        for n in (
+                            "watched",
+                            "play_count",
+                            "resume_seconds",
+                            "total_seconds",
+                            "date_added",
+                            "last_played",
                         )
-                        roles = list(
-                            dict.fromkeys(filter(None, [previous.get("role"), member["role"]]))
-                        )
-                        previous["role"] = " · ".join(roles)
-                    continue
-                seen.add(key)
-                match = next(
-                    (
-                        p
-                        for p in enriched.get("people", [])
-                        if fold(p["name"]) == key[0]
-                        and not (
-                            p.get("tmdb_id")
-                            and member.get("tmdb_id")
-                            and p["tmdb_id"] != member["tmdb_id"]
-                        )
-                    ),
-                    {},
-                )
-                merged = {**match, **member}
-                for field in ("imdb_id", "tmdb_id"):
-                    merged[field] = member.get(field) or match.get(field)
-                merged["photos"] = list(
-                    dict.fromkeys([*(member.get("photos") or []), *(match.get("photos") or [])])
-                )
-                people.append(merged)
-            people = [person_view(p, work_id, index) for index, p in enumerate(people)]
-            trailers = list(
-                dict.fromkeys(
-                    url
-                    for candidate in [
-                        *(t for e in editions for t in e["metadata"].get("trailers", [])),
-                        *enriched.get("trailers", []),
-                    ]
-                    if (url := youtube_url(candidate))
-                )
+                    },
+                }
             )
-            personal = conn.execute(
-                "SELECT user_rating,watched FROM personal WHERE work_id=?", (work_id,)
-            ).fetchone()
-            return {
-                **value,
-                "identifiers": dict(ids),
-                "editions": editions,
-                "people": people,
-                "cast": [p for p in people if p["category"] == "cast"],
-                "trailers": trailers,
-                "personal": dict(personal) if personal else {},
-                "lists": self._lists(conn, work_id),
-                "enriched_at": cached["updated_at"] if cached else None,
-                "season_posters_cached": "season_posters" in enriched,
-            }
+        source_people = []
+        for edition in editions:
+            metadata = edition["metadata"]
+            source_people.extend(metadata.get("people", metadata.get("cast", [])))
+        cached = conn.execute("SELECT * FROM enrichment WHERE work_id=?", (work_id,)).fetchone()
+        enriched = json.loads(cached["payload"]) if cached else {}
+        # Preserve source roles, fill portraits/IDs from matching TMDB names.
+        people = []
+        seen = set()
+        for member in source_people + enriched.get("people", []):
+            key = (
+                fold(member["name"]),
+                member.get("category", "cast"),
+            )
+            if key in seen:
+                if key[1] != "cast" and member.get("role"):
+                    previous = next(
+                        p for p in people if (fold(p["name"]), p.get("category", "cast")) == key
+                    )
+                    roles = list(
+                        dict.fromkeys(filter(None, [previous.get("role"), member["role"]]))
+                    )
+                    previous["role"] = " · ".join(roles)
+                continue
+            seen.add(key)
+            match = next(
+                (
+                    p
+                    for p in enriched.get("people", [])
+                    if fold(p["name"]) == key[0]
+                    and not (
+                        p.get("tmdb_id")
+                        and member.get("tmdb_id")
+                        and p["tmdb_id"] != member["tmdb_id"]
+                    )
+                ),
+                {},
+            )
+            merged = {**match, **member}
+            for field in ("imdb_id", "tmdb_id"):
+                merged[field] = member.get(field) or match.get(field)
+            merged["photos"] = list(
+                dict.fromkeys([*(member.get("photos") or []), *(match.get("photos") or [])])
+            )
+            people.append(merged)
+        people = [person_view(p, work_id, index) for index, p in enumerate(people)]
+        trailers = list(
+            dict.fromkeys(
+                url
+                for candidate in [
+                    *(t for e in editions for t in e["metadata"].get("trailers", [])),
+                    *enriched.get("trailers", []),
+                ]
+                if (url := youtube_url(candidate))
+            )
+        )
+        personal = conn.execute(
+            "SELECT user_rating,watched FROM personal WHERE work_id=?", (work_id,)
+        ).fetchone()
+        return {
+            **value,
+            "identifiers": dict(ids),
+            "editions": editions,
+            "people": people,
+            "cast": [p for p in people if p["category"] == "cast"],
+            "trailers": trailers,
+            "personal": dict(personal) if personal else {},
+            "lists": self._lists(conn, work_id),
+            "enriched_at": cached["updated_at"] if cached else None,
+            "season_posters_cached": "season_posters" in enriched,
+        }
 
     def update_personal(self, work_id: str, changes: dict) -> bool:
         with self.connect() as conn:
