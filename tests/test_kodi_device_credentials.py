@@ -45,7 +45,10 @@ def test_kodi_credentials_are_admin_only_uncached_and_not_in_player_list(client)
 
     response = client.get(path, headers=admin)
     assert response.status_code == 200
-    assert response.headers["cache-control"] == "no-store, private"
+    assert set(response.headers["cache-control"].replace(" ", "").split(",")) == {
+        "no-store",
+        "private",
+    }
     assert response.headers["pragma"] == "no-cache"
     assert response.json() == {
         "player_id": player_id,
