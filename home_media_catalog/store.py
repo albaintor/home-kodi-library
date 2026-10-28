@@ -2046,7 +2046,10 @@ class Store:
         with self.connect() as conn:
             conn.execute("BEGIN")
             return [
-                detail
+                {
+                    **detail,
+                    "writeback_state": self._writeback_state_in_transaction(conn, work_id),
+                }
                 for work_id in dict.fromkeys(work_ids)
                 if (detail := self._detail_in_transaction(conn, work_id)) is not None
             ]
@@ -2688,41 +2691,23 @@ class Store:
     def writeback_state(self, work_id: str | None = None, limit: int = 30) -> list[dict]:
         """Last upstream result per source, overlaid with unresolved pending changes."""
         with self.connect() as conn:
-            query = (
-                "SELECT a.*,w.title AS media_title FROM writeback_audit a "
-                "LEFT JOIN works w ON w.id=a.work_id "
-                + ("WHERE a.work_id=? " if work_id else "")
-                + "ORDER BY a.created_at DESC,a.rowid DESC LIMIT ?"
-            )
-            args = (work_id, 3000) if work_id else (3000,)
-            rows = conn.execute(query, args).fetchall()
-            latest = {}
-            for row in rows:
-                key = (row["work_id"], row["source_id"])
-                if key not in latest:
-                    latest[key] = {
-                        "media_id": row["work_id"],
-                        "media_title": row["media_title"],
-                        "source_id": row["source_id"],
-                        "source_name": row["source_name"],
-                        "source_type": row["source_type"],
-                        "icon": self._source_symbol(row["source_type"]),
-                        "status": row["status"],
-                        "method": row["method"],
-                        "updated_at": row["created_at"],
-                        "pending_fields": [],
-                        "message": row["message"],
-                    }
-            pending_rows = conn.execute(
-                "SELECT p.*,s.type AS source_type,s.name AS source_name,"
-                "w.title AS media_title FROM writeback_pending p "
-                "JOIN sources s ON s.id=p.source_id "
-                "LEFT JOIN works w ON w.id=p.work_id " + ("WHERE p.work_id=?" if work_id else ""),
-                (work_id,) if work_id else (),
-            ).fetchall()
-            for row in pending_rows:
-                key = (row["work_id"], row["source_id"])
-                last = latest.get(key, {})
+            return self._writeback_state_in_transaction(conn, work_id, limit)
+
+    def _writeback_state_in_transaction(
+        self, conn: sqlite3.Connection, work_id: str | None = None, limit: int = 30
+    ) -> list[dict]:
+        query = (
+            "SELECT a.*,w.title AS media_title FROM writeback_audit a "
+            "LEFT JOIN works w ON w.id=a.work_id "
+            + ("WHERE a.work_id=? " if work_id else "")
+            + "ORDER BY a.created_at DESC,a.rowid DESC LIMIT ?"
+        )
+        args = (work_id, 3000) if work_id else (3000,)
+        rows = conn.execute(query, args).fetchall()
+        latest = {}
+        for row in rows:
+            key = (row["work_id"], row["source_id"])
+            if key not in latest:
                 latest[key] = {
                     "media_id": row["work_id"],
                     "media_title": row["media_title"],
@@ -2730,15 +2715,38 @@ class Store:
                     "source_name": row["source_name"],
                     "source_type": row["source_type"],
                     "icon": self._source_symbol(row["source_type"]),
-                    "status": "pending",
-                    "method": last.get("method"),
-                    "updated_at": row["updated_at"],
-                    "pending_fields": sorted(json.loads(row["changes"])),
-                    "message": row["last_error"] or last.get("message"),
+                    "status": row["status"],
+                    "method": row["method"],
+                    "updated_at": row["created_at"],
+                    "pending_fields": [],
+                    "message": row["message"],
                 }
-            return sorted(latest.values(), key=lambda event: event["updated_at"], reverse=True)[
-                :limit
-            ]
+        pending_rows = conn.execute(
+            "SELECT p.*,s.type AS source_type,s.name AS source_name,"
+            "w.title AS media_title FROM writeback_pending p "
+            "JOIN sources s ON s.id=p.source_id "
+            "LEFT JOIN works w ON w.id=p.work_id " + ("WHERE p.work_id=?" if work_id else ""),
+            (work_id,) if work_id else (),
+        ).fetchall()
+        for row in pending_rows:
+            key = (row["work_id"], row["source_id"])
+            last = latest.get(key, {})
+            latest[key] = {
+                "media_id": row["work_id"],
+                "media_title": row["media_title"],
+                "source_id": row["source_id"],
+                "source_name": row["source_name"],
+                "source_type": row["source_type"],
+                "icon": self._source_symbol(row["source_type"]),
+                "status": "pending",
+                "method": last.get("method"),
+                "updated_at": row["updated_at"],
+                "pending_fields": sorted(json.loads(row["changes"])),
+                "message": row["last_error"] or last.get("message"),
+            }
+        return sorted(latest.values(), key=lambda event: event["updated_at"], reverse=True)[
+            :limit
+        ]
 
     def record_writebacks(
         self, work_id: str, changes: dict, results: list[dict], *, replay: bool = False
