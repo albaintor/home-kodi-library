@@ -4,7 +4,7 @@
 
 Home Media Catalog combines a responsive, self-hosted **web application** with a native **iOS/iPadOS app**. The iOS app can manage a catalogue **standalone, without installing a server**. A Docker server is optional for a shared catalogue, web access and AI features; it runs on Linux, macOS/Windows with Docker Desktop, a home server or a NAS.
 
-**Status (October 2026):** active development. Features described below are implemented or under validation, not a claim of App Store approval or compatibility with every video format. See [Release checks](#before-an-app-store-release).
+**Status (October 2026):** active development. Feature availability depends on the app version, media format and source configuration. See [iOS release preparation](#ios-release-preparation).
 
 
 ## Highlights
@@ -84,11 +84,9 @@ The native **Settings → Support** section links to this project's
 The main collection context menu uses **Play on…** to choose a configured Kodi instance; after opening playback, the app navigates to its Kodi remote tab.
 
 
-### Legal notices and third-party licences
+### Technology credits
 
-Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. The actual licence obligations depend on **the exact binaries and linking used in the submitted build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg or MPVKit**. The native iOS project currently uses an experimental dynamic-FFmpeg adapter; neither its final dependency graph nor App Store/LGPL compliance has yet been certified.
-
-See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md) and the [iOS dependency and licence audit](https://github.com/albaintor/home-media-catalog-ios/blob/main/THIRD_PARTY_NOTICES.md).
+Video playback uses third-party components, including [FFmpeg](https://ffmpeg.org/), [PrismCore](https://github.com/Wenzlik/PrismCore) and [MPVKit](https://github.com/Wenzlik/MPVKit). Their licences and documentation are available from the respective projects.
 
 ## Get started
 
@@ -119,15 +117,9 @@ Home Media Catalog now includes an **optional network/cloud media browser and vi
 
 [Support the project on Buy Me a Coffee](https://www.buymeacoffee.com/albaintor)
 
-## Before an App Store release
+## iOS release preparation
 
-This README is a project overview, **not an App Store readiness certificate**. Before submitting a native iOS build:
-
-- Complete the physical-device playback, codec, network access, crash and Xcode Cloud/archive checks. The experimental dynamic FFmpeg/PrismCore build is **not yet certified**.
-- Resolve the precise FFmpeg/MPVKit and other third-party licence obligations against the **shipped IPA**, including notices, matching source/build information and any applicable relinking requirements. See [Third-party notices](THIRD_PARTY_NOTICES.md).
-- Publish a publicly accessible **privacy policy URL** describing actual data handling (server, device, OneDrive, optional TMDB/OpenAI providers, diagnostics), and complete App Store Connect's privacy disclosures. A public policy is **not yet linked from this repository**.
-- Configure and sandbox-test the StoreKit product, purchase restoration and the 10-session evaluation flow. Provide current screenshots, version-specific release notes and working App Review demo access to features that normally require a server/Kodi.
-- Confirm feature descriptions, regional pricing and third-party media artwork rights using the build actually submitted. Do not present unverified formats or integrations as universally supported.
+Before making the app available, verify the build and signing on a physical device, video playback and network sources, the StoreKit purchase and restoration flow, and the current iOS screenshots. Configure the App Store Connect listing and privacy-policy link for the submitted version.
 
 ## Support
 
