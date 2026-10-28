@@ -45,6 +45,7 @@ def _library():
         "nfs_set_nfsport": (None, [C.c_void_p, C.c_int]),
         "nfs_set_autoreconnect": (None, [C.c_void_p, C.c_int]),
         "nfs_set_timeout": (None, [C.c_void_p, C.c_int]),
+        "nfs_set_timeout": (None, [C.c_void_p, C.c_int]),
         "nfs_mount": (C.c_int, [C.c_void_p, C.c_char_p, C.c_char_p]),
         "nfs_stat64": (C.c_int, [C.c_void_p, C.c_char_p, C.POINTER(_NFSStat)]),
         "nfs_opendir": (C.c_int, [C.c_void_p, C.c_char_p, C.POINTER(C.c_void_p)]),
@@ -98,6 +99,7 @@ class NativeNFS:
                 if self.lib.nfs_set_version(ctx, version) != 0:
                     raise NFSUnavailable("Unsupported NFS version.")
                 self.lib.nfs_set_nfsport(ctx, port)
+                self.lib.nfs_set_timeout(ctx, 8000)
                 self.lib.nfs_set_autoreconnect(ctx, 2)
                 self.lib.nfs_set_timeout(ctx, 6000)
                 result = self.lib.nfs_mount(ctx, host.encode(), export.encode())
