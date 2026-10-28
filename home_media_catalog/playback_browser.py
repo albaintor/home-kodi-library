@@ -125,6 +125,7 @@ def _sync_browse(
     host, prefix = _root(location) if kind != "nfs" else ("", "")
     if kind == "nfs" and location["id"] not in mounts:
         from .native_nfs import browse
+
         return browse(location, relative)
     if kind == "nfs":
         folder = _full_path(_local_root(location, mounts), relative)
@@ -230,6 +231,7 @@ def _sync_stream(
     chunk = 512 * 1024
     if kind == "nfs" and location["id"] not in mounts:
         from .native_nfs import stream
+
         return stream(location, relative, start, end)
     if kind == "nfs":
         file = _full_path(_local_root(location, mounts), relative)
@@ -576,6 +578,7 @@ async def stream_location(
         ) from exc
     except Exception as exc:
         from .native_nfs import NFSUnavailable
+
         if isinstance(exc, NFSUnavailable):
             raise HTTPException(503, str(exc)) from exc
         LOG.warning(
