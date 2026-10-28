@@ -95,3 +95,87 @@ def test_rpc_cannot_erase_multiple_sql_movie_versions(store):
     assert store.has_multiple_kodi_movie_versions(sid) is True
     original = store.media(kind="movie")["total"]
     assert original == 1
+
+
+def test_renamed_source_with_jsonrpc_keys_has_no_sql_version_guard(store):
+    from home_media_catalog.connectors.base import Record
+
+    source = store.save_source({"name": "Kodi standalone", "type": "kodi"})
+    source_id = source["id"]
+    snapshot = [Record("movie:21", "movie", "Film", identifiers={"tmdb": "21"})]
+    store.apply_snapshot(source_id, snapshot)
+    store.save_source({"name": "Kodi - NAS", "type": "kodi"}, source_id=source_id)
+    store.apply_snapshot(source_id, snapshot)
+    assert store.has_multiple_kodi_movie_versions(source_id) is False
+    assert store.source(source_id)["item_count"] == 1
+
+
+def test_server_sync_preserves_merged_movie_versions_by_preferring_mariadb(store):
+    from home_media_catalog.connectors.base import Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source(
+        {
+            "name": "Kodi - NAS",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader", "database": "MyVideos151"},
+        }
+    )["id"]
+    store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi.local"})
+    versions = [
+        Record("movie:21:100", "movie", "Film", identifiers={"tmdb": "21"}),
+        Record("movie:21:200", "movie", "Film", identifiers={"tmdb": "21"}),
+    ]
+    store.apply_snapshot(source_id, versions)
+
+    class FakeMariaDB:
+        def __init__(self, config, progress=None):
+            assert config["host"] == "nas"
+            self.database = "MyVideos151"
+            self.snapshot_report = {}
+
+        def fetch(self):
+            return versions
+
+    manager = SyncManager(store, settings=None)
+    job = store.new_job(source_id)
+    with (
+        patch("home_media_catalog.sync.KodiConnector", FakeMariaDB),
+        patch(
+            "home_media_catalog.sync.connection", side_effect=AssertionError("Must skip JSON-RPC")
+        ),
+        patch(
+            "home_media_catalog.sync.fetch_kodi_snapshot",
+            side_effect=AssertionError("Must not flatten editions"),
+        ),
+    ):
+        asyncio.run(manager._run(job, store.source(source_id, private=True), None))
+
+    completed = store.job(job["id"])
+    assert completed["status"] == "completed", completed["error"]
+    assert completed["result"]["import_method"] == "mariadb"
+    assert completed["result"]["edition_protection"] == "mariadb"
+    assert store.has_multiple_kodi_movie_versions(source_id) is True
+    assert store.source(source_id)["item_count"] == 2
+
+
+def test_merged_versions_without_mariadb_are_not_overwritten(store):
+    from home_media_catalog.connectors.base import Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source({"name": "Kodi - NAS", "type": "kodi"})["id"]
+    store.apply_snapshot(
+        source_id,
+        [
+            Record("movie:21:100", "movie", "Film", identifiers={"tmdb": "21"}),
+            Record("movie:21:200", "movie", "Film", identifiers={"tmdb": "21"}),
+        ],
+    )
+    manager = SyncManager(store, settings=None)
+    job = store.new_job(source_id)
+    asyncio.run(manager._run(job, store.source(source_id, private=True), None))
+    failed = store.job(job["id"])
+    assert failed["status"] == "failed"
+    assert "Configurez le repli MariaDB" in failed["error"]
+    assert store.has_multiple_kodi_movie_versions(source_id) is True
+    assert store.source(source_id)["item_count"] == 2
