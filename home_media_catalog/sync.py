@@ -229,17 +229,26 @@ class SyncManager:
                 players = await asyncio.to_thread(self.store.players)
                 candidates = [p for p in players if p["source_id"] == source["id"]]
                 offline = bool(candidates)
-                # Cleanup must not collapse previously imported multiple Kodi
-                # movie versions: SQL preserves edition-level file identity.
-                prefer_sql = (
-                    scan_info is not None
-                    and "kodi_clean" in scan_info
-                    and bool(source["config"].get("host"))
-                    and bool(source["config"].get("username"))
-                    and await asyncio.to_thread(
-                        self.store.has_multiple_kodi_movie_versions, source["id"]
-                    )
+                # JSON-RPC exposes only the default file for a Kodi movie.
+                # A merged standalone/server backup can contain several
+                # file-specific records under the same canonical source ID.
+                # Protect them during ALL imports (not just Kodi cleanup).
+                # The record keys indicate multiple file versions, not how or
+                # when those records were originally imported.
+                protected_versions = await asyncio.to_thread(
+                    self.store.has_multiple_kodi_movie_versions, source["id"]
                 )
+                mariadb_available = bool(
+                    source["config"].get("host") and source["config"].get("username")
+                )
+                if protected_versions and not mariadb_available:
+                    raise ConnectorError(
+                        "Cette source contient plusieurs éditions de certains films. "
+                        "Une synchronisation JSON-RPC seule risquerait de supprimer "
+                        "leurs fichiers supplémentaires. Configurez le repli MariaDB "
+                        "pour les préserver ; le catalogue reste inchangé."
+                    )
+                prefer_sql = protected_versions and mariadb_available
                 deadline = monotonic() + 1.0
                 for player in [] if prefer_sql else candidates:
                     if player["id"] in (offline_player_ids or set()):
@@ -294,10 +303,12 @@ class SyncManager:
                     self.store.has_multiple_kodi_movie_versions, source["id"]
                 )
             ):
+                # Defensive recheck in case records changed while downloading
+                # the RPC snapshot. Never publish a partial set of editions.
                 raise ConnectorError(
-                    "La source contient des éditions multiples de films importées via SQL. "
-                    "JSON-RPC ne permet pas de retrouver leurs fichiers de manière exhaustive. "
-                    "Import annulé pour préserver les éditions existantes."
+                    "Plusieurs éditions d'un même film sont enregistrées dans le catalogue. "
+                    "JSON-RPC ne les expose pas toutes : import annulé sans modifier "
+                    "les éditions existantes. Configurez le repli MariaDB."
                 )
             await asyncio.to_thread(self.store.update_job_progress, job["id"], "publishing")
             publish_started = monotonic()
@@ -315,6 +326,8 @@ class SyncManager:
                 result.update(scan_info)
             if xml is None:
                 result["import_method"] = transport
+                if prefer_sql:
+                    result["edition_protection"] = "mariadb"
             if database:
                 result["database"] = database
                 result["mariadb_read_ms"] = mariadb_read_ms
