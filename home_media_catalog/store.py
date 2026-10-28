@@ -469,7 +469,32 @@ class Store:
                 "works": conn.execute("SELECT COUNT(*) FROM works").fetchone()[0],
             }
 
-    def maintain_catalogue(self, *, reset: bool = False) -> dict[str, Any]:
+    def maintain_catalogue(
+        self, *, reset: bool = False, reset_content: bool = False
+    ) -> dict[str, Any]:
+        if reset and reset_content:
+            raise ValueError("Choose a single catalogue maintenance operation.")
+        if reset_content:
+            # Retain configured sources, Kodi instances, passwords and list
+            # definitions. Foreign-key cascades remove records, personal data,
+            # pending writebacks and list memberships with the media works.
+            # The external Kodi / MyVideos database is never modified.
+            with self.connect() as conn:
+                conn.execute("DELETE FROM works")
+                conn.execute("DELETE FROM jobs")
+                conn.execute("DELETE FROM catalogue_meta")
+                conn.execute("DELETE FROM writeback_audit")
+                conn.execute("DELETE FROM works_fts")
+                conn.execute("DELETE FROM works_title_fts")
+                conn.execute("UPDATE sources SET last_sync=NULL, last_error=NULL")
+                if conn.execute("PRAGMA foreign_key_check").fetchone():
+                    raise RuntimeError("Catalogue reset failed integrity checks; rolled back.")
+            return {
+                "status": "content_reset",
+                "preserved": ["sources", "players", "lists", "device_tokens",
+                              "playback_locations", "playback_cloud_credentials",
+                              "playback_oauth_apps"],
+            }
         if reset:
             with self.connect() as conn:
                 # Preserve server credentials/device tokens, playback network

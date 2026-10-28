@@ -820,3 +820,40 @@ def test_advanced_multiword_search_falls_back_to_contiguous_phrase(store):
     page = store.media(q="John Williams", deep_search=True)
     assert [item["title"] for item in page["items"]] == ["Un film sur le cinéma"]
     assert store.media(q="John Williams", deep_search=False)["total"] == 1
+
+def test_reset_content_preserves_source_players_and_empty_lists(store):
+    from home_media_catalog.connectors.base import Record
+
+    sid = source(store, "kodi")
+    player = store.save_player({
+        "name": "Kodi Chambre", "source_id": sid,
+        "host": "192.0.2.20", "port": 8080,
+        "username": "kodi", "password": "private-local-secret",
+    })
+    store.apply_snapshot(sid, [Record("movie:41", "movie", "Sample movie")])
+    movie_id = store.media()["items"][0]["id"]
+    saved_list = store.save_list({"name": "Favorites", "description": ""})
+    store.change_list_item(saved_list["id"], movie_id)
+
+    result = store.maintain_catalogue(reset_content=True)
+
+    assert result["status"] == "content_reset"
+    assert store.media()["total"] == 0
+    assert store.source(sid) is not None
+    assert store.player(player["id"])["config"]["password"] == "private-local-secret"
+    assert store.list_page(saved_list["id"])["total"] == 0
+    assert any(row["id"] == player["id"] for row in store.players())
+    assert any(row["id"] == sid for row in store.sources())
+    # Existing source IDs remain valid for subsequent imports.
+    store.apply_snapshot(sid, [Record("movie:41", "movie", "Sample movie")])
+    assert store.media()["total"] == 1
+
+
+def test_reset_content_requires_confirmation_for_api(client, admin):
+    endpoint = "/api/v1/catalogue/maintenance/reset_content"
+    assert client.post(endpoint).status_code == 401
+    assert client.post(endpoint, headers=admin).status_code == 422
+    headers = {**admin, "X-Confirm-Catalogue-Maintenance": "reset_content"}
+    response = client.post(endpoint, headers=headers)
+    assert response.status_code == 200
+    assert response.json()["status"] == "content_reset"
