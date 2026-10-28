@@ -79,7 +79,8 @@ def test_smb_hostname_alias_roundtrip_and_validation(client, admin):
 
     for invalid in ("smb://other", "a/b", "host:445", "some host"):
         response = client.put(
-            f"{endpoint}/{location_id}", headers=admin,
+            f"{endpoint}/{location_id}",
+            headers=admin,
             json={**payload, "hostname": invalid},
         )
         assert response.status_code == 422, (invalid, response.text)
