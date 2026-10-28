@@ -2344,6 +2344,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if any(c in data.host for c in ("/", "@", "?", "#")):
             raise HTTPException(422, "Enter a Kodi hostname, not a URL.")
 
+    @app.get(
+        API + "/players/{player_id}/device-credentials",
+        tags=["Players"],
+        dependencies=[Depends(authenticated)],
+        include_in_schema=False,
+    )
+    def kodi_device_credentials(
+        player_id: str, response: Response, principal: Principal = Depends(authenticated)
+    ):
+        """Explicit admin-only credential sync for paired native clients.
+
+        The ordinary GET /players API deliberately excludes passwords. This
+        separate endpoint must never be cached, included in backups, logged,
+        or exposed to read-only devices. Use HTTPS for remote/LAN transport.
+        """
+        response.headers["Cache-Control"] = "no-store, private"
+        response.headers["Pragma"] = "no-cache"
+        if principal.role != "admin":
+            raise HTTPException(403, "Kodi credentials require administrator access.")
+        player = store.player(player_id)
+        if not player:
+            raise HTTPException(404, "Unknown Kodi player.")
+        configuration = player["config"]
+        return {
+            "player_id": player_id,
+            "username": str(configuration.get("username") or ""),
+            "password": str(configuration.get("password") or ""),
+        }
+
     @app.post(
         API + "/players",
         response_model=PlayerView,
