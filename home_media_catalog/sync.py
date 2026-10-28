@@ -320,7 +320,7 @@ class SyncManager:
                         "finished"
                         if scan_triggered
                         else "sql_only"
-                        if result.get("import_method") == "mariadb"
+                        if transport == "mariadb"
                         else "jsonrpc_only"
                     )
                 result.update(scan_info)
