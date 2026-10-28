@@ -479,8 +479,36 @@ class Store:
         filename.chmod(0o600)
         return filename.name
 
-    def maintain_catalogue(self, *, reset: bool = False) -> dict[str, Any]:
-        backup = self._maintenance_backup("before-reset" if reset else "before-cleanup")
+    def maintain_catalogue(
+        self, *, reset: bool = False, reset_content: bool = False
+    ) -> dict[str, Any]:
+        if reset and reset_content:
+            raise ValueError("Choose a single catalogue maintenance operation.")
+        label = "before-reset" if reset else (
+            "before-reset-content" if reset_content else "before-cleanup"
+        )
+        backup = self._maintenance_backup(label)
+        if reset_content:
+            # A fresh import should reuse the exact same source and Kodi player
+            # identifiers, credentials and list definitions. Removing works
+            # cascades to records, personal state, list memberships, enrichment
+            # and pending writebacks; Kodi/MyVideos is not touched.
+            with self.connect() as conn:
+                conn.execute("DELETE FROM works")
+                conn.execute("DELETE FROM jobs")
+                conn.execute("DELETE FROM catalogue_meta")
+                conn.execute("DELETE FROM writeback_audit")
+                conn.execute("DELETE FROM works_fts")
+                conn.execute("DELETE FROM works_title_fts")
+                if conn.execute("PRAGMA foreign_key_check").fetchone():
+                    raise RuntimeError("Catalogue reset failed integrity checks; rolled back.")
+            return {
+                "status": "content_reset",
+                "backup": backup,
+                "preserved": ["sources", "players", "lists", "device_tokens",
+                              "playback_locations", "playback_cloud_credentials",
+                              "playback_oauth_apps"],
+            }
         if reset:
             with self.connect() as conn:
                 # Preserve server credentials/device tokens, playback network
