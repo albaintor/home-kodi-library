@@ -179,3 +179,89 @@ def test_merged_versions_without_mariadb_are_not_overwritten(store):
     assert "Configurez le repli MariaDB" in failed["error"]
     assert store.has_multiple_kodi_movie_versions(source_id) is True
     assert store.source(source_id)["item_count"] == 2
+
+
+def test_sync_tries_each_kodi_player_and_prefers_last_success(store):
+    from contextlib import asynccontextmanager
+    from home_media_catalog.connectors.base import Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
+    store.save_player({"name": "A", "source_id": source_id, "host": "offline.local"})
+    store.save_player({"name": "B", "source_id": source_id, "host": "online.local"})
+    manager = SyncManager(store, settings=None)
+    probes = []
+    snapshots = []
+
+    @asynccontextmanager
+    async def fake_connection(config, *, timeout):
+        probes.append((config["host"], timeout))
+        async def rpc(method, params):
+            assert method == "JSONRPC.Ping"
+            if config["host"] == "offline.local":
+                raise TimeoutError("offline")
+            return "pong"
+        yield rpc
+
+    async def fake_snapshot(config, progress=None):
+        snapshots.append(config["host"])
+        return [Record("movie:5", "movie", "Available", identifiers={"tmdb": "5"})]
+
+    with (
+        patch("home_media_catalog.sync.connection", fake_connection),
+        patch("home_media_catalog.sync.fetch_kodi_snapshot", fake_snapshot),
+    ):
+        for _ in range(2):
+            job = store.new_job(source_id)
+            asyncio.run(manager._run(job, store.source(source_id, private=True), None))
+            completed = store.job(job["id"])
+            assert completed["status"] == "completed", completed["error"]
+            assert completed["result"]["import_method"] == "jsonrpc"
+
+    assert probes == [
+        ("offline.local", 3.0), ("online.local", 3.0),
+        ("online.local", 3.0),
+    ]
+    assert snapshots == ["online.local", "online.local"]
+
+
+def test_sync_uses_mariadb_when_all_jsonrpc_players_fail(store):
+    from contextlib import asynccontextmanager
+    from home_media_catalog.connectors.base import Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source({
+        "name": "Kodi", "type": "kodi",
+        "config": {"host": "nas", "username": "reader", "database": "MyVideos151"},
+    })["id"]
+    store.save_player({"name": "Kodi 1", "source_id": source_id, "host": "offline1"})
+    store.save_player({"name": "Kodi 2", "source_id": source_id, "host": "offline2"})
+    probes = []
+    expected_records = [Record("movie:7", "movie", "SQL Film", identifiers={"tmdb": "7"})]
+
+    @asynccontextmanager
+    async def fake_connection(config, *, timeout):
+        probes.append((config["host"], timeout))
+        async def rpc(method, params):
+            raise TimeoutError("Kodi unreachable")
+        yield rpc
+
+    class FakeMariaDB:
+        def __init__(self, config, progress=None):
+            self.database = "MyVideos151"
+            self.snapshot_report = {}
+        def fetch(self):
+            return expected_records
+
+    manager = SyncManager(store, settings=None)
+    job = store.new_job(source_id)
+    with (
+        patch("home_media_catalog.sync.connection", fake_connection),
+        patch("home_media_catalog.sync.KodiConnector", FakeMariaDB),
+    ):
+        asyncio.run(manager._run(job, store.source(source_id, private=True), None))
+
+    completed = store.job(job["id"])
+    assert completed["status"] == "completed", completed["error"]
+    assert completed["result"]["import_method"] == "mariadb"
+    assert probes == [("offline1", 3.0), ("offline2", 3.0)]

@@ -202,7 +202,7 @@ def normalize_jsonrpc(kind, row):
 async def fetch_kodi_snapshot(player_config, progress=None):
     """Read an entire consistent-as-possible API snapshot, never a partial one.
 
-    Caller probes reachability with a 1-second deadline before this potentially
+    Caller probes each Kodi instance with a 3-second deadline before this potentially
     long transfer. Once it starts, use normal request timeout and reject any
     truncated page/total inconsistency so local records are never erased.
     """

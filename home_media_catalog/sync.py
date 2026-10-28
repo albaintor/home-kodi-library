@@ -29,6 +29,8 @@ class SyncManager:
         self.scan_tasks: set[asyncio.Task] = set()
         self.stale_sync_lock = asyncio.Lock()
         self.on_catalog_changed = None  # Optional non-blocking post-publish hook.
+        # Prefer the last player that delivered a complete snapshot for each source.
+        self.last_reachable_kodi_players: dict[str, str] = {}
 
     async def submit(self, source_id: str, xml: bytes | None = None) -> dict[str, Any]:
         if source_id in self.active:
@@ -249,34 +251,36 @@ class SyncManager:
                         "pour les préserver ; le catalogue reste inchangé."
                     )
                 prefer_sql = protected_versions and mariadb_available
-                deadline = monotonic() + 1.0
-                for player in [] if prefer_sql else candidates:
+                preferred_player = self.last_reachable_kodi_players.get(source["id"])
+                ordered_candidates = sorted(
+                    candidates, key=lambda player: player["id"] != preferred_player
+                )
+                for player in [] if prefer_sql else ordered_candidates:
                     if player["id"] in (offline_player_ids or set()):
                         continue
-                    remaining = deadline - monotonic()
-                    if remaining <= 0:
-                        break
                     private = await asyncio.to_thread(self.store.player, player["id"])
+                    if private is None:
+                        continue
                     try:
-                        # One fast probe for offline Kodi. Connection timeout is
-                        # also capped in total; an unreachable device must not
-                        # delay SQL fallback for a full HTTP timeout.
-                        async with asyncio.timeout(max(0.01, deadline - monotonic())):
-                            async with connection(
-                                private["config"], timeout=min(0.9, remaining)
-                            ) as rpc:
+                        # Each instance has its OWN three-second probe budget.
+                        # A failed host must not consume the budget of later hosts.
+                        # Full-library transfer is allowed longer once reachable.
+                        async with asyncio.timeout(3.0):
+                            async with connection(private["config"], timeout=3.0) as rpc:
                                 if await rpc("JSONRPC.Ping", {}) != "pong":
                                     raise ConnectorError("Kodi returned an invalid JSON-RPC ping.")
-                        offline = False
                         records = await fetch_kodi_snapshot(
                             private["config"],
                             progress=lambda phase, current, total: self.store.update_job_progress(
                                 job["id"], phase, current, total
                             ),
                         )
+                        offline = False
                         transport = "jsonrpc"
+                        self.last_reachable_kodi_players[source["id"]] = player["id"]
                         break
-                    except (KodiUnavailable, TimeoutError):
+                    except (ConnectorError, TimeoutError) as exc:
+                        LOGGER.info("Kodi instance %s could not supply a snapshot: %s", player["name"], exc)
                         continue
                 if transport is None:
                     if not source["config"].get("host") or not source["config"].get("username"):
