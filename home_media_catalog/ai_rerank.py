@@ -6,7 +6,6 @@ A structured language-model pass removes false positives before the UI sees them
 
 import json
 
-
 from .ai_providers import generate_json
 
 _RERANK_SCHEMA = {
