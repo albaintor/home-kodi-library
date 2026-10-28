@@ -1,10 +1,10 @@
 # <img src="home_media_catalog/static/cinema.svg" width="36" alt=""> Home Media Catalog
 
-
-
 **Bring your Kodi library and physical movie collection together.**
 
-Home Media Catalog is a self-hosted catalog with a responsive **web interface** and a native **iOS/iPadOS client**. Its (optional) Docker server can run on a Linux machine, macOS/Windows with Docker Desktop, a home server or a NAS — no particular hardware is required.
+Home Media Catalog combines a responsive, self-hosted **web application** with a native **iOS/iPadOS app**. The iOS app can manage a catalogue **standalone, without installing a server**. A Docker server is optional for a shared catalogue, web access and AI features; it runs on Linux, macOS/Windows with Docker Desktop, a home server or a NAS.
+
+**Status (October 2026):** active development. Features described below are implemented or under validation, not a claim of App Store approval or compatibility with every video format. See [Release checks](#before-an-app-store-release).
 
 
 ## Highlights
@@ -13,10 +13,10 @@ Home Media Catalog is a self-hosted catalog with a responsive **web interface** 
 - **Explore** movies, TV shows and episodes with posters, cast, formats, advanced filters and optional TMDB metadata.
 - **Organize** your collection using custom lists, personal ratings and watched status.
 - **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
-- **Play** Kodi titles, local network shared or cloud medias directly on your iPhone.
-- **Access** the same catalog on the web, iOS/iPadOS.
-- **Search with AI (optional, server required)** using natural language, hybrid semantic/keyword matching over film, series and individual episode synopses, and conversational refinements.
-- **Two Operating Modes** In standalone mode the iOS app directly imports catalogs and synchronizes with Kodi, no server needed. In server mode the app synchronizes with the server (but still directly controls Kodi instances). 
+- **Play** supported Kodi video paths, locally saved files, network shares and OneDrive media on iPhone, subject to source connectivity, codecs and permissions.
+- **Access** your collection on iOS/iPadOS alone, or via a shared server and web interface.
+- **Search with AI (optional, server required)** using natural language, hybrid semantic/keyword matching over film, series and episode synopses, and conversational refinements.
+- **Choose standalone or server mode:** in standalone mode the iOS app imports and synchronizes Kodi directly, without Docker. In server mode it synchronizes catalogue metadata with the server while Kodi remote commands are sent directly from the iPhone.
 
 Collection-only catalogs do not require Kodi.
 
@@ -40,12 +40,9 @@ Collection-only catalogs do not require Kodi.
 
 ## Native iOS/iPadOS experience and AI search
 
-**Home Media Catalog for iOS/iPadOS** keeps the standard
-Search **inside the main catalog**, directly filtering the
-same poster/list view on iPhone, iPad and iPhone Duo. A sparkles action in
-the **top toolbar** opens a dedicated conversational AI page through native
-navigation. Its results and follow-up
-context survive opening a movie or episode and returning.
+**Home Media Catalog for iOS/iPadOS** provides ordinary catalogue search **inside the main poster/list view** on iPhone and iPad. An optional sparkles action in the top toolbar opens a separate conversational AI search page when a configured server supports it. Search results and follow-up context remain available when returning from media details.
+
+The current native Xcode project targets **iOS/iPadOS 18.0 or later**. Standalone catalogue import, browsing and direct Kodi remote control do not require the Docker server. AI search and shared web/iOS catalogue synchronization do require a compatible server.
 
 On the Web and iOS, user can select a language model (only OpenAI at this time) and embeddings
 model, securely save the AI key on the server. Indexed film, series and episode synopses and credited people power incremental
@@ -72,39 +69,44 @@ The project now includes **more than collection management**:
 - **Web video playback:** network location browser for SMB/FTP/SFTP and configured NFS mounts, HTTP Range streaming, thumbnails sampled from actual videos, and FFmpeg-powered progressive MP4 transcoding of selected non-browser-friendly formats. Browser formats, transcoding quality and seek behaviour depend on source, codec and server CPU.
 - **Cloud media:** OneDrive is currently the only supported integrated provider (including Device Code sign-in for private NAS deployments). Other cloud connectors are not exposed until supported. OneDrive OAuth tokens remain encrypted on the server. Apple's iCloud Drive remains accessible through **iOS Files**, not a server-side iCloud connector.
 - **Native iOS playback:** AVPlayer with an optional PrismCore/FFmpeg-assisted route, video technical information and offline video files. Importing from Files copies the selected file to app storage; it is not automatically a zero-copy third-party stream.
-- **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
+- **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts, and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
 
 ### iOS evaluation, purchase and support
 
-The iOS/iPadOS client offers **10 free full-screen video playback sessions**
-for local files, NAS/SMB, cloud and network sources, including experimental
-MEMC modes. The **non-consumable lifetime purchase** unlocks the entire native video
-player, including MEMC.  Kodi remote control, cataloguing and AI search stay free.
+The iOS/iPadOS client implements **10 free full-screen video playback sessions** for local files, NAS/SMB, cloud and network sources, including experimental MEMC modes. After those sessions, a **single non-consumable StoreKit purchase** is intended to unlock the native video player, including MEMC. Kodi remote control, cataloguing and (with a configured server/provider) AI search remain outside the paid video-player gate. Purchase availability and regional pricing depend on the actual App Store Connect product; this is **not** a claim that an in-app purchase has been approved or published.
 
 
 The native **Settings → Support** section links to this project's
 [home page](https://github.com/albaintor/home-media-catalog) and
 [issue tracker](https://github.com/albaintor/home-media-catalog/issues).
-The main collection context menu uses **Play on...** with a generic media-playback icon; this still launches
-the Kodi player selector.
+The main collection context menu uses **Play on…** to choose a configured Kodi instance; after opening playback, the app navigates to its Kodi remote tab.
 
 
 ### Legal notices and third-party licences
 
-Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. FFmpeg's LGPL/GPL obligations depend on the **actual build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg**. Earlier iOS/MPVKit builds used statically linked FFmpeg components with LGPLv3 obligations. The current development branch uses an experimental dynamically linked FFmpeg adapter.
+Home Media Catalog includes third-party components, including the **FFmpeg** executable in the Docker/server image and **PrismCore, MPVKit and FFmpeg** libraries in the native iOS dependency chain. The actual licence obligations depend on **the exact binaries and linking used in the submitted build**, not on whether the app is free or paid. PrismCore's own App Store exception **does not extend to FFmpeg or MPVKit**. The native iOS project currently uses an experimental dynamic-FFmpeg adapter; neither its final dependency graph nor App Store/LGPL compliance has yet been certified.
 
-See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md). 
+See [Third-party notices and distribution checklist](THIRD_PARTY_NOTICES.md) and the [iOS dependency and licence audit](https://github.com/albaintor/home-media-catalog-ios/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## Get started
 
+### iOS/iPadOS without a server
+
+1. Build/install the native client from the [iOS project](https://github.com/albaintor/home-media-catalog-ios) (App Store availability is not asserted here), and choose **standalone mode**.
+2. Add a Kodi instance via local-network discovery or its hostname/IP address. Enable and configure Kodi's **HTTP JSON-RPC remote control**. Import the library directly from Kodi; an external MariaDB database is **not required** for the normal JSON-RPC import.
+3. Alternatively, import a compatible CLZ Movies, My Movies or Filmotech XML collection. Configure media playback sources separately as needed. AI search and browser access are unavailable without a server.
+
+### Shared web + iOS/iPadOS catalogue (optional)
+
 1. [**Install the Docker server**](docs/installation.md) on your preferred host.
-2. Open the web interface to add a Kodi source or import a CLZ Movies, MyMovies, or Filmotech XML export.
-3. Connect the **Home Media Catalog** iOS/iPadOS app with a short-lived pairing code from the web interface.
+2. In the web interface, add a Kodi HTTP/JSON-RPC instance or import a supported collection XML. An optional **read-only MariaDB/MyVideos fallback** can help preserve additional Kodi editions when JSON-RPC is insufficient.
+3. Pair the iOS/iPadOS client with a short-lived code from **Settings → iOS Pairing**. Keep the server and app at mutually supported API/data-model versions. Use HTTPS or a trusted VPN outside the local network.
 
 ## Documentation
 
+- [Native iOS/iPadOS project and standalone setup](https://github.com/albaintor/home-media-catalog-ios)
 - [Server installation, configuration, updates and troubleshooting](docs/installation.md)
 - [iOS / Xcode Cloud setup, SwiftPM recovery and signing](docs/ios-xcode-cloud.md)
 - [iOS StoreKit purchases, trial and Debug reset](docs/ios-storekit.md)
@@ -117,6 +119,16 @@ Home Media Catalog now includes an **optional network/cloud media browser and vi
 
 [Support the project on Buy Me a Coffee](https://www.buymeacoffee.com/albaintor)
 
+## Before an App Store release
+
+This README is a project overview, **not an App Store readiness certificate**. Before submitting a native iOS build:
+
+- Complete the physical-device playback, codec, network access, crash and Xcode Cloud/archive checks. The experimental dynamic FFmpeg/PrismCore build is **not yet certified**.
+- Resolve the precise FFmpeg/MPVKit and other third-party licence obligations against the **shipped IPA**, including notices, matching source/build information and any applicable relinking requirements. See [Third-party notices](THIRD_PARTY_NOTICES.md).
+- Publish a publicly accessible **privacy policy URL** describing actual data handling (server, device, OneDrive, optional TMDB/OpenAI providers, diagnostics), and complete App Store Connect's privacy disclosures. A public policy is **not yet linked from this repository**.
+- Configure and sandbox-test the StoreKit product, purchase restoration and the 10-session evaluation flow. Provide current screenshots, version-specific release notes and working App Review demo access to features that normally require a server/Kodi.
+- Confirm feature descriptions, regional pricing and third-party media artwork rights using the build actually submitted. Do not present unverified formats or integrations as universally supported.
+
 ## Support
 
 If you have any issues check first if it has not already been reported then [raise a ticket](https://github.com/albaintor/home-media-catalog/issues)
@@ -126,8 +138,8 @@ If you have any issues check first if it has not already been reported then [rai
 ### CLZ, MyMovies and Filmotech imports
 
 In Settings, select the collection type, choose an existing collection (or create
-one), and upload its XML export. The native iOS application uses the same import
-endpoints: `POST /api/v1/imports/clz`, `/imports/mymovies`, and `/imports/filmotech`.
+one), and upload its XML export. When paired with a server, the native iOS application uses the same import
+endpoints: `POST /api/v1/imports/clz`, `/imports/mymovies`, and `/imports/filmotech`. In standalone mode, compatible XML is imported on-device instead.
 MyMovies refers to the XML collection export from My Movies Collection Management;
 Filmotech uses its XML film export, rather than a database backup or PDF report.
 
@@ -148,7 +160,9 @@ before replacing a large collection; provider-specific XML variants may differ.
 The server imports an empty catalogue once when possible. Later, opening
 the web app or connecting from iOS requests a `/api/v1/sources/sync-stale`
 check. A successful Kodi-source import is eligible for automatic refresh only
-after 24 hours.
+after 24 hours. JSON-RPC is the preferred import path where supported; MariaDB
+is an optional read-only fallback, and may be required to preserve additional
+editions not exposed by JSON-RPC.
 
 Automatic imports also have a **durable 24-hour attempt cooldown**. If Kodi
 or the configured MariaDB fallback is unavailable, the failed job's
