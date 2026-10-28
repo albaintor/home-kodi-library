@@ -9,8 +9,13 @@ from threading import RLock
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .ai_providers import (PROVIDERS, EMBEDDING_PROVIDERS, LANGUAGE_DEFAULTS,
-                           EMBEDDING_DEFAULTS, generate_json)
+from .ai_providers import (
+    EMBEDDING_DEFAULTS,
+    EMBEDDING_PROVIDERS,
+    LANGUAGE_DEFAULTS,
+    PROVIDERS,
+    generate_json,
+)
 
 SCHEMA = {
     "type": "object",
