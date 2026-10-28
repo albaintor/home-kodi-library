@@ -1,4 +1,5 @@
 """Native libnfs adapter tests without requiring an NFS server."""
+
 import ctypes as C
 import stat
 from types import SimpleNamespace
@@ -10,17 +11,19 @@ from home_media_catalog import native_nfs, playback_browser
 
 def location(**extra):
     return {
-        "id": "nfs-test", "kind": "nfs", "host": "192.168.1.20",
-        "hostname": "kodi-nas.local", "port": 2049,
-        "share": "/volume1/Media", "target": "nfs://192.168.1.20/volume1/Media",
+        "id": "nfs-test",
+        "kind": "nfs",
+        "host": "192.168.1.20",
+        "hostname": "kodi-nas.local",
+        "port": 2049,
+        "share": "/volume1/Media",
+        "target": "nfs://192.168.1.20/volume1/Media",
         **extra,
     }
 
 
 def test_nfs_export_and_relative_path_validation():
-    assert native_nfs._remote_root(location()) == (
-        "192.168.1.20", "/volume1/Media", 2049
-    )
+    assert native_nfs._remote_root(location()) == ("192.168.1.20", "/volume1/Media", 2049)
     assert native_nfs._remote_path("Films/A.mkv") == b"/Films/A.mkv"
     assert native_nfs._remote_path("Cinéma/A.mkv") == "/Cinéma/A.mkv".encode()
     for invalid in ("../other", "/abs", "a/./b", "a/../b", "a\\b"):
@@ -79,13 +82,9 @@ def test_native_nfs_connector_used_without_kernel_mount(monkeypatch):
     monkeypatch.setattr(native_nfs, "browse", fake_browse)
     monkeypatch.setattr(native_nfs, "stream", fake_stream)
 
-    entries = playback_browser._sync_browse(
-        location(), "Films", "", {}
-    )
+    entries = playback_browser._sync_browse(location(), "Films", "", {})
     assert entries[0]["name"] == "movie.mkv"
-    size, content = playback_browser._sync_stream(
-        location(), "Films/movie.mkv", "", {}, 10, 20
-    )
+    size, content = playback_browser._sync_stream(location(), "Films/movie.mkv", "", {}, 10, 20)
     assert size == 400 and b"".join(content()) == b"media"
     assert calls == [
         ("browse", "nfs-test", "Films"),
@@ -110,10 +109,12 @@ def test_libnfs_read_abi_argument_order(monkeypatch):
     native_nfs._library.cache_clear()
     try:
         assert native_nfs._library().nfs_pread.argtypes == [
-            C.c_void_p, C.c_void_p, C.c_uint64, C.c_uint64, C.c_void_p
+            C.c_void_p,
+            C.c_void_p,
+            C.c_uint64,
+            C.c_uint64,
+            C.c_void_p,
         ]
-        assert native_nfs._library().nfs_set_timeout.argtypes == [
-            C.c_void_p, C.c_int
-        ]
+        assert native_nfs._library().nfs_set_timeout.argtypes == [C.c_void_p, C.c_int]
     finally:
         native_nfs._library.cache_clear()
