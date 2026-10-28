@@ -658,7 +658,7 @@ class Store:
         location_id: str | None = None,
         password_cipher: str | None = None,
     ) -> dict[str, Any]:
-        public = {k: data.get(k) for k in ("host", "port", "share", "username", "workgroup")}
+        public = {k: data.get(k) for k in ("host", "hostname", "port", "share", "username", "workgroup")}
         timestamp = now()
         with self.connect() as conn:
             if location_id is None:
