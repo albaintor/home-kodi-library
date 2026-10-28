@@ -466,21 +466,7 @@ class Store:
                 "works": conn.execute("SELECT COUNT(*) FROM works").fetchone()[0],
             }
 
-    def _maintenance_backup(self, label: str) -> str:
-        # SQLite's online backup includes committed WAL pages and does not
-        # require stopping the server process. Backups are chmod 0600 since
-        # the catalogue includes credentials and access metadata.
-        filename = self.path.with_name(
-            self.path.stem + "." + label + "." +
-            datetime.now(UTC).strftime("%Y%m%dT%H%M%S%f") + ".db"
-        )
-        with sqlite3.connect(self.path) as original, sqlite3.connect(filename) as target:
-            original.backup(target)
-        filename.chmod(0o600)
-        return filename.name
-
     def maintain_catalogue(self, *, reset: bool = False) -> dict[str, Any]:
-        backup = self._maintenance_backup("before-reset" if reset else "before-cleanup")
         if reset:
             with self.connect() as conn:
                 # Preserve server credentials/device tokens, playback network
@@ -490,7 +476,7 @@ class Store:
                 conn.execute("DELETE FROM writeback_audit")
                 conn.execute("DELETE FROM works_fts")
                 conn.execute("DELETE FROM works_title_fts")
-            return {"status": "reset", "backup": backup,
+            return {"status": "reset",
                     "preserved": ["device_tokens", "playback_locations",
                                   "playback_cloud_credentials", "playback_oauth_apps"]}
         removed_sources = 0
@@ -594,7 +580,7 @@ class Store:
             if stale:
                 raise RuntimeError("Foreign-key errors remain; maintenance rolled back.")
         return {
-            "status": "cleaned", "backup": backup,
+            "status": "cleaned",
             "merged_sources": removed_sources,
             "merged_records": collapsed_records,
             "ambiguous_sources_skipped": skipped_ambiguous,
