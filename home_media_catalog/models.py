@@ -293,6 +293,7 @@ class PlaybackLocationInput(StrictModel):
     ]
     target: str = Field(default="", max_length=2048)
     host: str = Field(default="", max_length=255)
+    hostname: str = Field(default="", max_length=255)
     port: int | None = Field(default=None, ge=1, le=65535)
     share: str = Field(default="", max_length=1024)
     username: str = Field(default="", max_length=255)
@@ -306,6 +307,15 @@ class PlaybackLocationInput(StrictModel):
         if not name:
             raise ValueError("Name must not be blank.")
         return name
+
+    @field_validator("hostname")
+    @classmethod
+    def clean_hostname(cls, hostname: str) -> str:
+        # This is an exact Kodi-path hostname alias, never a network target.
+        hostname = hostname.strip().rstrip(".")
+        if any(char.isspace() or char in "/\\:@?#" for char in hostname):
+            raise ValueError("Hostname must be a name, not a URL, address or path.")
+        return hostname
 
     @field_validator("target")
     @classmethod
@@ -324,6 +334,7 @@ class PlaybackLocationView(StrictModel):
     kind: str
     target: str
     host: str = ""
+    hostname: str = ""
     port: int | None = None
     share: str = ""
     username: str = ""
