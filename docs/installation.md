@@ -7,7 +7,7 @@ Home Media Catalog runs in Docker on **Linux, Windows or macOS with Docker Deskt
 ## Requirements
 
 - Docker with Compose v2 (`docker compose`), Git, persistent storage, and network access to the host on port `8099` (configurable).
-- For Kodi: an **existing external MyVideos MariaDB/MySQL database**, reachable from the server, with a user permitted to `SELECT` from the needed views. Kodi need not be running to browse.
+- For Kodi: a reachable Kodi instance with its **HTTP JSON-RPC web server enabled** for the normal import path. A read-only **MyVideos MariaDB/MySQL fallback** is optional, and can be used when JSON-RPC is unavailable or does not expose additional video editions. After a successful import, the catalogue remains browsable while Kodi is off.
 - For CLZ Movies: an **XML export**; Kodi and MariaDB are not required.
 
 ## Install and start with Docker
@@ -29,9 +29,9 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
-On Linux, adjust `PUID`/`PGID` and the directory owner to match the host's account as needed. The `chown`/`chmod` commands above are Linux examples; on Docker Desktop, adapt permissions and directory sharing to macOS or Windows. Open `http://SERVER_IP:8099` and enter `API_TOKEN`. Under **Settings**, add a Kodi source and/or import a CLZ XML export. Kodi only synchronizes automatically when the web site or iOS app is opened **and** the last successful MariaDB import for that source is older than 24 hours (or missing). The empty-catalogue bootstrap can import a new source once. There is no recurring background scheduler; manually selecting **Synchronize** or **Scan Kodi** remains possible. A new CLZ export only replaces records belonging to the selected CLZ collection.
+On Linux, adjust `PUID`/`PGID` and the directory owner to match the host's account as needed. The `chown`/`chmod` commands above are Linux examples; on Docker Desktop, adapt permissions and directory sharing to macOS or Windows. Open `http://SERVER_IP:8099` and enter `API_TOKEN`. Under **Settings**, add a Kodi source and/or import a CLZ XML export. Kodi checks whether a source needs automatic refresh when the web site or iOS app is opened, subject to a 24-hour successful-import interval and failed-attempt cooldown. JSON-RPC is preferred, with optional MariaDB fallback. The empty-catalogue bootstrap can import a new source once. There is no recurring background scheduler; manually selecting **Synchronize** or **Scan Kodi** remains possible. A new CLZ export only replaces records belonging to the selected CLZ collection.
 
-For MariaDB, use an account with `SELECT` permission on the `MyVideos…` database. Specify the database explicitly if you have several libraries. If no name is supplied, the connector chooses the highest accessible numbered version; the account must have access to all required views. Connections and passwords are saved in the local volume and are never returned by the API.
+If you enable MariaDB fallback, use an account with `SELECT` permission on the `MyVideos…` database. Specify the database explicitly if you have several libraries. If no name is supplied, the connector chooses the highest accessible numbered version; the account must have access to all required views. Connections and passwords are saved in the local volume and are never returned by the API.
 
 After an update that adds metadata support, use **Settings → Synchronize** for Kodi and reimport the XML into the **existing CLZ collection**. HDR and Atmos badges require explicit information from the source; a UHD disc or a TrueHD track alone is not evidence of these technologies.
 
