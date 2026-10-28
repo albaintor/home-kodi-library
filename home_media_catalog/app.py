@@ -389,7 +389,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def ai_index_status():
         docs = store.ai_documents()
-        model = ai_config.status()["embedding_model"]
+        model = ai_config.vector_index_model()
         return {
             **ai_index.status(docs, model),
             "running": bool(ai_index_task and not ai_index_task.done()),
@@ -399,7 +399,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def run_ai_index():
         nonlocal ai_index_error
         async with ai_index_lock:
-            credentials = ai_config.credentials()
+            credentials = ai_config.embedding_credentials()
             if not credentials:
                 return
             ai_index_error = None
@@ -407,7 +407,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 documents = await asyncio.to_thread(store.ai_documents)
                 with usage_session(ai_usage, ai_config.status()["monthly_budget_usd"], "indexing"):
                     await ai_index.refresh(
-                        documents, ai_config.status()["embedding_model"], credentials[1]
+                        documents, ai_config.vector_index_model(), credentials[1],
+                        provider=ai_config.status()["embedding_provider"], api_model=credentials[0],
                     )
             except (AIBudgetExceeded, AIPriceUnavailable) as exc:
                 ai_index_error = str(exc)
@@ -427,7 +428,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     def start_ai_index(*, immediate: bool = False):
         nonlocal ai_index_task
-        if not ai_config.credentials():
+        if not ai_config.embedding_credentials():
             return
         ai_index_dirty.set()
         if ai_index_task is None or ai_index_task.done():
@@ -491,9 +492,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         """Probe both configured models, not just a valid HTTP/API token."""
         credentials = ai_config.credentials()
         if not credentials:
-            raise HTTPException(503, "Configure and save an OpenAI API key first.")
+            raise HTTPException(503, "Configure and save the language API key first.")
         model, key = credentials
-        embedding_model = ai_config.status()["embedding_model"]
+        embedding_credentials = ai_config.embedding_credentials()
+        if not embedding_credentials:
+            raise HTTPException(503, "Configure and save the embedding API key first.")
+        embedding_model, embedding_key = embedding_credentials
         results = {}
         async with ai_limit:
             try:
@@ -501,15 +505,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
                     await interpret_prompt(
-                        "Trouve les films après 2015.", model, key, {"genres": [], "formats": []}
+                        "Trouve les films après 2015.", model, key, {"genres": [], "formats": []},
+                        provider=ai_config.status()["provider"],
                     )
                 results["language"] = {"ok": True, "model": model}
             except (AIBudgetExceeded, AIPriceUnavailable):
                 raise HTTPException(
-                    429, "OpenAI budget limit reached or model pricing unknown."
+                    429, "AI budget limit reached or model pricing unknown."
                 ) from None
             except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("OpenAI language model connection test failed: %s", type(exc).__name__)
+                _LOG.warning("AI language model connection test failed: %s", type(exc).__name__)
                 results["language"] = {
                     "ok": False,
                     "model": model,
@@ -519,16 +524,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with usage_session(
                     ai_usage, ai_config.status()["monthly_budget_usd"], "connection_test"
                 ):
-                    vectors = await embed(["Test de recherche sémantique."], embedding_model, key)
+                    vectors = await embed(["Test de recherche sémantique."], embedding_model,
+                                          embedding_key, provider=ai_config.status()["embedding_provider"])
                 if not vectors or not vectors[0]:
                     raise ValueError("Empty embedding vector")
                 results["embedding"] = {"ok": True, "model": embedding_model}
             except (AIBudgetExceeded, AIPriceUnavailable):
                 raise HTTPException(
-                    429, "OpenAI budget limit reached or model pricing unknown."
+                    429, "AI budget limit reached or model pricing unknown."
                 ) from None
             except (httpx.HTTPError, ValueError) as exc:
-                _LOG.warning("OpenAI embedding connection test failed: %s", type(exc).__name__)
+                _LOG.warning("AI embedding connection test failed: %s", type(exc).__name__)
                 results["embedding"] = {
                     "ok": False,
                     "model": embedding_model,
@@ -538,16 +544,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post(API + "/ai/index/refresh", tags=["AI"], dependencies=[Depends(writable)])
     async def refresh_ai_index():
-        if not ai_config.credentials():
-            raise HTTPException(503, "AI is not configured.")
+        if not ai_config.embedding_credentials():
+            raise HTTPException(503, "Embedding provider is not configured.")
         start_ai_index()
         return {"status": "started", "index": await asyncio.to_thread(ai_index_status)}
 
     @app.post(API + "/ai/search", tags=["AI"], dependencies=[Depends(authenticated)])
     async def search_with_ai(value: AISearchInput, request: Request):
         credentials = ai_config.credentials()
-        if not credentials:
-            raise HTTPException(503, "AI search is not configured. Use standard search.")
+        embedding_credentials = ai_config.embedding_credentials()
+        if not credentials or not embedding_credentials:
+            raise HTTPException(503, "AI language and embedding providers must be configured.")
         client_ip = request.client.host if request.client else "unknown"
         async with ai_rate_lock:
             attempts = ai_attempts[client_ip]
@@ -582,7 +589,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ]
                         if candidates:
                             refinement = await interpret_result_refinement(
-                                value.prompt, credentials[0], credentials[1], candidates
+                                value.prompt, credentials[0], credentials[1], candidates,
+                                provider=ai_config.status()["provider"],
                             )
                             if refinement["operation"] == "expand":
                                 # Reuse the original criteria, not the phrase "add more"
@@ -591,9 +599,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     store,
                                     value.previous_plan,
                                     ai_index,
-                                    ai_config.status()["embedding_model"],
-                                    credentials[1],
+                                    ai_config.vector_index_model(),
+                                    embedding_credentials[1],
                                     exclude_ids=set(previous_ids),
+                                    embedding_api_model=embedding_credentials[0],
+                                    embedding_provider=ai_config.status()["embedding_provider"],
                                 )
                                 existing = await asyncio.to_thread(
                                     store.media, ids=previous_ids, limit=60
@@ -651,19 +661,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     "index": await asyncio.to_thread(ai_index_status),
                                 }
                     if value.previous_plan is None:
-                        plan = await interpret_prompt(value.prompt, *credentials, facets)
+                        plan = await interpret_prompt(value.prompt, *credentials, facets,
+                                                      provider=ai_config.status()["provider"])
                     else:
                         plan = await interpret_prompt(
-                            value.prompt, *credentials, facets, value.previous_plan
+                            value.prompt, *credentials, facets, value.previous_plan,
+                            provider=ai_config.status()["provider"],
                         )
                     output = await hybrid_page(
                         store,
                         plan,
                         ai_index,
-                        ai_config.status()["embedding_model"],
-                        credentials[1],
+                        ai_config.vector_index_model(),
+                        embedding_credentials[1],
                         prompt=value.prompt,
                         language_model=credentials[0],
+                        language_key=credentials[1],
+                        language_provider=ai_config.status()["provider"],
+                        embedding_provider=ai_config.status()["embedding_provider"],
+                        embedding_api_model=embedding_credentials[0],
                     )
             except AIBudgetExceeded as exc:
                 raise HTTPException(429, str(exc)) from None
