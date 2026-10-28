@@ -22,6 +22,8 @@ PRICES = {
     "text-embedding-3-small": (0.02, 0.00, 0.02),
     "text-embedding-3-large": (0.13, 0.00, 0.13),
     "claude-haiku-4-5": (1.0, 5.0, 0.1),
+    "claude-haiku-5-5": (0.10, 0.50, 0.01),
+    "claude-sonnet-5-5": (2.0, 10.0, 0.10),
     "claude-sonnet-5": (2.0, 10.0, 0.2),
     "claude-sonnet-4-5": (3.0, 15.0, 0.3),
     "gemini-2.5-flash-lite": (0.1, 0.4, 0.01),
