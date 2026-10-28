@@ -2976,7 +2976,7 @@ document.addEventListener('click',async event=>{
 const aiLanguageModels={
   openai:[['gpt-6-luna','GPT-6 Luna'],['gpt-6.1-sol','GPT-6.1 Sol'],['gpt-4o-mini','GPT-4o mini']],
   anthropic:[['claude-haiku-5-5','Claude Haiku 5.5 · Recommandé'],['claude-sonnet-5-5','Claude Sonnet 5.5'],['claude-haiku-4-5','Claude Haiku 4.5']],
-  gemini:[['gemini-2.5-flash-lite','Gemini 2.5 Flash Lite'],['gemini-2.5-flash','Gemini 2.5 Flash']]
+  gemini:[['gemini-3.5-flash-lite','Gemini 3.5 Flash-Lite · Conseillé'],['gemini-3.8-flash','Gemini 3.8 Flash'],['gemini-2.5-flash-lite','Gemini 2.5 Flash-Lite · Ancien']]
 };
 function aiProviderName(provider){return {openai:'OpenAI',anthropic:'Claude (Anthropic)',gemini:'Gemini (Google)'}[provider]||provider;}
 function aiProviderOptions(selected){
