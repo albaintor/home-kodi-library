@@ -3063,7 +3063,7 @@ document.addEventListener('submit',async event=>{
       const filters=[p.kind,p.watch_status,p.genre,p.format,p.year_min&&'Depuis '+p.year_min,p.year_max&&'Jusqu’à '+p.year_max,p.rating_min!=null&&'Note ≥ '+p.rating_min,p.keywords].filter(Boolean);
       $('ai-search-feedback').textContent=result.total+' résultat(s) · '+(filters.join(' · ')||'Recherche sémantique')+
         (result.has_more?' · 60 premiers affichés':'')+
-        (result.index?.running?' · indexation en cours ('+result.index.indexed+'/'+result.index.total+')':'')+
+        
         (result.note?' · '+result.note:'');
       target.innerHTML=result.items.length
         ? '<div class="ai-results-grid">'+result.items.map(item=>
@@ -3079,7 +3079,7 @@ document.addEventListener('submit',async event=>{
             ).join('')+
             '</button>'
           ).join('')+'</div>'
-        : '<p class="hint">Aucun résultat sémantique disponible. Si l’indexation démarre, relancez la recherche lorsqu’elle est terminée.</p>';
+        : '<p class="hint">Aucun résultat correspondant dans le catalogue.</p>';
       attachImageFallbacks(target);
     }catch(e){$('ai-search-feedback').textContent=e.message;}
     finally{button.disabled=false;}
@@ -3098,14 +3098,7 @@ document.addEventListener('click',async event=>{
     $('ai-prompt').placeholder='Décris les films ou épisodes recherchés…';
     await refreshAIStatus();$('ai-prompt').focus();return;
   }
-  if(event.target.closest('#ai-reindex')){
-    const button=$('ai-reindex');button.disabled=true;
-    try{
-      const result=await api('ai/index/refresh',{method:'POST'});
-      $('ai-index-progress').textContent='Indexation démarrée : '+result.index.indexed+' / '+result.index.total;
-      toast('Indexation sémantique démarrée. Elle reprend uniquement les résumés modifiés.');
-    }catch(e){toast(e.message)}finally{button.disabled=false}
-  }
+
 });
 
 document.addEventListener('click',async event=>{
@@ -3120,20 +3113,19 @@ document.addEventListener('click',async event=>{
     model_unavailable:'Modèle introuvable ou inaccessible avec cette clé.',
     quota_or_rate_limit:'Quota fournisseur dépassé ou limite de débit atteinte.',
     model_or_request_incompatible:'Le modèle ne prend pas en charge cette opération API.',
-    timeout:'OpenAI ne répond pas dans le délai imparti.',
-    network_error:'Le serveur ne parvient pas à joindre OpenAI.',
-    provider_unavailable:'Service OpenAI temporairement indisponible.',
-    invalid_response:'Réponse OpenAI inattendue. Consultez les journaux serveur.'
+    timeout:'Le fournisseur IA ne répond pas dans le délai imparti.',
+    network_error:'Le serveur ne parvient pas à joindre le fournisseur IA.',
+    provider_unavailable:'Service IA temporairement indisponible.',
+    invalid_response:'Réponse du fournisseur IA inattendue. Consultez les journaux serveur.'
   };
   try{
     const result=await api('ai/connection/test',{method:'POST'});
     output.innerHTML=[
-      ['Modèle de langage',result.language],
-      ["Modèle d'embeddings",result.embedding]
+      ['Modèle IA',result.language]
     ].map(([name,part])=>
       '<p class="'+(part.ok?'success-text':'error-text')+'">'+
       (part.ok?'✓ ':'✗ ')+esc(name)+' ('+esc(part.model)+') : '+
-      (part.ok?'Connexion validée.':esc(messages[part.reason]||'Erreur OpenAI.'))+'</p>'
+      (part.ok?'Connexion validée.':esc(messages[part.reason]||'Erreur fournisseur.'))+'</p>'
     ).join('');
   }catch(e){output.textContent='Test impossible : '+e.message}
   finally{button.disabled=false}
