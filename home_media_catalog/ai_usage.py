@@ -1,4 +1,4 @@
-"""Server-side OpenAI usage accounting and monthly spend guard.
+"""Server-side multi-provider usage accounting and monthly spend guard.
 
 Every provider call reserves a conservatively estimated cost before sending any
 tokens, then reconciles actual usage from OpenAI's response. No access keys or
@@ -21,6 +21,12 @@ PRICES = {
     "gpt-4o-mini": (0.15, 0.60, 0.075),
     "text-embedding-3-small": (0.02, 0.00, 0.02),
     "text-embedding-3-large": (0.13, 0.00, 0.13),
+    "claude-haiku-4-5": (1.0, 5.0, 0.1),
+    "claude-sonnet-5": (2.0, 10.0, 0.2),
+    "claude-sonnet-4-5": (3.0, 15.0, 0.3),
+    "gemini-2.5-flash-lite": (0.1, 0.4, 0.01),
+    "gemini-2.5-flash": (0.3, 2.5, 0.03),
+    "gemini-embedding-001": (0.15, 0, 0.15),
 }
 
 
@@ -82,7 +88,7 @@ class AIUsageLedger:
         pricing = PRICES.get(model)
         if pricing is None:
             raise AIPriceUnavailable(
-                "No known OpenAI pricing for the selected model; choose a supported model "
+                "No known pricing for the selected model; choose a supported model "
                 "before using the monthly budget."
             )
         input_price, output_price, _ = pricing
@@ -99,7 +105,7 @@ class AIUsageLedger:
             ).fetchone()[0]
             if budget is not None and used + amount > budget + 1e-10:
                 raise AIBudgetExceeded(
-                    "Monthly OpenAI spending limit reached. Update the AI budget in settings."
+                    "Monthly AI spending limit reached. Update the AI budget in settings."
                 )
             conn.execute(
                 "INSERT INTO calls(id,month,created_at,category,model,status,"
@@ -119,9 +125,14 @@ class AIUsageLedger:
 
     def settle(self, reference, payload: dict, model: str):
         usage = payload.get("usage") or {}
-        prompt = int(usage.get("input_tokens", usage.get("prompt_tokens", 0)) or 0)
-        completion = int(usage.get("output_tokens", 0) or 0)
-        cache = int((usage.get("input_tokens_details") or {}).get("cached_tokens", 0) or 0)
+        if not usage and payload.get("usageMetadata"):
+            usage = payload["usageMetadata"]
+        prompt = int(usage.get("input_tokens", usage.get("prompt_tokens",
+                     usage.get("promptTokenCount", 0))) or 0)
+        completion = int(usage.get("output_tokens", usage.get("candidatesTokenCount", 0)) or 0)
+        cache = int((usage.get("input_tokens_details") or {}).get("cached_tokens",
+                    usage.get("cache_read_input_tokens",
+                    usage.get("cachedContentTokenCount", 0))) or 0)
         cache = min(max(cache, 0), prompt)
         input_rate, output_rate, cached_rate = PRICES[model]
         amount = (
@@ -192,23 +203,21 @@ class AIUsageLedger:
         }
 
 
-async def tracked_post(client, url, *, headers, json: dict):
-    """Meter all app-originated OpenAI calls using the enclosing request's context."""
+async def tracked_post(client, url, *, headers, json: dict, model: str | None = None):
+    """Meter all provider calls using the enclosing request's context."""
     session = _active.get()
     if session is None:
         return await client.post(url, headers=headers, json=json)
     ledger, budget, category = session
-    model = json["model"]
-    # Character-count bound is intentionally conservative, not exact tokenization.
-    # Responses specify max_output_tokens so the reservation bounds output tokens.
+    model = model or json["model"]
     estimate_input = max(20, len(__import__("json").dumps(json, ensure_ascii=False)) * 2)
-    output_bound = int(json.get("max_output_tokens", 0))
+    config = json.get("generationConfig") or {}
+    output_bound = int(json.get("max_output_tokens", json.get("max_tokens",
+                       config.get("maxOutputTokens", 0))))
     reference = ledger.reserve(category, model, estimate_input, output_bound, budget)
     try:
         response = await client.post(url, headers=headers, json=json)
     except Exception:
-        # If the network fails after submission, the provider may have charged
-        # the call: retain the reservation rather than assuming zero cost.
         ledger.release(reference, uncertain=True)
         raise
     if response.is_success:
