@@ -53,7 +53,7 @@ def test_kodi_credentials_are_admin_only_uncached_and_not_in_player_list(client)
         "password": "local-kodi-secret",
     }
     schema = client.get("/api/v1/openapi.json", headers=admin).json()
-    assert path not in schema["paths"]
+    assert "/api/v1/players/{player_id}/device-credentials" not in schema["paths"]
 
     # Empty password updates must remain consistent with the existing server
     # semantics: null/omitted preserves, explicit empty clears the password.
