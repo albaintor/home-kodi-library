@@ -97,7 +97,6 @@ def test_rpc_cannot_erase_multiple_sql_movie_versions(store):
     assert original == 1
 
 
-
 def test_renamed_source_with_jsonrpc_keys_has_no_sql_version_guard(store):
     from home_media_catalog.connectors.base import Record
 
@@ -116,8 +115,11 @@ def test_server_sync_preserves_merged_movie_versions_by_preferring_mariadb(store
     from home_media_catalog.sync import SyncManager
 
     source_id = store.save_source(
-        {"name": "Kodi - NAS", "type": "kodi",
-         "config": {"host": "nas", "username": "reader", "database": "MyVideos151"}}
+        {
+            "name": "Kodi - NAS",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader", "database": "MyVideos151"},
+        }
     )["id"]
     store.save_player({"name": "Salon", "source_id": source_id, "host": "kodi.local"})
     versions = [
@@ -139,7 +141,9 @@ def test_server_sync_preserves_merged_movie_versions_by_preferring_mariadb(store
     job = store.new_job(source_id)
     with (
         patch("home_media_catalog.sync.KodiConnector", FakeMariaDB),
-        patch("home_media_catalog.sync.connection", side_effect=AssertionError("Must skip JSON-RPC")),
+        patch(
+            "home_media_catalog.sync.connection", side_effect=AssertionError("Must skip JSON-RPC")
+        ),
         patch(
             "home_media_catalog.sync.fetch_kodi_snapshot",
             side_effect=AssertionError("Must not flatten editions"),
