@@ -42,44 +42,27 @@ The server uses its own **database** and when used is kept in sync with the app.
 ## Native iOS/iPadOS experience and AI search
 
 **Home Media Catalog for iOS/iPadOS** keeps the standard
-SwiftUI search field **inside the main catalogue**, directly filtering the
+Search **inside the main catalog**, directly filtering the
 same poster/list view on iPhone, iPad and iPhone Duo. A sparkles action in
 the **top toolbar** opens a dedicated conversational AI page through native
-navigation, without a popup or a separate Search tab. Its results and follow-up
-context survive opening a movie or episode and returning. Media details are
-retrieved directly by ID; optional TMDB enrichment no longer blocks the
-first display. Strict semantic verification filters unrelated style matches.
+navigation. Its results and follow-up
+context survive opening a movie or episode and returning.
 
-On the Web and iOS, an administrator can select a language model and embeddings
-model, securely save the OpenAI key on the server, and **test both connections**
-independently. Indexed film, series and episode synopses and credited people power incremental
+On the Web and iOS, user can select a language model (only OpenAI at this time) and embeddings
+model, securely save the AI key on the server. Indexed film, series and episode synopses and credited people power incremental
 semantic retrieval, including role-specific cast/director/composer searches,
 numeric rating filters, and matched episode season/number and plot excerpts.
 A cached in-memory HNSW index accelerates large vector collections.
 AI is entirely optional; no key or indexing is needed for ordinary browsing.
 
-OpenAI receives the query and, during indexing, title/genre/plot metadata,
+AI receives the query and, during indexing, title/genre/plot metadata,
 credited actors/directors/composers/writers and available ratings to produce
-embeddings; the index and credentials remain on the self-hosted server. See
-[AI search setup, data privacy and API endpoints](docs/ai-search.md).
+embeddings; the index and credentials remain on the self-hosted server.
 
-### Conversational AI: refine, expand, undo
-
-After an initial AI search, use follow-up prompts to **filter existing titles**
-("Retire Valérian de la liste"), **add more matching titles** without losing
-the current selection ("Ajoutes-en d'autres"), or **start a different search**
-("Cherche plutôt des films de Miyazaki"). On iOS, **Undo last refinement**
-restores the previous result list and conversation; **New search** clears them.
-An administrator can add up to the 60 currently displayed AI results to a new
-or existing list.
-
-To enable AI, open **Settings → AI search** on iOS or **Settings →
-Recherche intelligente · IA** on the web. Configure the OpenAI language
+To enable AI, open **Settings → Artificial Intelligence**. Configure the AI language
 model, embeddings model and API key, save, test both connections, and index
 your catalogue summaries. The monthly USD spending cap is configurable.
-The server stores the key; ordinary catalogue browsing does not require AI.
-Recent result-editing features require the `ai_refine_results` server capability;
-the client falls back to plan-only refinement on earlier servers. See the
+The server stores the key; ordinary catalogue browsing does not require AI. See the
 [full setup, privacy and API guide](docs/ai-search.md).
 
 
