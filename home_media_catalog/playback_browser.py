@@ -123,6 +123,9 @@ def _sync_browse(
 ) -> list[dict]:
     kind = location["kind"]
     host, prefix = _root(location) if kind != "nfs" else ("", "")
+    if kind == "nfs" and location["id"] not in mounts:
+        from .native_nfs import browse
+        return browse(location, relative)
     if kind == "nfs":
         folder = _full_path(_local_root(location, mounts), relative)
         if not folder.is_dir():
@@ -225,6 +228,9 @@ def _sync_stream(
 ):
     kind = location["kind"]
     chunk = 512 * 1024
+    if kind == "nfs" and location["id"] not in mounts:
+        from .native_nfs import stream
+        return stream(location, relative, start, end)
     if kind == "nfs":
         file = _full_path(_local_root(location, mounts), relative)
         if not file.is_file():
@@ -569,12 +575,16 @@ async def stream_location(
             503, "Network streaming connector unavailable. Update the server image."
         ) from exc
     except Exception as exc:
+        from .native_nfs import NFSUnavailable
+        if isinstance(exc, NFSUnavailable):
+            raise HTTPException(503, str(exc)) from exc
         LOG.warning(
             "Playback streaming failed for %s (%s): %s", location["kind"], type(exc).__name__, exc
         )
         raise HTTPException(
             502, "Cannot open the remote file. Check the network and credentials."
         ) from exc
+
     if start < 0:
         start = max(0, size + start)
     if size <= 0 or start >= size or (end is not None and end < start):
