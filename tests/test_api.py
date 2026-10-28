@@ -505,12 +505,28 @@ def test_batch_media_details_matches_individual_endpoint(client, admin):
     )
     assert source.status_code == 201, source.text
     source_id = source.json()["id"]
+    store = client.app.state.store
+    store.apply_snapshot(
+        source_id,
+        [Record("movie:1", "movie", "First Film"),
+         Record("movie:2", "movie", "Second Film")],
+    )
+    ids = [row["id"] for row in store.media(kind="movie")["items"]]
+    assert len(ids) == 2
     from conftest import READ
-    # Unknown media is ignored, as in the store's detail lookup.
     read = {"Authorization": f"Bearer {READ}"}
     route = "/api/v1/media/details/batch"
-    assert client.post(route, json={"ids": ["missing"]}).status_code == 401
-    assert client.post(route, headers=read, json={"ids": ["missing"]}).json() == {"items": []}
+    assert client.post(route, json={"ids": ids}).status_code == 401
+    result = client.post(route, headers=read, json={"ids": ids})
+    assert result.status_code == 200, result.text
+    expected = {
+        mid: client.get(f"/api/v1/media/{mid}", headers=read).json() for mid in ids
+    }
+    assert {item["id"]: item for item in result.json()["items"]} == expected
+    # Repeated IDs are deduplicated; deleted IDs are omitted, never fabricated.
+    dup = client.post(route, headers=read, json={"ids": [ids[0], ids[0], "missing"]})
+    assert dup.status_code == 200
+    assert [item["id"] for item in dup.json()["items"]] == [ids[0]]
     for invalid in [[], [""], ["x"] * 101, "not an array"]:
         response = client.post(route, headers=read, json={"ids": invalid})
         assert response.status_code == 422, response.text
