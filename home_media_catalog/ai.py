@@ -10,8 +10,6 @@ from threading import RLock
 from pydantic import BaseModel, ConfigDict, Field
 
 from .ai_providers import (
-    EMBEDDING_DEFAULTS,
-    EMBEDDING_PROVIDERS,
     LANGUAGE_DEFAULTS,
     PROVIDERS,
     generate_json,
@@ -35,6 +33,7 @@ SCHEMA = {
         "person_role": {"type": ["string", "null"]},
         "keywords": {"type": "string"},
         "semantic_query": {"type": "string"},
+        "retrieval_terms": {"type": "array", "items": {"type": "string"}},
         "assistant_message": {"type": "string"},
     },
     "required": [
@@ -50,6 +49,7 @@ SCHEMA = {
         "person_role",
         "keywords",
         "semantic_query",
+        "retrieval_terms",
         "assistant_message",
     ],
     "additionalProperties": False,
@@ -59,14 +59,15 @@ SCHEMA = {
 class AISettingsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
     provider: str = "openai"
-    embedding_provider: str = "openai"
     model: str = Field(default="gpt-4o-mini", min_length=1, max_length=100)
-    embedding_api_key: str | None = Field(default=None, max_length=300)
-    clear_embedding_api_key: bool = False
     api_key: str | None = Field(default=None, max_length=300)
     clear_api_key: bool = False
-    embedding_model: str | None = Field(default=None, min_length=1, max_length=100)
     monthly_budget_usd: float | None = Field(default=None, ge=0, le=10000)
+    # Accept old clients without using or provisioning an embedding model.
+    embedding_provider: str | None = None
+    embedding_model: str | None = None
+    embedding_api_key: str | None = None
+    clear_embedding_api_key: bool = False
 
 
 class AISearchInput(BaseModel):
@@ -90,6 +91,7 @@ class AISearchPlan(BaseModel):
     person_role: str | None = None
     keywords: str = ""
     semantic_query: str = ""
+    retrieval_terms: list[str] = Field(default_factory=list, max_length=16)
     assistant_message: str = ""
 
 
@@ -110,26 +112,26 @@ class AIConfiguration:
         return {}
 
     def _keys(self, value: dict) -> dict:
-        # The pre-multi-provider format stored the OpenAI secret as api_key.
-        return {**({"openai": value["api_key"]} if value.get("api_key") else {}),
-                **value.get("api_keys", {})}
+        # Upgrade pre-provider OpenAI settings without invalidating existing secrets.
+        return {
+            **({"openai": value["api_key"]} if value.get("api_key") else {}),
+            **value.get("api_keys", {}),
+        }
 
     def status(self) -> dict:
         with self.lock:
             value = self._read()
             provider = value.get("provider", "openai")
-            embedding_provider = value.get("embedding_provider", "openai")
+            if provider not in PROVIDERS:
+                provider = "openai"
             keys = self._keys(value)
-            language_key = keys.get(provider, "")
-            embedding_key = keys.get(embedding_provider, "")
             return {
                 "provider": provider,
-                "embedding_provider": embedding_provider,
                 "model": value.get("model") or LANGUAGE_DEFAULTS[provider],
-                "configured": bool(language_key and embedding_key),
-                "has_api_key": bool(language_key),
-                "has_embedding_api_key": bool(embedding_key),
-                "embedding_model": value.get("embedding_model") or EMBEDDING_DEFAULTS[embedding_provider],
+                "configured": bool(keys.get(provider)),
+                "has_api_key": bool(keys.get(provider)),
+                "configured_providers": sorted(name for name in PROVIDERS if keys.get(name)),
+                "search_mode": "single_model",
                 "monthly_budget_usd": value.get("monthly_budget_usd", 5.0),
             }
 
@@ -137,64 +139,44 @@ class AIConfiguration:
         with self.lock:
             value = self._read()
             provider = value.get("provider", "openai")
+            if provider not in PROVIDERS:
+                return None
             key = self._keys(value).get(provider, "")
             return (value.get("model") or LANGUAGE_DEFAULTS[provider], key) if key else None
 
-    def embedding_credentials(self) -> tuple[str, str] | None:
-        with self.lock:
-            value = self._read()
-            provider = value.get("embedding_provider", "openai")
-            key = self._keys(value).get(provider, "")
-            return (value.get("embedding_model") or EMBEDDING_DEFAULTS[provider], key) if key else None
-
-    def vector_index_model(self) -> str:
-        state = self.status()
-        # Preserve existing OpenAI vector identities during migration.
-        return (state["embedding_model"] if state["embedding_provider"] == "openai"
-                else state["embedding_provider"] + ":" + state["embedding_model"])
-
     def update(self, request: AISettingsInput) -> dict:
-        if request.provider not in PROVIDERS or request.embedding_provider not in EMBEDDING_PROVIDERS:
+        if request.provider not in PROVIDERS:
             raise ValueError("Unsupported AI provider.")
-        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or (
-            request.embedding_model is not None
-            and not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model)
-        ):
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model):
             raise ValueError("Invalid model identifier.")
-        for key in (request.api_key, request.embedding_api_key):
-            if key is not None and key and not key.strip():
-                raise ValueError("The access key must not be whitespace.")
+        if request.api_key is not None and request.api_key and not request.api_key.strip():
+            raise ValueError("The access key must not be whitespace.")
         with self.lock:
             value = self._read()
             keys = self._keys(value)
             if request.clear_api_key:
                 keys.pop(request.provider, None)
-            if request.clear_embedding_api_key:
-                keys.pop(request.embedding_provider, None)
             if request.api_key:
                 keys[request.provider] = request.api_key.strip()
-            if request.embedding_api_key:
-                keys[request.embedding_provider] = request.embedding_api_key.strip()
             previous_provider = value.get("provider", "openai")
-            previous_embedding_provider = value.get("embedding_provider", "openai")
-            contents = json.dumps({
-                "provider": request.provider,
-                "embedding_provider": request.embedding_provider,
-                "model": (LANGUAGE_DEFAULTS[request.provider]
-                          if request.provider != previous_provider and
-                          request.model == LANGUAGE_DEFAULTS["openai"]
-                          else request.model),
-                "api_keys": keys,
-                "monthly_budget_usd": (
-                    request.monthly_budget_usd if request.monthly_budget_usd is not None
-                    else value.get("monthly_budget_usd", 5.0)),
-                "embedding_model": (
-                    request.embedding_model
-                    or (EMBEDDING_DEFAULTS[request.embedding_provider]
-                        if request.embedding_provider != previous_embedding_provider
-                        else value.get("embedding_model"))
-                    or EMBEDDING_DEFAULTS[request.embedding_provider]),
-            })
+            model = (
+                LANGUAGE_DEFAULTS[request.provider]
+                if request.provider != previous_provider
+                and request.model == LANGUAGE_DEFAULTS["openai"]
+                else request.model
+            )
+            contents = json.dumps(
+                {
+                    "provider": request.provider,
+                    "model": model,
+                    "api_keys": keys,
+                    "monthly_budget_usd": (
+                        request.monthly_budget_usd
+                        if request.monthly_budget_usd is not None
+                        else value.get("monthly_budget_usd", 5.0)
+                    ),
+                }
+            )
             self.path.parent.mkdir(parents=True, exist_ok=True)
             fd, name = tempfile.mkstemp(prefix=".ai-config-", dir=self.path.parent)
             try:
@@ -237,6 +219,10 @@ def normalize_plan(plan: AISearchPlan, facets: dict) -> AISearchPlan:
         values["person_name"] = values["person_name"].strip()[:120] or None
     values["keywords"] = values["keywords"].strip()[:120]
     values["semantic_query"] = values["semantic_query"].strip()[:300]
+    values["retrieval_terms"] = list(dict.fromkeys(
+        str(term).strip()[:70] for term in values["retrieval_terms"]
+        if str(term).strip()
+    ))[:12]
     values["assistant_message"] = values["assistant_message"].strip()[:300]
     return AISearchPlan(**values)
 
@@ -267,6 +253,11 @@ async def interpret_prompt(
         "Return semantic_query as a short searchable description of the plot, theme, "
         "atmosphere, or character requested, excluding constraints like year or format. "
         "For purely structured searches without a theme, semantic_query must be empty. "
+        "Return retrieval_terms as 4 to 10 concise keyword phrases or synonyms useful "
+        "to retrieve relevant film plots locally using full-text search. Include "
+        "synonyms and related concrete concepts in the same language as the catalogue "
+        "as well as English when useful. Do NOT add unrelated broad genre terms. "
+        "For purely structured queries, retrieval_terms must be an empty list. "
         "Write assistant_message as one brief explanatory sentence in the user's language, "
         "without claiming that any particular matching film exists. "
         "Set keywords ONLY for an explicitly named title or unique quoted phrase "
