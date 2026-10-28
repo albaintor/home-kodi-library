@@ -559,6 +559,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         credentials = ai_config.credentials()
         if not credentials:
             raise HTTPException(503, "AI search is not configured. Use standard search.")
+        provider = ai_config.status()["provider"]
+
+        async def retrieve(plan, *, prompt="", exclude_ids=None):
+            if provider == "openai":
+                return await hybrid_page(
+                    store, plan, ai_index, ai_config.status()["embedding_model"],
+                    credentials[1], prompt=prompt,
+                    language_model=credentials[0] if prompt else "",
+                    exclude_ids=exclude_ids,
+                )
+            return await single_model_page(
+                store, plan, prompt=prompt or plan.semantic_query,
+                model=credentials[0], key=credentials[1],
+                provider=provider, exclude_ids=exclude_ids,
+            )
+
         client_ip = request.client.host if request.client else "unknown"
         async with ai_rate_lock:
             attempts = ai_attempts[client_ip]
@@ -593,18 +609,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         ]
                         if candidates:
                             refinement = await interpret_result_refinement(
-                                value.prompt, credentials[0], credentials[1], candidates
+                                value.prompt, credentials[0], credentials[1], candidates,
+                                **({"provider": provider} if provider != "openai" else {}),
                             )
                             if refinement["operation"] == "expand":
                                 # Reuse the original criteria, not the phrase "add more"
                                 # as a new semantic or lexical query.
-                                more = await hybrid_page(
-                                    store,
-                                    value.previous_plan,
-                                    ai_index,
-                                    ai_config.status()["embedding_model"],
-                                    credentials[1],
-                                    exclude_ids=set(previous_ids),
+                                more = await retrieve(
+                                    value.previous_plan, exclude_ids=set(previous_ids)
                                 )
                                 existing = await asyncio.to_thread(
                                     store.media, ids=previous_ids, limit=60
@@ -662,20 +674,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                     "index": await asyncio.to_thread(ai_index_status),
                                 }
                     if value.previous_plan is None:
-                        plan = await interpret_prompt(value.prompt, *credentials, facets)
+                        plan = await interpret_prompt(
+                            value.prompt, *credentials, facets,
+                            **({"provider": provider} if provider != "openai" else {}),
+                        )
                     else:
                         plan = await interpret_prompt(
-                            value.prompt, *credentials, facets, value.previous_plan
+                            value.prompt, *credentials, facets, value.previous_plan,
+                            **({"provider": provider} if provider != "openai" else {}),
                         )
-                    output = await hybrid_page(
-                        store,
-                        plan,
-                        ai_index,
-                        ai_config.status()["embedding_model"],
-                        credentials[1],
-                        prompt=value.prompt,
-                        language_model=credentials[0],
-                    )
+                    output = await retrieve(plan, prompt=value.prompt)
             except AIBudgetExceeded as exc:
                 raise HTTPException(429, str(exc)) from None
             except AIPriceUnavailable as exc:
@@ -683,9 +691,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             except (httpx.HTTPError, ValueError) as exc:
                 _LOG.warning("AI search failed: %s", type(exc).__name__)
                 raise HTTPException(502, "AI provider unavailable or invalid model.") from None
-        if plan.semantic_query and not output["index"]["complete"]:
-            start_ai_index()  # Lazy refresh discovers episode changes after Kodi sync.
-        output["index"] = await asyncio.to_thread(ai_index_status)
+        if provider == "openai":
+            if plan.semantic_query and not output["index"]["complete"]:
+                start_ai_index()
+            output["index"] = await asyncio.to_thread(ai_index_status)
+        else:
+            output.pop("index", None)
         return output
 
     @app.get(
