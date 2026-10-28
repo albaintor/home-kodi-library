@@ -126,6 +126,9 @@ CREATE TABLE IF NOT EXISTS list_items (
  position INTEGER NOT NULL, PRIMARY KEY(list_id,work_id)
 );
 CREATE INDEX IF NOT EXISTS list_order ON list_items(list_id,position);
+-- Per-media detail queries use EXISTS (... WHERE work_id=?); without
+-- this index SQLite scans list memberships for every imported detail.
+CREATE INDEX IF NOT EXISTS list_items_by_work ON list_items(work_id,list_id);
 CREATE TABLE IF NOT EXISTS writeback_audit (
  id TEXT PRIMARY KEY, work_id TEXT REFERENCES works(id) ON DELETE SET NULL,
  source_id TEXT REFERENCES sources(id) ON DELETE SET NULL,
