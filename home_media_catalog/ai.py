@@ -65,7 +65,7 @@ class AISettingsInput(BaseModel):
     monthly_budget_usd: float | None = Field(default=None, ge=0, le=10000)
     # Accept old clients without using or provisioning an embedding model.
     embedding_provider: str | None = None
-    embedding_model: str | None = None
+    embedding_model: str | None = Field(default=None, min_length=1, max_length=100)
     embedding_api_key: str | None = None
     clear_embedding_api_key: bool = False
 
@@ -131,7 +131,8 @@ class AIConfiguration:
                 "configured": bool(keys.get(provider)),
                 "has_api_key": bool(keys.get(provider)),
                 "configured_providers": sorted(name for name in PROVIDERS if keys.get(name)),
-                "search_mode": "single_model",
+                "search_mode": "hybrid_vector" if provider == "openai" else "local_ai",
+                "embedding_model": (value.get("embedding_model") or "text-embedding-3-small") if provider == "openai" else None,
                 "monthly_budget_usd": value.get("monthly_budget_usd", 5.0),
             }
 
@@ -147,7 +148,10 @@ class AIConfiguration:
     def update(self, request: AISettingsInput) -> dict:
         if request.provider not in PROVIDERS:
             raise ValueError("Unsupported AI provider.")
-        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model):
+        if not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.model) or (
+            request.embedding_model is not None
+            and not re.fullmatch(r"[a-zA-Z0-9_.:-]{1,100}", request.embedding_model)
+        ):
             raise ValueError("Invalid model identifier.")
         if request.api_key is not None and request.api_key and not request.api_key.strip():
             raise ValueError("The access key must not be whitespace.")
@@ -170,6 +174,8 @@ class AIConfiguration:
                     "provider": request.provider,
                     "model": model,
                     "api_keys": keys,
+                    # Keep previously built OpenAI vectors reusable after provider switches.
+                    "embedding_model": request.embedding_model or value.get("embedding_model") or "text-embedding-3-small",
                     "monthly_budget_usd": (
                         request.monthly_budget_usd
                         if request.monthly_budget_usd is not None
