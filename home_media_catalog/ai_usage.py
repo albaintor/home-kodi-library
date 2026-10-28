@@ -26,6 +26,8 @@ PRICES = {
     "claude-sonnet-5-5": (2.0, 10.0, 0.10),
     "claude-sonnet-5": (2.0, 10.0, 0.2),
     "claude-sonnet-4-5": (3.0, 15.0, 0.3),
+    "gemini-3.5-flash-lite": (0.30, 2.50, 0.03),
+    "gemini-3.8-flash": (1.50, 7.50, 0.15),
     "gemini-2.5-flash-lite": (0.1, 0.4, 0.01),
     "gemini-2.5-flash": (0.3, 2.5, 0.03),
     "gemini-embedding-001": (0.15, 0, 0.15),
