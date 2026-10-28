@@ -623,8 +623,10 @@ def main():
                     "element => element.scrollTop === 0"
                 )
                 expect(page.locator("#settings-language")).to_have_count(0)
+                page.locator("#connection-tab-ai").click()
                 page.locator("#test-tmdb").click()
                 expect(page.locator("#tmdb-test-result")).to_contain_text("Connexion TMDB réussie")
+                page.locator("#connection-tab-sources").click()
                 page.locator("[data-test-player]").click()
                 expect(page.locator('[id^="player-result-"]')).to_contain_text(
                     "Connexion Kodi réussie"
