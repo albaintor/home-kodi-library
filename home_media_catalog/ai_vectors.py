@@ -73,7 +73,8 @@ class SemanticIndex:
             self._rank_cache = None
 
     async def refresh(
-        self, documents: list[dict], model: str, key: str, limit: int | None = None
+        self, documents: list[dict], model: str, key: str, limit: int | None = None,
+        *, provider: str = "openai", api_model: str | None = None,
     ) -> int:
         missing = self.missing(documents, model)
         if limit is not None:
@@ -81,7 +82,8 @@ class SemanticIndex:
         indexed = 0
         for offset in range(0, len(missing), 48):
             batch = missing[offset : offset + 48]
-            vectors = await embed([doc["text"] for doc in batch], model, key)
+            vectors = await embed([doc["text"] for doc in batch], api_model or model, key,
+                                  provider=provider)
             with self._connect() as conn:
                 conn.executemany(
                     "INSERT INTO vectors(id,model,hash,vector) VALUES(?,?,?,?) "
@@ -220,18 +222,39 @@ class SemanticIndex:
             return sorted(results, key=lambda pair: pair[1], reverse=True)[:count]
 
 
-async def embed(texts: list[str], model: str, key: str) -> list[list[float]]:
-    """Embed only requested synopsis/metadata text; no source credentials are transmitted."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await tracked_post(
-            client,
-            "https://api.openai.com/v1/embeddings",
-            headers={"Authorization": "Bearer " + key},
-            json={"model": model, "input": texts},
-        )
-        response.raise_for_status()
-        entries = sorted(response.json().get("data", []), key=lambda row: row["index"])
-    vectors = [row["embedding"] for row in entries]
+async def embed(
+    texts: list[str], model: str, key: str, *, provider: str = "openai"
+) -> list[list[float]]:
+    """Embed summaries with OpenAI or Gemini; no source credentials are transmitted."""
+    if not texts:
+        return []
+    if provider == "openai":
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await tracked_post(
+                client, "https://api.openai.com/v1/embeddings",
+                headers={"Authorization": "Bearer " + key},
+                json={"model": model, "input": texts},
+            )
+            response.raise_for_status()
+            entries = sorted(response.json().get("data", []), key=lambda row: row["index"])
+            vectors = [row["embedding"] for row in entries]
+    elif provider == "gemini":
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await tracked_post(
+                client,
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:batchEmbedContents",
+                headers={"x-goog-api-key": key},
+                json={"requests": [
+                    {"model": "models/" + model,
+                     "content": {"parts": [{"text": text}]}}
+                    for text in texts
+                ]},
+                model=model,
+            )
+            response.raise_for_status()
+            vectors = [entry.get("values", []) for entry in response.json().get("embeddings", [])]
+    else:
+        raise ValueError("Unsupported embedding provider.")
     if len(vectors) != len(texts) or any(not vector for vector in vectors):
         raise ValueError("Invalid or incomplete embedding response.")
     return vectors
