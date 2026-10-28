@@ -95,11 +95,24 @@ async def single_model_page(
         candidate_ids = [item["id"] for item in pool["items"] if item["id"] not in excluded]
 
     if candidate_ids:
-        page = await asyncio.to_thread(store.media, **params, ids=candidate_ids, limit=200)
-        page["items"].sort(key=lambda item: -scores.get(item["id"], 0.0))
-        page["items"] = [item for item in page["items"] if item["id"] not in excluded][:60]
-        page["total"] = len(page["items"])
-        page["has_more"] = False
+        # SQLite's default media ordering is not the FTS relevance ordering.
+        # Fetch every shortlisted ID in bounded chunks before ranking, so a
+        # strong older match is not discarded by the SQL limit.
+        shortlisted = []
+        for offset in range(0, len(candidate_ids), 200):
+            subset = await asyncio.to_thread(
+                store.media, **params, ids=candidate_ids[offset : offset + 200], limit=200
+            )
+            shortlisted.extend(subset["items"])
+        shortlisted.sort(key=lambda item: -scores.get(item["id"], 0.0))
+        shortlisted = [item for item in shortlisted if item["id"] not in excluded][:60]
+        page = {
+            "items": shortlisted,
+            "total": len(shortlisted),
+            "limit": 60,
+            "offset": 0,
+            "has_more": False,
+        }
     else:
         page = {
             "items": [], "total": 0, "limit": 60, "offset": 0, "has_more": False,
