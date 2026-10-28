@@ -82,8 +82,11 @@ class SemanticIndex:
         indexed = 0
         for offset in range(0, len(missing), 48):
             batch = missing[offset : offset + 48]
-            vectors = await embed([doc["text"] for doc in batch], api_model or model, key,
-                                  provider=provider)
+            if provider == "openai":
+                vectors = await embed([doc["text"] for doc in batch], api_model or model, key)
+            else:
+                vectors = await embed([doc["text"] for doc in batch], api_model or model,
+                                      key, provider=provider)
             with self._connect() as conn:
                 conn.executemany(
                     "INSERT INTO vectors(id,model,hash,vector) VALUES(?,?,?,?) "
