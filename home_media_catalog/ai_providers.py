@@ -8,13 +8,11 @@ import httpx
 from .ai_usage import tracked_post
 
 PROVIDERS = ("openai", "anthropic", "gemini")
-EMBEDDING_PROVIDERS = ("openai", "gemini")
 LANGUAGE_DEFAULTS = {
     "openai": "gpt-4o-mini",
-    "anthropic": "claude-haiku-4-5",
+    "anthropic": "claude-haiku-5-5",
     "gemini": "gemini-2.5-flash-lite",
 }
-EMBEDDING_DEFAULTS = {"openai": "text-embedding-3-small", "gemini": "gemini-embedding-001"}
 
 
 def parse_json_text(text: str) -> dict:
@@ -64,6 +62,13 @@ async def generate_json(
                     "system": instructions + "\nReply only with a JSON object satisfying: "
                               + json.dumps(schema, ensure_ascii=False),
                     "messages": [{"role": "user", "content": user_input}],
+                    **(
+                        {"thinking": {"type": "disabled"}, "output_config": {"effort": "low"}}
+                        if model == "claude-haiku-5-5"
+                        else {"thinking": {"type": "between_tools"}, "output_config": {"effort": "low"}}
+                        if model == "claude-sonnet-5-5"
+                        else {}
+                    ),
                 },
             )
             response.raise_for_status()
@@ -78,8 +83,15 @@ async def generate_json(
                     "contents": [{"role": "user", "parts": [{"text":
                         instructions + "\nReturn exactly one JSON object matching this schema: "
                         + json.dumps(schema, ensure_ascii=False) + "\n" + user_input}]}],
-                    "generationConfig": {"responseMimeType": "application/json",
-                                         "maxOutputTokens": max_output_tokens},
+                    "generationConfig": {
+                        "responseMimeType": "application/json",
+                        "maxOutputTokens": max_output_tokens,
+                        **(
+                            {"thinkingConfig": {"thinkingBudget": 0}}
+                            if model.startswith("gemini-2.5-flash")
+                            else {}
+                        ),
+                    },
                 },
                 model=model,
             )
