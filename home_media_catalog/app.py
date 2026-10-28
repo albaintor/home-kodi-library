@@ -39,13 +39,13 @@ from .ai import (
 )
 from .ai_hybrid import hybrid_page
 from .ai_single_model import single_model_page
-from .ai_vectors import SemanticIndex, embed
 from .ai_usage import (
     AIBudgetExceeded,
     AIPriceUnavailable,
     AIUsageLedger,
     usage_session,
 )
+from .ai_vectors import SemanticIndex, embed
 from .artwork import Artwork, ArtworkError
 from .auth import COOKIE, Auth, Principal, authenticated, secure_equal, writable
 from .backup import MAX_BACKUP_BYTES, export_backup, import_backup
