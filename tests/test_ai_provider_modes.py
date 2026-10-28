@@ -7,6 +7,7 @@ import httpx
 
 from home_media_catalog.ai import AIConfiguration, AISearchPlan, AISettingsInput
 from home_media_catalog.ai_providers import generate_json
+from home_media_catalog.ai_vectors import SemanticIndex
 
 
 def test_switching_providers_preserves_openai_embedding_configuration(tmp_path):
@@ -19,6 +20,20 @@ def test_switching_providers_preserves_openai_embedding_configuration(tmp_path):
             embedding_model="text-embedding-3-large",
         )
     )
+    # An existing stored vector must survive changing the active provider.
+    index = SemanticIndex(tmp_path)
+    documents = [{"id": "film-1", "text": "A science-fiction mystery"}]
+    with index._connect() as conn:
+        conn.execute(
+            "INSERT INTO vectors(id,model,hash,vector) VALUES(?,?,?,?)",
+            (
+                documents[0]["id"],
+                "text-embedding-3-large",
+                index.digest(documents[0]["text"]),
+                json.dumps([1.0, 0.0]),
+            ),
+        )
+    assert index.status(documents, "text-embedding-3-large")["indexed"] == 1
     config.update(
         AISettingsInput(
             provider="anthropic",
@@ -26,6 +41,7 @@ def test_switching_providers_preserves_openai_embedding_configuration(tmp_path):
             api_key="anthropic-secret",
         )
     )
+    assert index.status(documents, "text-embedding-3-large")["indexed"] == 1
     assert config.status()["search_mode"] == "local_ai"
     assert config.status()["embedding_model"] == "text-embedding-3-large"
     assert config.credentials() == ("claude-haiku-4-5", "anthropic-secret")
@@ -34,6 +50,7 @@ def test_switching_providers_preserves_openai_embedding_configuration(tmp_path):
     assert config.status()["search_mode"] == "hybrid_vector"
     assert config.status()["embedding_model"] == "text-embedding-3-large"
     assert config.credentials() == ("gpt-4o-mini", "old-openai-key")
+    assert index.status(documents, "text-embedding-3-large")["indexed"] == 1
     assert "old-openai-key" not in json.dumps(config.status())
 
 
