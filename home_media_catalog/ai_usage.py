@@ -1,7 +1,7 @@
 """Server-side multi-provider usage accounting and monthly spend guard.
 
 Every provider call reserves a conservatively estimated cost before sending any
-tokens, then reconciles actual usage from OpenAI's response. No access keys or
+tokens, then reconciles reported usage from the active provider. No access keys or
 prompt text are stored in the ledger. Prices are USD per million tokens.
 """
 
@@ -30,7 +30,6 @@ PRICES = {
     "gemini-3.8-flash": (1.50, 7.50, 0.15),
     "gemini-2.5-flash-lite": (0.1, 0.4, 0.01),
     "gemini-2.5-flash": (0.3, 2.5, 0.03),
-    "gemini-embedding-001": (0.15, 0, 0.15),
 }
 
 
