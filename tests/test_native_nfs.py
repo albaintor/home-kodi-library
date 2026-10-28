@@ -1,7 +1,7 @@
 """Native libnfs adapter tests without requiring an NFS server."""
 import ctypes as C
-from types import SimpleNamespace
 import stat
+from types import SimpleNamespace
 
 import pytest
 
