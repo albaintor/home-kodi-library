@@ -16,10 +16,6 @@ async def hybrid_page(
     *,
     prompt: str = "",
     language_model: str = "",
-    language_provider: str = "openai",
-    embedding_provider: str = "openai",
-    embedding_api_model: str | None = None,
-    language_key: str | None = None,
     exclude_ids: set[str] | None = None,
 ) -> dict:
     """Return only existing catalogue entries. Episodes are projected onto their TV shows."""
@@ -42,11 +38,7 @@ async def hybrid_page(
     semantic = []
     note = None
     if plan.semantic_query and indexed["indexed"]:
-        if embedding_provider == "openai":
-            query_vector = (await embed([plan.semantic_query], embedding_api_model or embedding_model, key))[0]
-        else:
-            query_vector = (await embed([plan.semantic_query], embedding_api_model or embedding_model,
-                                        key, provider=embedding_provider))[0]
+        query_vector = (await embed([plan.semantic_query], embedding_model, key))[0]
         # Apply narrow named-credit constraints before ranking so rare
         # composers/directors do not disappear from the global top-400.
         matching_docs = documents
@@ -152,11 +144,7 @@ async def hybrid_page(
                 ],
             }
             candidates.append(candidate)
-        if language_provider == "openai":
-            verified = await rerank_candidates(prompt, candidates, language_model, language_key or key)
-        else:
-            verified = await rerank_candidates(prompt, candidates, language_model, language_key or key,
-                                               provider=language_provider)
+        verified = await rerank_candidates(prompt, candidates, language_model, key)
         explanations = {entry["id"]: entry["reason"] for entry in verified}
         page["items"] = [item for item in page["items"] if item["id"] in explanations]
         page["total"] = len(page["items"])
