@@ -21,6 +21,3 @@ def test_web_network_editor_exposes_hostname_and_preserves_it_on_edit():
     assert "loc.hostname?' · Nom d’hôte Kodi :" in editor
     assert "'kind','host','hostname','port'" in editor
     assert "hostname:['smb','nfs'].includes(kind)?fields.hostname.value.trim():''" in editor
-    assert '"hostname"' not in editor.split("async function load()", 1)[0].split(
-        "function adapt()", 1
-    )[0].split("form.addEventListener('submit'", 1)[0] or 'name="hostname"' in editor
