@@ -1525,7 +1525,9 @@ function sortedNetworkEntries(browser) {
     if(key==='size')result=(Number(a.size)||0)-(Number(b.size)||0);
     else if(key==='type')result=(a.name.split('.').pop()||'').localeCompare(b.name.split('.').pop()||'',displayLocale(),{numeric:true});
     else if(key==='modified'||key==='created'){
-      const l=Date.parse(a[key]||'')||0,r=Date.parse(b[key]||'')||0;
+      const timestamp=value=>typeof value==='number'?value*1000:
+        (typeof value==='string'&&value?Date.parse(value)||0:0);
+      const l=timestamp(a[key]),r=timestamp(b[key]);
       result=l&&r?l-r:0;
     }
     if(!result)result=a.name.localeCompare(b.name,displayLocale(),{numeric:true,sensitivity:'base'});
