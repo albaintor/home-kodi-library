@@ -20,7 +20,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from .auth import authenticated
 from .connectors.base import ConnectorError
 from .models import PlayInput
-from .playback_browser import safe_path, stream_location
+from .playback_browser import _credentials, safe_path, stream_location
 from .playback_media import kodi_source, media_stream, network_source, parse_video_copy, probe, subtitle_vtt
 from .players import connection, endpoint
 from .utils import identifiers
@@ -375,7 +375,7 @@ async def _ticket_source(request: Request, player_id: str, ticket: str):
     if matched:
         location, relative = matched
         password = await asyncio.to_thread(
-            __import__("home_media_catalog.playback_browser", fromlist=["_credentials"])._credentials,
+            _credentials,
             request.app.state.store, request.app.state.playback_oauth, location["id"],
         )
         try:
