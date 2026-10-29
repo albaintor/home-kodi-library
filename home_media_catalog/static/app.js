@@ -87,7 +87,14 @@ async function fetchMedia(address, kind) {
 const mediaPlayer=new MediaPlayer({fetchJSON:address=>fetchMedia(address,'json'),fetchText:address=>fetchMedia(address,'text')});
 function openPlayer(source) {
   lockPage();
-  return mediaPlayer.open({...source,onClose:()=>setTimeout(releasePage)});
+  networkThumbnailPaused=true;
+  for(const controller of networkThumbnailControllers)controller.abort();
+  return mediaPlayer.open({...source,onClose:(position)=>{
+    source.onClose?.(position);
+    networkThumbnailPaused=false;
+    runNetworkThumbnailQueue();
+    setTimeout(releasePage);
+  }});
 }
 function toast(message) { $('toast').textContent=tr(message); $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,5500); }
 function error(message) { $('error-banner').textContent=tr(message); $('error-banner').hidden=false; }
@@ -1450,10 +1457,13 @@ function networkMedia(filename) {
 // Never launch dozens of remote FFmpeg thumbnail extractions together:
 // a folder may contain hundreds of MKVs on the same SMB session.
 let networkThumbnailBusy=0;
+let networkThumbnailPaused=false;
+const networkThumbnailControllers=new Set();
 let networkThumbnailWarningShown=false;
 const networkThumbnailQueue=[];
 async function fetchNetworkThumbnail(image){
   const controller=new AbortController();
+  networkThumbnailControllers.add(controller);
   const timeout=setTimeout(()=>controller.abort(),15000);
   try{
     const response=await fetch(image.dataset.thumbnailUrl,{
@@ -1468,6 +1478,10 @@ async function fetchNetworkThumbnail(image){
     image.addEventListener('error',()=>URL.revokeObjectURL(object),{once:true});
     image.src=object;
   }catch(error){
+    if(networkThumbnailPaused&&error.name==='AbortError'){
+      if(image.isConnected)networkThumbnailQueue.push(image);
+      return;
+    }
     if(!image.isConnected)return;
     const parent=image.parentElement;
     if(parent){
@@ -1481,11 +1495,13 @@ async function fetchNetworkThumbnail(image){
     }
   }finally{
     clearTimeout(timeout);
+    networkThumbnailControllers.delete(controller);
     networkThumbnailBusy--;
     runNetworkThumbnailQueue();
   }
 }
 function runNetworkThumbnailQueue(){
+  if(networkThumbnailPaused)return;
   while(networkThumbnailBusy<2 && networkThumbnailQueue.length){
     const image=networkThumbnailQueue.shift();
     if(!image.isConnected)continue;
