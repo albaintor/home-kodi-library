@@ -18,8 +18,14 @@ from tempfile import SpooledTemporaryFile
 from fastapi import HTTPException
 
 from .playback_browser import (
-    _credentials, _ftp_connection, _full_path, _local_root, _root,
-    _sftp_connection, browse_location, safe_path,
+    _credentials,
+    _ftp_connection,
+    _full_path,
+    _local_root,
+    _root,
+    _sftp_connection,
+    browse_location,
+    safe_path,
 )
 
 NETWORK_KINDS = frozenset({"smb", "nfs", "ftp", "sftp"})
@@ -163,7 +169,8 @@ def _mutate_ftp(location, password, operation, source, target):
     conn = _ftp_connection(location, password)
     try:
         _, prefix = _root(location)
-        remote = lambda path: "/".join(filter(None, (prefix, path)))
+        def remote(path):
+            return "/".join(filter(None, (prefix, path)))
         src = remote(source)
         dst = remote(target) if target else None
         def entries(path):
@@ -225,7 +232,8 @@ def _mutate_smb(location, password, operation, source, target):
         password=password, port=int(location.get("port") or 445), connection_timeout=8,
     )
     base = "\\\\" + host + "\\" + prefix.replace("/", "\\")
-    remote = lambda path: base + "\\" + path.replace("/", "\\")
+    def remote(path):
+        return base + "\\" + path.replace("/", "\\")
     src = remote(source)
     dst = remote(target) if target else None
     if dst and smbclient.path.exists(dst):
@@ -304,14 +312,16 @@ async def mutate_location(location, operation, path, destination, store, encrypt
     if kind == "nfs":
         if location["id"] not in mounts:
             raise HTTPException(501, "Native NFS modifications require a writable server mount.")
-        worker = lambda: _mutate_mounted_nfs(location, mounts, operation, source, target)
+        def worker():
+            return _mutate_mounted_nfs(location, mounts, operation, source, target)
     else:
         password = _credentials(store, encryption, location["id"])
-        worker = lambda: {
-            "smb": _mutate_smb,
-            "sftp": _mutate_sftp,
-            "ftp": _mutate_ftp,
-        }[kind](location, password, operation, source, target)
+        def worker():
+            return {
+                "smb": _mutate_smb,
+                "sftp": _mutate_sftp,
+                "ftp": _mutate_ftp,
+            }[kind](location, password, operation, source, target)
     try:
         await asyncio.to_thread(worker)
     except HTTPException:
