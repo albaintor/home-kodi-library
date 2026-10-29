@@ -225,6 +225,29 @@ async def remote_status(player_id: str, request: Request, _=Depends(authenticate
         raise HTTPException(502, str(exc)) from exc
 
 
+def wake_on_lan(mac: str) -> None:
+    """Broadcast a magic packet to the LAN without accepting an arbitrary target IP."""
+    clean = mac.replace(":", "").replace("-", "").strip()
+    if len(clean) != 12 or any(c not in "0123456789abcdefABCDEF" for c in clean):
+        raise HTTPException(422, "Configure a valid MAC address for this Kodi instance.")
+    payload = b"\\xff" * 6 + bytes.fromhex(clean) * 16
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.settimeout(2)
+        sock.sendto(payload, ("255.255.255.255", 9))
+
+
+@router.post("/{player_id}/wake")
+async def wake_player(player_id: str, request: Request, _=Depends(writable)):
+    player = lookup(request, player_id)
+    mac = player["config"].get("mac") or ""
+    try:
+        await asyncio.to_thread(wake_on_lan, mac)
+    except OSError as exc:
+        raise HTTPException(502, "Could not broadcast Wake-on-LAN on this network.") from exc
+    return {"ok": True, "message": "Wake-on-LAN packet sent."}
+
+
 @router.get("/{player_id}/volume")
 async def kodi_volume(player_id: str, request: Request, _=Depends(authenticated)):
     player = lookup(request, player_id)
