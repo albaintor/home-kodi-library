@@ -8,10 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import ftplib
+import os
 import shutil
 import stat
 from collections import deque
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from tempfile import SpooledTemporaryFile
 
 from fastapi import HTTPException
@@ -282,7 +283,15 @@ def _mutate_mounted_nfs(location, mounts, operation, source, target):
         src.rename(dst)
     else:
         if src.is_dir():
-            shutil.copytree(src, dst, symlinks=False)
+            # copytree follows links by default. A nested symlink could copy
+            # private data outside the configured share into the destination.
+            for folder, directories, files in os.walk(
+                src, topdown=True, followlinks=False
+            ):
+                for name in directories + files:
+                    if (Path(folder) / name).is_symlink():
+                        raise HTTPException(403, "Symbolic links cannot be copied.")
+            shutil.copytree(src, dst, symlinks=True)
         else:
             shutil.copy2(src, dst)
 
