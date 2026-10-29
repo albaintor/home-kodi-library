@@ -139,6 +139,11 @@
         <button id="network-browser-list" type="button" aria-pressed="false">☷</button>
       </div>
     </div>
+    <form id="network-browser-search-form" class="network-browser-search-controls" role="search">
+      <input type="search" id="network-browser-search" placeholder="Chercher un fichier ou dossier" aria-label="Rechercher dans les fichiers réseau" autocomplete="off" />
+      <label><input type="checkbox" id="network-browser-recursive" checked /> Inclure les sous-dossiers</label>
+      <button type="submit" class="secondary">Rechercher</button>
+    </form>
     <p id="network-browser-feedback" role="status" aria-live="polite"></p>
     <div id="network-browser-items" class="network-browser-items"></div>
     <button id="network-browser-more" class="secondary" type="button" hidden>Afficher la suite</button>
