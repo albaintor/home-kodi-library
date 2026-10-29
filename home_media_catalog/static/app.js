@@ -1559,6 +1559,7 @@ function renderNetworkBrowser() {
       '<span class="network-browser-tile-icon">'+(networkThumbnail(item)|| (item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄'))+'</span>'+
       '<span class="network-browser-item-name">'+esc(item.name)+'</span>'+
       '<small>'+(item.is_dir?'Dossier':formatBytes(item.size||0))+'</small></button>'+
+      (!item.is_dir?'<button type="button" class="network-browser-download" data-network-download="'+i+'" title="Télécharger" aria-label="Télécharger '+esc(item.name)+'">↓</button>':'')+
       '<button type="button" class="network-browser-more-actions" data-network-menu="'+i+
       '" aria-label="Actions '+esc(item.name)+'">···</button></div>'
     ).join('')||(!browser.busy?'<p class="hint">Aucun élément dans ce dossier.</p>':'');
@@ -1684,11 +1685,19 @@ $('network-browser-items').addEventListener('error',event=>{
 $('network-browser-items').addEventListener('click',event=>{
   const source=event.target.closest('[data-network-source]');
   if(source){void networkOpenRoot(source.dataset.networkSource);return;}
-  const button=event.target.closest('[data-network-entry],[data-network-menu]');
+  const button=event.target.closest('[data-network-entry],[data-network-menu],[data-network-download]');
   if(!button)return;
-  const index=Number(button.dataset.networkEntry??button.dataset.networkMenu);
+  const index=Number(button.dataset.networkEntry??button.dataset.networkMenu??button.dataset.networkDownload);
   const item=sortedNetworkEntries(networkExplorer)[index];
   if(!item)return;
+  if(button.hasAttribute('data-network-download')) {
+    if(!networkExplorer.selected)return;
+    const link=document.createElement('a');
+    link.href=url('api/v1/playback/stream/'+encodeURIComponent(networkExplorer.selected.id)+'?path='+encodeURIComponent(item.path));
+    link.download=item.name.replace(/[\\/]/g,'_');
+    document.body.append(link);link.click();link.remove();
+    return;
+  }
   if(button.hasAttribute('data-network-menu')) {
     const options=networkMedia(item.name)&&!item.is_dir
       ? 'Actions : OK = lire, Annuler = copier le chemin. Pour télécharger, utilisez le menu Télécharger.'
