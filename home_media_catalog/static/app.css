@@ -675,3 +675,17 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
   .mp-panel{top:auto;left:8px;right:8px;width:auto;bottom:calc(env(safe-area-inset-bottom) + 8px);max-height:62dvh}
   .mp-osd-visible .mp-captions{bottom:calc(170px + env(safe-area-inset-bottom))}
 }
+
+
+/* iOS/Web parity: network explorer tools and Kodi remote controls. */
+.network-browser-sort{display:inline-flex;align-items:center;gap:.4rem;font-size:.85rem}
+.network-browser-sort select{max-width:165px}
+.network-browser-download{position:absolute;top:.1rem;right:2.15rem;min-width:1.6rem;background:transparent;border:0;color:inherit;font-size:1.25rem;cursor:pointer}
+.network-browser-items.is-list .network-browser-item-main{padding-right:5.2rem}
+.remote-volume{display:flex;align-items:center;justify-content:center;gap:.65rem;margin:.7rem auto;max-width:440px}
+.remote-volume input{flex:1;min-width:90px;accent-color:#1985ef}
+.remote-volume output{min-width:3.5rem;text-align:right;font-variant-numeric:tabular-nums}
+.remote-touchpad-tabs{display:flex;gap:.5rem;margin:.7rem 0}
+.remote-touchpad-tabs button[aria-pressed="true"]{outline:2px solid currentColor}
+.remote-touchpad{touch-action:none;user-select:none;min-height:210px;border:1px solid var(--border,rgba(120,120,120,.45));border-radius:1rem;display:grid;place-items:center;text-align:center;padding:1rem;background:var(--surface,rgba(120,120,120,.1));cursor:crosshair}
+.remote-touchpad[hidden],.remote-dpad[hidden]{display:none!important}
