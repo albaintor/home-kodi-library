@@ -3306,6 +3306,59 @@ document.addEventListener('click',async event=>{
 });
 
 
+// Coordinated maintenance is explicitly initiated by an administrator.
+// Kodi's clean operation must finish before the SQLite catalogue is normalized.
+document.addEventListener('click',async event=>{
+  const button=event.target.closest('#kodi-catalogue-clean');
+  if(!button||state.role!=='admin')return;
+  if(state.jobs.some(x=>['pending','running'].includes(x.status))){
+    toast('Attendez la fin des synchronisations Kodi actives.');return;
+  }
+  if(!localizedConfirm('Vérifiez que tous les partages NAS sont accessibles. Nettoyer les bibliothèques Kodi peut retirer les fichiers déclarés absents. Continuer ?'))return;
+  const approval=localizedPrompt('Saisissez NETTOYER pour confirmer :','');
+  if(approval!=='NETTOYER')return;
+  button.disabled=true;
+  const output=$('catalogue-db-preview-result'),problems=[];
+  try{
+    const completed=new Set(),instances=new Set();
+    for(const source of state.facets.sources.filter(x=>x.type==='kodi'&&x.enabled!==false)){
+      const player=state.players.find(p=>p.source_id===source.id);
+      if(!player){problems.push(source.name+' : pas de lecteur Kodi');continue;}
+      const endpoint=player.host.toLowerCase()+':'+player.port;
+      if(instances.has(endpoint))continue;
+      instances.add(endpoint);
+      try{
+        const job=await api('sources/'+encodeURIComponent(source.id)+'/clean',{method:'POST'});
+        let finished=false;
+        for(let attempt=0;attempt<600;attempt++){
+          const current=await api('jobs/'+encodeURIComponent(job.id));
+          if(output)output.textContent=source.name+' : '+(current.progress_phase||current.status);
+          if(current.status==='completed'){completed.add(source.id);finished=true;break;}
+          if(current.status==='failed'){problems.push(source.name+' : '+(current.error||'échec'));finished=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,2000));
+        }
+        if(!finished)throw new Error('Kodi travaille encore : nettoyage SQLite non lancé.');
+      }catch(e){if(e.message.includes('travaille encore'))throw e;problems.push(source.name+' : '+e.message);}
+    }
+    let report;
+    for(let attempt=0;attempt<10;attempt++){
+      try{
+        report=await api('catalogue/maintenance/clean',{
+          method:'POST',headers:{'X-Confirm-Catalogue-Maintenance':'clean'}
+        });break;
+      }catch(e){
+        if(e.status!==409||attempt===9)throw e;
+        await new Promise(resolve=>setTimeout(resolve,2000));
+      }
+    }
+    if(output)output.textContent='Kodi : '+completed.size+'/'+instances.size+
+      ' · Catalogue : '+report.merged_sources+' sources et '+report.merged_records+
+      ' enregistrements fusionnés.'+(problems.length?' Attention : '+problems.join(' | '):'');
+    await refresh();
+  }catch(e){if(output)output.textContent='Maintenance interrompue : '+e.message;}
+  finally{button.disabled=false;}
+});
+
 // Maintenance affects only this server's SQLite catalogue, never Kodi MyVideos.
 // The reset requires both an explicit warning and the typed confirmation.
 document.addEventListener('click',async event=>{
