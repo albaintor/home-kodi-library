@@ -2,7 +2,6 @@
 
 from pathlib import Path
 
-
 APP_JS = (
     Path(__file__).resolve().parents[1] / "home_media_catalog" / "static" / "app.js"
 )
