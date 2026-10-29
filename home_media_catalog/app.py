@@ -98,7 +98,7 @@ from .models import (
 from .playback_browser import _credentials, browse_location, safe_path, stream_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
-from .playback_media import media_stream, network_source, parse_video_copy, probe, subtitle_vtt
+from .playback_media import media_stream, network_source, onedrive_source, parse_video_copy, probe, subtitle_vtt
 from .playback_thumbnails import thumbnail_location
 from .playback_transcode import browser_transcode
 from .players import play
@@ -1473,19 +1473,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         location = await asyncio.to_thread(store.playback_location, location_id)
         if not location:
             raise HTTPException(404, "Unknown playback location.")
-        if location["kind"] not in {"smb", "nfs", "ftp", "sftp"}:
+        if location["kind"] not in {"smb", "nfs", "ftp", "sftp", "onedrive"}:
             raise HTTPException(501, "Track-aware playback is not available for this source.")
         relative = safe_path(path)
-        secret = await asyncio.to_thread(_credentials, store, cloud_auth, location["id"])
-        try:
+        if location["kind"] == "onedrive":
+            from urllib.parse import quote
+
+            if not relative or "/" in relative:
+                raise HTTPException(422, "Invalid OneDrive item identifier.")
+            try:
+                credentials = await cloud_auth.credentials(location["id"], "onedrive")
+            except CloudOAuthError as exc:
+                raise HTTPException(409, str(exc)) from exc
+            try:
+                async with httpx.AsyncClient(timeout=15, trust_env=False) as client:
+                    response = await client.get(
+                        "https://graph.microsoft.com/v1.0/me/drive/items/"
+                        + quote(relative, safe=""),
+                        headers={"Authorization": "Bearer " + credentials["access_token"]},
+                    )
+                    response.raise_for_status()
+                    signed = response.json().get("@microsoft.graph.downloadUrl")
+            except (httpx.HTTPError, ValueError, TypeError) as exc:
+                raise HTTPException(502, "OneDrive file metadata unavailable.") from exc
+            if not isinstance(signed, str) or not signed:
+                raise HTTPException(404, "OneDrive did not provide a media download URL.")
             source = await asyncio.wait_for(
                 asyncio.to_thread(
-                    network_source, location, relative, secret, settings.playback_nfs_mounts
+                    onedrive_source, signed, f"onedrive:{location['id']}:{relative}"
                 ),
                 timeout=18,
             )
-        except TimeoutError as exc:
-            raise HTTPException(504, "Timed out opening the remote media.") from exc
+        else:
+            secret = await asyncio.to_thread(_credentials, store, cloud_auth, location["id"])
+            try:
+                source = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        network_source, location, relative, secret, settings.playback_nfs_mounts
+                    ),
+                    timeout=18,
+                )
+            except TimeoutError as exc:
+                raise HTTPException(504, "Timed out opening the remote media.") from exc
         return source, await probe(source)
 
     @app.get(
