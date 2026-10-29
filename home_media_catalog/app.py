@@ -106,6 +106,7 @@ from .playback_media import (
     probe,
     subtitle_vtt,
 )
+from .playback_operations import mutate_location, search_location
 from .playback_thumbnails import thumbnail_location
 from .playback_transcode import browser_transcode
 from .players import play
@@ -1462,6 +1463,44 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown playback location.")
         return await browse_location(
             location, path, store, cloud_auth, settings.playback_nfs_mounts
+        )
+
+    @app.get(
+        API + "/playback/search/{location_id}",
+        dependencies=[Depends(authenticated)],
+        tags=["Playback"],
+    )
+    async def playback_search(
+        location_id: str, q: str, path: str = "", offset: int = 0,
+        limit: int = 80,
+    ):
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        return await search_location(
+            location, path, q, offset, limit, store, cloud_auth,
+            settings.playback_nfs_mounts,
+        )
+
+    @app.post(API + "/playback/files/{location_id}", tags=["Playback"])
+    async def playback_file_operation(
+        location_id: str, payload: dict,
+        principal: Principal = Depends(authenticated),
+    ):
+        # Local-network requests are implicitly admin for legacy read/config
+        # paths. They must NOT authorize filesystem writes, especially in the
+        # unauthenticated web UI. Only an explicit admin bearer token qualifies.
+        if principal.role != "admin" or principal.via != "bearer":
+            raise HTTPException(403, "Explicit administrator bearer token required.")
+        location = await asyncio.to_thread(store.playback_location, location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        if not isinstance(payload, dict):
+            raise HTTPException(422, "Invalid file operation payload.")
+        return await mutate_location(
+            location, payload.get("operation"), payload.get("path"),
+            payload.get("destination"), store, cloud_auth,
+            settings.playback_nfs_mounts,
         )
 
     @app.get(

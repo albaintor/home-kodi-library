@@ -550,6 +550,15 @@ dialog::backdrop{background:#080b13e0;backdrop-filter:none}
 .network-home-entry{display:flex;align-items:center;gap:.6rem;padding:.65rem .8rem;border:1px solid var(--border,#555);border-radius:.75rem;background:transparent;color:inherit;text-align:left}
 .network-home-entry small{font-size:.7rem;opacity:.7}
 .network-browser-dialog{width:min(94vw,1050px);max-width:1050px;max-height:90vh}
+.network-browser-search-controls{display:flex;gap:.7rem;align-items:center;flex-wrap:wrap;margin:.65rem 0}
+.network-browser-search-controls input[type=search]{flex:1;min-width:220px}
+.network-browser-search-controls label{display:inline-flex;align-items:center;gap:.4rem;font-size:.88rem}
+.network-browser-relative-path{font-size:.72rem;max-width:100%;overflow-wrap:anywhere;opacity:.75}
+.network-browser-action-menu{position:absolute;z-index:12;top:2rem;right:.3rem;min-width:185px;display:flex;flex-direction:column;gap:.2rem;padding:.35rem;border:1px solid var(--border, #555);border-radius:.65rem;background:var(--surface, #202732);box-shadow:0 8px 22px #0005}
+.network-browser-action-menu button{width:100%;text-align:left;color:inherit;background:transparent;border:0;padding:.45rem .65rem;cursor:pointer;border-radius:.4rem}
+.network-browser-action-menu button:hover,.network-browser-action-menu button:focus-visible{background:var(--raised,#384556)}
+.network-browser-action-menu small{padding:.35rem .65rem;font-size:.72rem;opacity:.7}
+
 .network-browser-topbar{display:flex;align-items:center;gap:.8rem;flex-wrap:wrap;justify-content:space-between;margin:1rem 0}
 #network-browser-path{flex:1;min-width:15ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .network-browser-items{overflow:auto;display:grid;gap:.75rem;align-content:start;min-height:130px;max-height:57vh}

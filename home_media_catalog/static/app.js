@@ -1419,7 +1419,9 @@ async function pollJob(job) {
 // SMB, NFS, FTP and cloud connectors. Only adapters that can stream expose Play.
 const networkExplorer={
   locations:[],selected:null,stack:[],entries:[],shown:0,
-  view:'grid',busy:false,revision:0,
+  view:'grid',busy:false,revision:0,menuIndex:null,
+  searchActive:false,searchEntries:[],searchNextOffset:null,searchRevision:0,
+  searchBusy:false,searchTruncated:false,
   sort:readStorage('network-browser-sort')||'name',descending:readStorage('network-browser-descending')==='true'
 };
 function networkPathLabel() {
@@ -1509,7 +1511,7 @@ function runNetworkThumbnailQueue(){
     void fetchNetworkThumbnail(image);
   }
 }
-const networkThumbnailObserver=new IntersectionObserver(entries=>{
+const networkThumbnailObserver=typeof IntersectionObserver==='function' ? new IntersectionObserver(entries=>{
   for(const entry of entries){
     if(!entry.isIntersecting)continue;
     const image=entry.target;
@@ -1517,11 +1519,13 @@ const networkThumbnailObserver=new IntersectionObserver(entries=>{
     if(image.isConnected)networkThumbnailQueue.push(image);
   }
   runNetworkThumbnailQueue();
-},{root:$('network-browser-items'),rootMargin:'120px'});
+},{root:$('network-browser-items'),rootMargin:'120px'}) : null;
 function observeNetworkThumbnails(){
-  document.querySelectorAll('#network-browser-items img[data-thumbnail-url]').forEach(
-    image=>networkThumbnailObserver.observe(image)
-  );
+  document.querySelectorAll('#network-browser-items img[data-thumbnail-url]').forEach(image=>{
+    if(networkThumbnailObserver)networkThumbnailObserver.observe(image);
+    else networkThumbnailQueue.push(image);
+  });
+  if(!networkThumbnailObserver)runNetworkThumbnailQueue();
 }
 function networkThumbnail(entry){
   const loc=networkExplorer.selected;
@@ -1533,9 +1537,12 @@ function networkThumbnail(entry){
 function networkCurrentPath(){
   return networkExplorer.stack.at(-1)?.path||'';
 }
+function networkDisplayedEntries(browser){
+  return browser.searchActive?browser.searchEntries:browser.entries;
+}
 function sortedNetworkEntries(browser) {
   const key=browser.sort, multiplier=browser.descending?-1:1;
-  return browser.entries.map((entry,index)=>({...entry,_originalIndex:index})).sort((a,b)=>{
+  return networkDisplayedEntries(browser).map((entry,index)=>({...entry,_originalIndex:index})).sort((a,b)=>{
     if(Boolean(a.is_dir)!==Boolean(b.is_dir))return a.is_dir?-1:1;
     let result=0;
     if(key==='size')result=(Number(a.size)||0)-(Number(b.size)||0);
@@ -1553,7 +1560,10 @@ function sortedNetworkEntries(browser) {
 function renderNetworkBrowser() {
   const browser=networkExplorer;
   const box=$('network-browser-items');
-  const count=Math.min(browser.shown,browser.entries.length);
+  const display=networkDisplayedEntries(browser);
+  const count=Math.min(browser.shown,display.length);
+  $('network-browser-search').disabled=!browser.selected;
+  $('network-browser-recursive').disabled=!browser.selected;
   box.className='network-browser-items '+(browser.view==='grid'?'is-grid':'is-list');
   $('network-browser-path').textContent=networkPathLabel();
   $('network-browser-back').disabled=!browser.selected;
@@ -1576,13 +1586,27 @@ function renderNetworkBrowser() {
       '<button class="network-browser-item-main" data-network-entry="'+i+'" type="button">'+
       '<span class="network-browser-tile-icon">'+(networkThumbnail(item)|| (item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄'))+'</span>'+
       '<span class="network-browser-item-name">'+esc(item.name)+'</span>'+
+      (browser.searchActive?'<small class="network-browser-relative-path">'+esc(item.path)+'</small>':'')+
       '<small>'+(item.is_dir?'Dossier':formatBytes(item.size||0))+'</small></button>'+
       (!item.is_dir?'<button type="button" class="network-browser-download" data-network-download="'+i+'" title="Télécharger" aria-label="Télécharger '+esc(item.name)+'">↓</button>':'')+
       '<button type="button" class="network-browser-more-actions" data-network-menu="'+i+
-      '" aria-label="Actions '+esc(item.name)+'">···</button></div>'
-    ).join('')||(!browser.busy?'<p class="hint">Aucun élément dans ce dossier.</p>':'');
+      '" aria-haspopup="menu" aria-expanded="'+String(browser.menuIndex===i)+
+      '" aria-label="Actions '+esc(item.name)+'">···</button>'+
+      (browser.menuIndex===i?
+        '<div class="network-browser-action-menu" role="menu">'+
+        (!item.is_dir&&networkMedia(item.name)?'<button type="button" role="menuitem" data-network-action="play" data-entry-index="'+i+'">Lire</button>':'')+
+        (!item.is_dir?'<button type="button" role="menuitem" data-network-action="download" data-entry-index="'+i+'">Télécharger</button>':'')+
+        '<button type="button" role="menuitem" data-network-action="copy-path" data-entry-index="'+i+'">Copier le chemin</button>'+
+        '<small>Modifications indisponibles sur le Web</small></div>':'')+
+      '</div>'
+    ).join('')||(!browser.busy?'<p class="hint">Aucun résultat.</p>':'');
   }
-  $('network-browser-more').hidden=browser.entries.length<=count||!browser.selected;
+  $('network-browser-more').hidden=!browser.selected ||
+    (browser.searchActive ?
+      (browser.searchNextOffset===null && display.length<=count) :
+      display.length<=count);
+  $('network-browser-more').textContent=browser.searchActive && browser.searchNextOffset!==null
+    ? 'Charger les résultats suivants' : 'Afficher la suite';
   observeNetworkThumbnails();
 }
 function formatBytes(bytes){
@@ -1592,7 +1616,82 @@ function formatBytes(bytes){
   if(n<1073741824)return (n/1048576).toFixed(1)+' Mo';
   return (n/1073741824).toFixed(2)+' Go';
 }
+function networkClearSearch(){
+  const browser=networkExplorer;
+  browser.searchRevision++;
+  browser.searchActive=false;
+  browser.searchEntries=[];
+  browser.searchNextOffset=null;
+  browser.searchBusy=false;
+  browser.searchTruncated=false;
+  browser.menuIndex=null;
+}
+async function networkSearch(append=false){
+  const browser=networkExplorer;
+  const query=$('network-browser-search').value.trim();
+  if(!browser.selected || query.length<2){
+    networkClearSearch();
+    if(query.length===1)networkBrowseError('Saisir au moins 2 caractères.');
+    else networkBrowseError('');
+    renderNetworkBrowser();
+    return;
+  }
+  const recursive=$('network-browser-recursive').checked;
+  const revision=append?browser.searchRevision:++browser.searchRevision;
+  if(!append){
+    browser.searchEntries=[];
+    browser.searchNextOffset=null;
+    browser.shown=0;
+    browser.menuIndex=null;
+  }
+  browser.searchActive=true;
+  if(!recursive){
+    browser.searchEntries=browser.entries.filter(
+      entry=>entry.name.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+    );
+    browser.searchNextOffset=null;
+    browser.shown=browser.searchEntries.length;
+    networkBrowseError(browser.searchEntries.length+' résultat(s) dans ce dossier.');
+    renderNetworkBrowser();
+    return;
+  }
+  if(append && browser.searchBusy)return;
+  browser.searchBusy=true;
+  networkBrowseError('Recherche dans les sous-dossiers…');
+  try{
+    const offset=append?browser.searchNextOffset:0;
+    if(offset===null)return;
+    const params=new URLSearchParams({q:query,path:networkCurrentPath(),offset:String(offset),limit:'80'});
+    const response=await api('playback/search/'+encodeURIComponent(browser.selected.id)+'?'+params);
+    if(revision!==browser.searchRevision)return;
+    browser.searchEntries.push(...response.items);
+    browser.searchNextOffset=response.next_offset;
+    browser.searchTruncated=response.truncated===true;
+    browser.shown=browser.searchEntries.length;
+    networkBrowseError(browser.searchEntries.length+' résultat(s)'+
+      (browser.searchTruncated?' · limite de parcours atteinte (160 dossiers / 8 000 éléments).':'')+
+      (browser.searchNextOffset!==null?' · autres résultats disponibles.':''));
+  }catch(e){
+    if(revision===browser.searchRevision)networkBrowseError(e.message);
+  }finally{
+    if(revision===browser.searchRevision){
+      browser.searchBusy=false;
+      renderNetworkBrowser();
+    }
+  }
+}
+$('network-browser-search-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  void networkSearch();
+});
+$('network-browser-search').addEventListener('search',()=>void networkSearch());
+$('network-browser-recursive').addEventListener('change',()=>{
+  if($('network-browser-search').value.trim().length>=2)void networkSearch();
+});
+
 async function networkOpenRoot(id=null){
+  networkClearSearch();
+  $('network-browser-search').value='';
   networkExplorer.selected=id?networkExplorer.locations.find(x=>x.id===id)||null:null;
   networkExplorer.stack=[];
   networkExplorer.entries=[];
@@ -1601,6 +1700,8 @@ async function networkOpenRoot(id=null){
   if(networkExplorer.selected)await networkOpenFolder('',networkExplorer.selected.name);
 }
 async function networkOpenFolder(path,name){
+  networkClearSearch();
+  $('network-browser-search').value='';
   const browser=networkExplorer;
   if(!browser.selected)return;
   const revision=++browser.revision;
@@ -1689,7 +1790,11 @@ $('network-browser-refresh').addEventListener('click',()=>{
   } else void refreshNetworkHome().then(()=>renderNetworkBrowser());
 });
 $('network-browser-more').addEventListener('click',()=>{
-  networkExplorer.shown+=80;renderNetworkBrowser();
+  if(networkExplorer.searchActive&&networkExplorer.searchNextOffset!==null){
+    void networkSearch(true);
+  }else{
+    networkExplorer.shown+=80;renderNetworkBrowser();
+  }
 });
 // Missing/unsupported frames retain a normal file icon; do not display a broken image.
 $('network-browser-items').addEventListener('error',event=>{
@@ -1701,30 +1806,46 @@ $('network-browser-items').addEventListener('error',event=>{
 $('network-browser-items').addEventListener('click',event=>{
   const source=event.target.closest('[data-network-source]');
   if(source){void networkOpenRoot(source.dataset.networkSource);return;}
+  const action=event.target.closest('[data-network-action]');
+  if(action){
+    const item=sortedNetworkEntries(networkExplorer)[Number(action.dataset.entryIndex)];
+    if(!item)return;
+    const choice=action.dataset.networkAction;
+    networkExplorer.menuIndex=null;
+    renderNetworkBrowser();
+    if(choice==='play')networkPlay(item);
+    else if(choice==='download')networkDownload(item);
+    else if(choice==='copy-path'&&navigator.clipboard?.writeText){
+      void navigator.clipboard.writeText(item.path);
+    }
+    return;
+  }
   const button=event.target.closest('[data-network-entry],[data-network-menu],[data-network-download]');
   if(!button)return;
   const index=Number(button.dataset.networkEntry??button.dataset.networkMenu??button.dataset.networkDownload);
   const item=sortedNetworkEntries(networkExplorer)[index];
   if(!item)return;
   if(button.hasAttribute('data-network-download')) {
-    if(!networkExplorer.selected)return;
-    const link=document.createElement('a');
-    link.href=url('api/v1/playback/stream/'+encodeURIComponent(networkExplorer.selected.id)+'?path='+encodeURIComponent(item.path));
-    link.download=item.name.replace(/[\\/]/g,'_');
-    document.body.append(link);link.click();link.remove();
+    networkDownload(item);
     return;
   }
   if(button.hasAttribute('data-network-menu')) {
-    const options=networkMedia(item.name)&&!item.is_dir
-      ? 'Actions : OK = lire, Annuler = copier le chemin. Pour télécharger, utilisez le menu Télécharger.'
-      : 'Copier le chemin ?';
-    if(networkMedia(item.name)&&!item.is_dir&&localizedConfirm(options))networkPlay(item);
-    else if(navigator.clipboard?.writeText)void navigator.clipboard.writeText(item.path);
+    networkExplorer.menuIndex=networkExplorer.menuIndex===index?null:index;
+    renderNetworkBrowser();
     return;
   }
+  networkExplorer.menuIndex=null;
   if(item.is_dir)void networkOpenFolder(item.path,item.name);
   else networkPlay(item);
 });
+function networkDownload(item){
+  if(!networkExplorer.selected || item.is_dir)return;
+  const link=document.createElement('a');
+  link.href=url('api/v1/playback/stream/'+encodeURIComponent(networkExplorer.selected.id)+'?path='+encodeURIComponent(item.path));
+  link.download=item.name.replace(/[\\/]/g,'_');
+  document.body.append(link);link.click();link.remove();
+}
+
 const playbackCloudProviders=[['onedrive','OneDrive']];
 async function renderPlaybackCloudSettings() {
   const container=$('connection-content');
