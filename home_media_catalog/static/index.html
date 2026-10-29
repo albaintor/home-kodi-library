@@ -118,6 +118,17 @@
     <div class="network-browser-topbar">
       <button id="network-browser-back" class="secondary" type="button" disabled>‹ Retour</button>
       <span id="network-browser-path" class="hint"></span>
+      <label class="network-browser-sort">Trier
+        <select id="network-browser-sort" aria-label="Trier les fichiers">
+          <option value="name">Nom</option>
+          <option value="modified">Date de modification</option>
+          <option value="created">Date de création</option>
+          <option value="type">Type</option>
+          <option value="size">Taille</option>
+        </select>
+      </label>
+      <button id="network-browser-sort-order" type="button" class="secondary" aria-label="Ordre décroissant" aria-pressed="false" title="Inverser l’ordre">↑</button>
+      <button id="network-browser-refresh" type="button" class="secondary" title="Actualiser ce dossier" aria-label="Actualiser le dossier">↻</button>
       <div class="network-view-switch" role="group" aria-label="Mode d’affichage réseau">
         <button id="network-browser-grid" type="button" aria-pressed="true">▦</button>
         <button id="network-browser-list" type="button" aria-pressed="false">☷</button>
