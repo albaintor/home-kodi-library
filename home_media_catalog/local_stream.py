@@ -21,7 +21,14 @@ from .auth import authenticated
 from .connectors.base import ConnectorError
 from .models import PlayInput
 from .playback_browser import _credentials, safe_path, stream_location
-from .playback_media import kodi_source, media_stream, network_source, parse_video_copy, probe, subtitle_vtt
+from .playback_media import (
+    kodi_source,
+    media_stream,
+    network_source,
+    parse_video_copy,
+    probe,
+    subtitle_vtt,
+)
 from .players import connection, endpoint
 from .utils import identifiers
 
