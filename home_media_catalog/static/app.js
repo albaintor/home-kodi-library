@@ -2018,7 +2018,8 @@ async function renderPlaybackNetworkSettings(){
     '<input type="hidden" name="id">'+
     '<label>Nom<input name="name" required maxlength="120" placeholder="NAS · Films"></label>'+
     '<label>Protocole<select name="kind">'+playbackNetworkKinds.map(([k,n])=>'<option value="'+esc(k)+'">'+esc(n)+'</option>').join('')+'</select></label>'+
-    '<label data-network-field="host">Hôte ou adresse IP<input name="host" maxlength="255" placeholder="nas.local"></label>'+
+    '<label data-network-field="host"><span data-network-host-label>Adresse IP</span><input name="host" maxlength="255" placeholder="192.168.1.20"></label>'+
+    '<label data-network-field="hostname">Nom d’hôte (alias Kodi, facultatif)<input name="hostname" maxlength="255" placeholder="MON-NAS" autocomplete="off"><small class="hint">Nom utilisé dans les chemins SMB/NFS Kodi ; la connexion utilise l’adresse IP ci-dessus.</small></label>'+
     '<label data-network-field="port">Port<input name="port" type="number" min="1" max="65535" placeholder="445"></label>'+
     '<label data-network-field="share">Partage / dossier<input name="share" placeholder="Films"></label>'+
     '<label data-network-field="username">Utilisateur<input name="username" autocomplete="off"></label>'+
@@ -2041,11 +2042,13 @@ async function renderPlaybackNetworkSettings(){
     for(const row of form.querySelectorAll('[data-network-field]')){
       const field=row.dataset.networkField;
       row.hidden=field==='target'?!['http','upnp'].includes(kind):
+        field==='hostname'?!['smb','nfs'].includes(kind):
         field==='host'||field==='port'?['http','upnp'].includes(kind):
         field==='workgroup'?kind!=='smb':
         field==='username'||field==='password'?kind==='nfs':false;
     }
     if(kind==='smb'&&!fields.port.value)fields.port.value='445';
+    form.querySelector('[data-network-host-label]').textContent=['smb','nfs'].includes(kind)?'Adresse IP':'Hôte ou adresse IP';
     fields.host.required=!['http','upnp'].includes(kind);
     fields.target.required=['http','upnp'].includes(kind);
   }
@@ -2062,6 +2065,7 @@ async function renderPlaybackNetworkSettings(){
     list.innerHTML=network.map(loc=>
       '<div class="connection-card"><div><strong>'+esc(loc.name)+'</strong>'+
       '<p class="hint">'+esc(loc.kind.toUpperCase())+' · '+esc(loc.target||loc.host||'')+
+      (loc.hostname?' · Nom d’hôte Kodi : '+esc(loc.hostname):'')+
       (loc.has_password?' · Mot de passe enregistré':'')+'</p></div>'+
       '<div class="connection-actions">'+
       '<button type="button" data-network-edit="'+esc(loc.id)+'">Modifier</button>'+
@@ -2081,7 +2085,7 @@ async function renderPlaybackNetworkSettings(){
       const loc=locations.find(x=>x.id===edit.dataset.networkEdit);
       if(!loc)return;
       reset();
-      for(const key of ['id','name','kind','host','port','share','username','workgroup','target']){
+      for(const key of ['id','name','kind','host','hostname','port','share','username','workgroup','target']){
         if(fields[key])fields[key].value=loc[key]??'';
       }
       adapt();
@@ -2103,6 +2107,7 @@ async function renderPlaybackNetworkSettings(){
       name:fields.name.value.trim(),kind,
       target:fields.target.value.trim(),
       host:fields.host.value.trim(),
+      hostname:['smb','nfs'].includes(kind)?fields.hostname.value.trim():'',
       port:fields.port.value?Number(fields.port.value):null,
       share:fields.share.value.trim(),
       username:fields.username.value.trim(),
