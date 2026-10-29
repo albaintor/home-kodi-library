@@ -1511,7 +1511,7 @@ function runNetworkThumbnailQueue(){
     void fetchNetworkThumbnail(image);
   }
 }
-const networkThumbnailObserver=new IntersectionObserver(entries=>{
+const networkThumbnailObserver=typeof IntersectionObserver==='function' ? new IntersectionObserver(entries=>{
   for(const entry of entries){
     if(!entry.isIntersecting)continue;
     const image=entry.target;
@@ -1519,11 +1519,13 @@ const networkThumbnailObserver=new IntersectionObserver(entries=>{
     if(image.isConnected)networkThumbnailQueue.push(image);
   }
   runNetworkThumbnailQueue();
-},{root:$('network-browser-items'),rootMargin:'120px'});
+},{root:$('network-browser-items'),rootMargin:'120px'}) : null;
 function observeNetworkThumbnails(){
-  document.querySelectorAll('#network-browser-items img[data-thumbnail-url]').forEach(
-    image=>networkThumbnailObserver.observe(image)
-  );
+  document.querySelectorAll('#network-browser-items img[data-thumbnail-url]').forEach(image=>{
+    if(networkThumbnailObserver)networkThumbnailObserver.observe(image);
+    else networkThumbnailQueue.push(image);
+  });
+  if(!networkThumbnailObserver)runNetworkThumbnailQueue();
 }
 function networkThumbnail(entry){
   const loc=networkExplorer.selected;
