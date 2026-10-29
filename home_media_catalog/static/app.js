@@ -1631,11 +1631,9 @@ function networkPlay(entry){
     subtitle:browser.selected.name||'',
     extension:entry.name.split('.').pop(),
     directURL:url('api/v1/playback/stream/'+encodeURIComponent(browser.selected.id)+query),
-    ...(kind==='onedrive'?{}:{
-      probeURL:url(base+'/probe'+query),
-      subtitleURL:index=>url(`${base}/subtitles/${index}.vtt${query}`),
-      streamURL:params=>url(`${base}/stream.mp4${query}&${new URLSearchParams(params)}`)
-    }),
+    probeURL:url(base+'/probe'+query),
+    subtitleURL:index=>url(`${base}/subtitles/${index}.vtt${query}`),
+    streamURL:params=>url(`${base}/stream.mp4${query}&${new URLSearchParams(params)}`),
   });
 }
 async function openNetworkBrowser(id=null){
