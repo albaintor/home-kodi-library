@@ -8,6 +8,7 @@ import hashlib
 import hmac
 import logging
 import secrets
+import socket
 import time
 from collections import OrderedDict
 from urllib.parse import quote, quote_plus, urlparse, urlsplit
@@ -112,11 +113,13 @@ def _kodi_artwork_url(config: dict, image: str) -> str:
 
 class RemoteAction(BaseModel):
     action: str = Field(
-        pattern=r"^(up|down|left|right|select|back|home|context|info|osd|fullscreen|playpause|stop|next|previous|seek|subtitle_next|subtitle_off|subtitle_on|subtitle_select|audio_next|audio_select)$"
+        pattern=r"^(up|down|left|right|select|back|home|context|info|osd|fullscreen|playpause|stop|next|previous|seek|subtitle_next|subtitle_off|subtitle_on|subtitle_select|audio_next|audio_select|set_volume|set_mute)$"
     )
     percentage: float | None = Field(default=None, ge=0, le=100)
     seconds: float | None = Field(default=None, ge=0, le=172800)
     index: int | None = Field(default=None, ge=0, le=999)
+    volume: int | None = Field(default=None, ge=0, le=100)
+    muted: bool | None = None
 
 
 def kodi_seek_time(position: float) -> dict[str, int]:
@@ -222,6 +225,16 @@ async def remote_status(player_id: str, request: Request, _=Depends(authenticate
         raise HTTPException(502, str(exc)) from exc
 
 
+@router.get("/{player_id}/volume")
+async def kodi_volume(player_id: str, request: Request, _=Depends(authenticated)):
+    player = lookup(request, player_id)
+    try:
+        async with connection(player["config"], timeout=5) as rpc:
+            return await rpc("Application.GetProperties", {"properties": ["volume", "muted"]})
+    except (ConnectorError, httpx.HTTPError) as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @router.post("/{player_id}/remote")
 async def remote_command(
     player_id: str, action: RemoteAction, request: Request, _=Depends(writable)
@@ -246,6 +259,14 @@ async def remote_command(
             elif action.action == "fullscreen":
                 prop = await rpc("GUI.GetProperties", {"properties": ["fullscreen"]})
                 await rpc("GUI.SetFullscreen", {"fullscreen": not prop.get("fullscreen", False)})
+            elif action.action == "set_volume":
+                if action.volume is None:
+                    raise HTTPException(422, "Volume is required.")
+                await rpc("Application.SetVolume", {"volume": action.volume})
+            elif action.action == "set_mute":
+                if action.muted is None:
+                    raise HTTPException(422, "Muted status is required.")
+                await rpc("Application.SetMute", {"mute": action.muted})
             else:
                 active = await rpc("Player.GetActivePlayers", {})
                 current = next((p for p in active if p.get("type") in ("video", "audio")), None)
