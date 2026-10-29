@@ -11,7 +11,7 @@ import re
 import secrets
 import time
 from collections import OrderedDict
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, unquote, urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse, StreamingResponse
 from .auth import authenticated
 from .connectors.base import ConnectorError
 from .models import PlayInput
-from .playback_media import kodi_source, media_stream, parse_video_copy, probe, subtitle_vtt
+from .playback_browser import safe_path, stream_location
+from .playback_media import kodi_source, media_stream, network_source, parse_video_copy, probe, subtitle_vtt
 from .players import connection, endpoint
 from .utils import identifiers
 
@@ -40,6 +41,41 @@ def _lookup(request, player_id):
     if not player:
         raise HTTPException(404, "Unknown Kodi instance.")
     return player
+
+
+def _registered_media_location(request: Request, kodi_path: str):
+    """Match a server-owned SMB/NFS share using its IP or optional Kodi hostname alias.
+
+    Only canonical paths imported from Kodi are eligible, and all resulting
+    paths remain confined to the administrator-configured share root.
+    """
+    url = urlsplit(kodi_path)
+    kind = url.scheme.lower()
+    if kind not in {"smb", "nfs"} or not url.hostname or url.username or url.password:
+        return None
+    requested_host = url.hostname.lower().rstrip(".")
+    try:
+        media_path = safe_path(unquote(url.path).lstrip("/"))
+    except HTTPException:
+        return None
+    if not media_path:
+        return None
+    for location in request.app.state.store.playback_locations():
+        if location["kind"] != kind:
+            continue
+        known_hosts = {
+            str(location.get("host") or "").lower().rstrip("."),
+            str(location.get("hostname") or "").lower().rstrip("."),
+        }
+        if requested_host not in known_hosts:
+            continue
+        root = str(location.get("share") or "").strip("/")
+        if not root or not media_path.startswith(root + "/"):
+            continue
+        relative = safe_path(media_path[len(root) + 1 :])
+        if relative:
+            return location, relative
+    return None
 
 
 async def _resolve_video(request, player, data):
@@ -213,6 +249,25 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
     range_header = request.headers.get("range")
     if range_header and not _RANGE.fullmatch(range_header):
         raise HTTPException(416, "Only single byte ranges are supported.")
+    matched = await asyncio.to_thread(_registered_media_location, request, item["file"])
+    if matched:
+        location, relative = matched
+        try:
+            response = await stream_location(
+                location, relative, range_header, request.app.state.store,
+                request.app.state.playback_oauth,
+                request.app.state.playback_nfs_mounts, method=request.method,
+            )
+            if request.method == "HEAD":
+                return Response(
+                    status_code=response.status_code,
+                    headers=dict(response.headers), media_type=response.media_type,
+                )
+            return response
+        except HTTPException as exc:
+            if exc.status_code not in (502, 503, 504):
+                raise
+            LOG.info("Configured %s share not reachable; trying Kodi VFS", location["kind"])
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
     config = player["config"]
@@ -316,6 +371,21 @@ async def _ticket_source(request: Request, player_id: str, ticket: str):
     if not item or item["player_id"] != player_id or item["expires"] <= time.monotonic():
         raise HTTPException(403, "Stream ticket is invalid or expired.")
     player = _lookup(request, player_id)
+    matched = await asyncio.to_thread(_registered_media_location, request, item["file"])
+    if matched:
+        location, relative = matched
+        password = await asyncio.to_thread(
+            __import__("home_media_catalog.playback_browser", fromlist=["_credentials"])._credentials,
+            request.app.state.store, request.app.state.playback_oauth, location["id"],
+        )
+        try:
+            source = await asyncio.to_thread(
+                network_source, location, relative, password,
+                request.app.state.playback_nfs_mounts,
+            )
+            return source, await probe(source)
+        except (OSError, HTTPException):
+            LOG.info("Configured network source unavailable; trying Kodi VFS")
     config = player["config"]
     base = endpoint(config).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
