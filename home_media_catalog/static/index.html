@@ -76,7 +76,12 @@
         </form>
         <div id="ai-chat-history" class="ai-chat-history" aria-live="polite"></div>
         <p id="ai-search-feedback" class="hint" role="status"></p>
-        <button id="ai-new-search" class="secondary" type="button">Nouvelle recherche</button>
+        <div class="connection-actions">
+          <button id="ai-undo-search" class="secondary" type="button" disabled>↶ Annuler le dernier affinage</button>
+          <button id="ai-add-results-list" class="secondary" type="button" disabled>＋ Ajouter les résultats à une liste</button>
+          <button id="ai-new-search" class="secondary" type="button">Nouvelle recherche</button>
+        </div>
+        <div id="ai-bulk-panel" class="metadata-status" hidden></div>
         <div id="ai-search-results"></div>
       </section>
       <details id="filters-panel" class="filters-panel">
