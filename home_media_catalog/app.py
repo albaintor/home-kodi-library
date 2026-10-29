@@ -189,6 +189,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         },
     )
     app.state.store, app.state.auth, app.state.sync = store, auth, sync
+    app.state.playback_oauth = cloud_auth
+    app.state.playback_nfs_mounts = settings.playback_nfs_mounts
     app.state.artwork = Artwork(settings)
     app.state.data_dir = settings.data_dir
     thumbnails = ListThumbnails(store, app.state.artwork, settings.data_dir)
