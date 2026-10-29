@@ -1,4 +1,5 @@
 """Regression checks for web/iOS playback and Kodi parity."""
+
 from types import SimpleNamespace
 
 import pytest
