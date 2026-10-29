@@ -452,6 +452,17 @@ class PlayerInput(StrictModel):
     password: SecretStr | None = None
     tls: bool = False
     websocket_port: int = Field(default=9090, ge=1, le=65535)
+    mac: str | None = Field(default=None, max_length=32)
+
+    @field_validator("mac")
+    @classmethod
+    def validate_mac(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().replace("-", "").replace(":", "").lower()
+        if normalized and (len(normalized) != 12 or any(c not in "0123456789abcdef" for c in normalized)):
+            raise ValueError("Enter a 12-digit hexadecimal MAC address.")
+        return ":".join(normalized[i:i + 2] for i in range(0, len(normalized), 2))
 
 
 class PlayerView(BaseModel):
@@ -464,6 +475,7 @@ class PlayerView(BaseModel):
     tls: bool
     has_password: bool
     websocket_port: int = 9090
+    mac: str = ""
 
 
 class PlayInput(StrictModel):
