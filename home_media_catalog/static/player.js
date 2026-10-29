@@ -123,6 +123,7 @@ export class MediaPlayer {
     this.mode='direct'; this.offset=0; this.audio=null; this.subtitle=null; this.cues=[];
     this.subtitleDelay=0; this.zoom=1; this.fit='contain'; this.panel=null;
     this.hideTimer=null; this.seekTimer=null; this.scrubbing=false; this.loadToken=0; this.frame=0;
+    this.stalls=0;this.waitingStarted=null;this.waitingSeconds=0;this.lastBufferAhead=0;
   }
 
   /* ----- public API ----- */
@@ -243,9 +244,16 @@ export class MediaPlayer {
     for(const name of ['timeupdate','progress','durationchange','loadedmetadata'])video.addEventListener(name,sync);
     video.addEventListener('play',()=>{this.updateButtons();this.scheduleHide();this.loop();});
     video.addEventListener('pause',()=>{this.updateButtons();this.showOSD(true);});
-    video.addEventListener('waiting',()=>this.spinner(true));
+    video.addEventListener('waiting',()=>{
+      if(this.waitingStarted===null){this.waitingStarted=performance.now();this.stalls++;}
+      this.spinner(true);
+    });
+    video.addEventListener('stalled',()=>{
+      if(this.waitingStarted===null){this.waitingStarted=performance.now();this.stalls++;}
+      this.spinner(true);
+    });
     video.addEventListener('seeking',()=>this.spinner(true));
-    video.addEventListener('playing',()=>{this.spinner(false);this.setStatus('');});
+    video.addEventListener('playing',()=>{this.finishWaiting();this.spinner(false);this.setStatus('');});
     video.addEventListener('canplay',()=>this.spinner(false));
     video.addEventListener('seeked',()=>this.spinner(false));
     video.addEventListener('ended',()=>{
@@ -296,6 +304,7 @@ export class MediaPlayer {
   reset() {
     clearTimeout(this.seekTimer);
     this.info=null; this.mode='direct'; this.offset=0; this.audio=null; this.subtitle=null; this.cues=[];
+    this.stalls=0;this.waitingStarted=null;this.waitingSeconds=0;this.lastBufferAhead=0;
     this.subtitleDelay=0; this.zoom=1; this.fit=FITS[this.prefs.fit]?this.prefs.fit:'contain';
     this.speed=1; this.closePanel(); this.applyFit();
     this.video.volume=Number.isFinite(this.prefs.volume)?this.prefs.volume:1;
@@ -485,6 +494,12 @@ export class MediaPlayer {
     clearTimeout(this.seekTimer);
     this.seekTimer=setTimeout(()=>this.loadStream(time),250);
   }
+  finishWaiting(){
+    if(this.waitingStarted!==null){
+      this.waitingSeconds+=(performance.now()-this.waitingStarted)/1000;
+      this.waitingStarted=null;
+    }
+  }
   updateTime() {
     if(!this.root)return;
     const duration=this.duration(), current=Math.min(this.currentTime(),duration||Infinity);
@@ -498,6 +513,13 @@ export class MediaPlayer {
     for(let i=0;i<buffered.length;i++)if(buffered.start(i)<=this.video.currentTime+1)bufferedEnd=Math.max(bufferedEnd,buffered.end(i));
     this.$('.mp-buffered').style.left=`${duration?this.offset/duration*100:0}%`;
     this.$('.mp-buffered').style.width=`${duration?Math.max(0,bufferedEnd)/duration*100:0}%`;
+    this.lastBufferAhead=Math.max(0,bufferedEnd-this.video.currentTime);
+    const diagnostics=this.$('.mp-live-telemetry');
+    if(diagnostics){
+      const elapsed=this.waitingSeconds+(this.waitingStarted!==null?(performance.now()-this.waitingStarted)/1000:0);
+      diagnostics.textContent='Tampon : '+this.lastBufferAhead.toFixed(1)+' s · Arrêts : '+this.stalls+
+        ' · Attente : '+elapsed.toFixed(1)+' s';
+    }
     const seek=this.$('.mp-seek');
     seek.setAttribute('aria-valuemax',String(Math.round(duration)));
     seek.setAttribute('aria-valuenow',String(Math.round(current)));
@@ -639,9 +661,11 @@ export class MediaPlayer {
     if(subtitle){ const l=subtitleLabel(subtitle); add('Sous-titres',[l.name,l.details].filter(Boolean).join(' · ')); }
     add('Pistes',info?`${info.audio.length} ${tr('audio')} · ${info.subtitles.length} ${tr('sous-titres')} · ${info.chapters.length} ${tr('chapitres')}`:tr('Non analysées'));
     add('Image affichée',this.video.videoWidth?`${this.video.videoWidth} × ${this.video.videoHeight}`:'');
+    add('Tampon en avance',this.lastBufferAhead.toFixed(1)+' s');
+    add('Interruptions de lecture',String(this.stalls));
     const quality=this.video.getVideoPlaybackQuality?.();
     if(quality)add('Images perdues',`${quality.droppedVideoFrames} / ${quality.totalVideoFrames}`);
-    return `<dl class="mp-details">${rows.join('')}</dl>`;
+    return `<dl class="mp-details">${rows.join('')}</dl><p class="mp-live-telemetry" role="status" aria-live="off">Tampon : ${this.lastBufferAhead.toFixed(1)} s · Arrêts : ${this.stalls} · Attente : ${this.waitingSeconds.toFixed(1)} s</p><p class="mp-hint">Ces mesures viennent du navigateur. Le débit NAS et les reconnexions SMB/NFS nécessitent une télémétrie distincte sur le serveur.</p>`;
   }
 
   /* ----- actions ----- */
