@@ -3086,6 +3086,12 @@ document.addEventListener('change',event=>{
 
 let aiPreviousPlan=null;
 let aiConversation=[];
+let aiResultIDs=[];
+const aiRefinementHistory=[];
+function updateAIResultActions(){
+  $('ai-undo-search').disabled=aiRefinementHistory.length===0;
+  $('ai-add-results-list').disabled=state.role!=='admin'||aiResultIDs.length===0;
+}
 async function refreshAIStatus(){
   try {
     const status=await api('ai/status');
@@ -3128,9 +3134,15 @@ document.addEventListener('submit',async event=>{
     try{
       const userPrompt=$('ai-prompt').value.trim();
       const result=await api('ai/search',{method:'POST',body:JSON.stringify({
-        prompt:userPrompt,previous_plan:aiPreviousPlan
+        prompt:userPrompt,previous_plan:aiPreviousPlan,
+        ...(aiResultIDs.length?{previous_ids:aiResultIDs}:{})
       })});
+      aiRefinementHistory.push({plan:aiPreviousPlan,conversation:aiConversation.slice(),
+        html:target.innerHTML,feedback:$('ai-search-feedback').textContent,ids:aiResultIDs.slice()});
       aiPreviousPlan=result.plan;
+      aiResultIDs=[...new Set(result.items.map(item=>item.id))];
+      updateAIResultActions();
+      $('ai-bulk-panel').hidden=true;
       aiConversation.push({role:'user',text:userPrompt},{role:'assistant',text:result.assistant_message||'Critères appliqués.'});
       $('ai-prompt').value='';$('ai-prompt').placeholder='Affiner : uniquement les non vus, plutôt des années 90…';
       $('ai-chat-history').innerHTML=aiConversation.map(turn=>
@@ -3181,8 +3193,63 @@ document.addEventListener('click',async event=>{
     }catch(e){toast(e.message)}finally{button.disabled=false}
     return;
   }
+  if(event.target.closest('#ai-undo-search')){
+    const previous=aiRefinementHistory.pop();
+    if(!previous)return;
+    aiPreviousPlan=previous.plan;
+    aiConversation=previous.conversation;
+    aiResultIDs=previous.ids;
+    $('ai-chat-history').innerHTML=aiConversation.map(turn=>
+      '<div class="ai-chat-turn '+turn.role+'">'+esc(turn.text)+'</div>').join('');
+    $('ai-search-feedback').textContent=previous.feedback;
+    $('ai-search-results').innerHTML=previous.html;
+    $('ai-bulk-panel').hidden=true;
+    updateAIResultActions();
+    return;
+  }
+  if(event.target.closest('#ai-add-results-list')){
+    if(state.role!=='admin'||!aiResultIDs.length)return;
+    const panel=$('ai-bulk-panel');
+    try {
+      const lists=await api('lists');
+      panel.innerHTML='<label>Liste<select id="ai-bulk-list">'+
+        lists.map(l=>'<option value="'+esc(l.id)+'">'+esc(l.name)+'</option>').join('')+
+        '<option value="new">＋ Nouvelle liste…</option></select></label> '+
+        '<button id="ai-bulk-submit" type="button" class="primary">Ajouter '+aiResultIDs.length+' média(s)</button> '+
+        '<button id="ai-bulk-close" type="button" class="secondary">Annuler</button> '+
+        '<span id="ai-bulk-feedback" role="status"></span>';
+      panel.hidden=false;
+    }catch(e){toast(e.message)}
+    return;
+  }
+  if(event.target.closest('#ai-bulk-close')){$('ai-bulk-panel').hidden=true;return;}
+  if(event.target.closest('#ai-bulk-submit')){
+    const ids=aiResultIDs.slice();
+    if(!ids.length||state.role!=='admin')return;
+    const button=$('ai-bulk-submit'),feedback=$('ai-bulk-feedback');
+    button.disabled=true;feedback.textContent='Enregistrement…';
+    try {
+      let id=$('ai-bulk-list').value;
+      if(id==='new'){
+        const name=localizedPrompt('Nom de la nouvelle liste', 'Résultats IA');
+        if(!name?.trim()){feedback.textContent='Création annulée.';return;}
+        const list=await api('lists',{method:'POST',body:JSON.stringify({name:name.trim()})});
+        id=list.id;
+      }
+      const added=await api('lists/'+encodeURIComponent(id)+'/items/bulk',{
+        method:'POST',body:JSON.stringify({media_ids:ids})
+      });
+      feedback.textContent=added.added+' ajout(s) · '+added.already_present+' déjà présent(s).';
+      await refreshHomeListThumbnails();
+      toast(feedback.textContent);
+    }catch(e){feedback.textContent=e.message}
+    finally{button.disabled=false;}
+    return;
+  }
   if(event.target.closest('#ai-new-search')){
-    aiPreviousPlan=null;aiConversation=[];$('ai-chat-history').replaceChildren();
+    aiPreviousPlan=null;aiConversation=[];aiResultIDs=[];aiRefinementHistory.length=0;
+    updateAIResultActions();$('ai-bulk-panel').hidden=true;
+    $('ai-chat-history').replaceChildren();
     $('ai-search-results').replaceChildren();$('ai-prompt').value='';
     $('ai-prompt').placeholder='Décris les films ou épisodes recherchés…';
     await refreshAIStatus();$('ai-prompt').focus();return;
