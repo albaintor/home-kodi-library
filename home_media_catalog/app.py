@@ -96,7 +96,6 @@ from .models import (
     WritebackStatus,
 )
 from .playback_browser import _credentials, browse_location, safe_path, stream_location
-from .playback_operations import mutate_location, search_location
 from .playback_cloud import CloudOAuth, CloudOAuthError
 from .playback_discovery import discover_upnp
 from .playback_media import (
@@ -107,6 +106,7 @@ from .playback_media import (
     probe,
     subtitle_vtt,
 )
+from .playback_operations import mutate_location, search_location
 from .playback_thumbnails import thumbnail_location
 from .playback_transcode import browser_transcode
 from .players import play
