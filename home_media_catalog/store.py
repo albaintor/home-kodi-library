@@ -2607,9 +2607,13 @@ class Store:
         player_id = player_id or str(uuid4())
         config = {k: v for k, v in data.items() if k not in ("name", "source_id")}
         with self.connect() as conn:
-            if config.get("password") is None:
+            if config.get("password") is None or config.get("mac") is None:
                 old = conn.execute("SELECT config FROM players WHERE id=?", (player_id,)).fetchone()
-                config["password"] = json.loads(old[0]).get("password", "") if old else ""
+                previous = json.loads(old[0]) if old else {}
+                if config.get("password") is None:
+                    config["password"] = previous.get("password", "")
+                if config.get("mac") is None:
+                    config["mac"] = previous.get("mac", "")
             conn.execute(
                 "INSERT INTO players(id,name,source_id,config) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,source_id=excluded.source_id,config=excluded.config",
                 (player_id, data["name"], data["source_id"], encode(config)),
