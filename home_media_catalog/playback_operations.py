@@ -4,6 +4,7 @@ Both routes accept paths relative to a saved location, never filesystem/UNC URLs
 Cloud locations are always read-only. Mutations run only with an explicit
 administrator bearer token; implicit local browser sessions are not enough.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -36,8 +37,14 @@ SEARCH_PAGE_SIZE = 80
 
 
 async def search_location(
-    location: dict, path: str, query: str, offset: int, limit: int,
-    store, encryption, mounts: dict,
+    location: dict,
+    path: str,
+    query: str,
+    offset: int,
+    limit: int,
+    store,
+    encryption,
+    mounts: dict,
 ) -> dict:
     """Return an incremental page without buffering every matching file.
 
@@ -67,8 +74,10 @@ async def search_location(
                 matches += 1
                 if matches > offset + limit:
                     return {
-                        "items": found, "next_offset": offset + len(found),
-                        "truncated": False, "examined": examined,
+                        "items": found,
+                        "next_offset": offset + len(found),
+                        "truncated": False,
+                        "examined": examined,
                     }
             if item["is_dir"] and depth < SEARCH_MAX_DEPTH:
                 queue.append((item["path"], depth + 1))
@@ -78,8 +87,10 @@ async def search_location(
     # Do not offer a page cursor if the full search ended; clients can still
     # explain that a safety limit prevented scanning the whole tree.
     return {
-        "items": found, "next_offset": offset + len(found) if truncated and found else None,
-        "truncated": truncated, "examined": examined,
+        "items": found,
+        "next_offset": offset + len(found) if truncated and found else None,
+        "truncated": truncated,
+        "examined": examined,
     }
 
 
@@ -169,22 +180,28 @@ def _mutate_ftp(location, password, operation, source, target):
     conn = _ftp_connection(location, password)
     try:
         _, prefix = _root(location)
+
         def remote(path):
             return "/".join(filter(None, (prefix, path)))
+
         src = remote(source)
         dst = remote(target) if target else None
+
         def entries(path):
-            return [(name, attrs) for name, attrs in conn.mlsd(path)
-                    if name not in (".", "..")]
+            return [(name, attrs) for name, attrs in conn.mlsd(path) if name not in (".", "..")]
+
         def exists(path):
             parent, _, name = path.rpartition("/")
             return any(entry == name for entry, _ in entries(parent or "."))
+
         if dst and exists(dst):
             raise HTTPException(409, "Destination already exists.")
 
         def remove(path):
-            if any(name == path.rsplit("/", 1)[-1] and attrs.get("type") == "dir"
-                   for name, attrs in entries(path.rpartition("/")[0] or ".")):
+            if any(
+                name == path.rsplit("/", 1)[-1] and attrs.get("type") == "dir"
+                for name, attrs in entries(path.rpartition("/")[0] or ".")
+            ):
                 for name, _ in entries(path):
                     remove(path.rstrip("/") + "/" + name)
                 conn.rmd(path)
@@ -193,8 +210,10 @@ def _mutate_ftp(location, password, operation, source, target):
 
         def copy(src_path, dst_path):
             parent = src_path.rpartition("/")[0] or "."
-            is_dir = any(name == src_path.rsplit("/", 1)[-1] and attrs.get("type") == "dir"
-                         for name, attrs in entries(parent))
+            is_dir = any(
+                name == src_path.rsplit("/", 1)[-1] and attrs.get("type") == "dir"
+                for name, attrs in entries(parent)
+            )
             if is_dir:
                 conn.mkd(dst_path)
                 for name, _ in entries(src_path):
@@ -228,12 +247,17 @@ def _mutate_smb(location, password, operation, source, target):
     user = location.get("username") or ""
     domain = location.get("workgroup") or ""
     smbclient.register_session(
-        host, username=domain + "\\" + user if domain and user else user,
-        password=password, port=int(location.get("port") or 445), connection_timeout=8,
+        host,
+        username=domain + "\\" + user if domain and user else user,
+        password=password,
+        port=int(location.get("port") or 445),
+        connection_timeout=8,
     )
     base = "\\\\" + host + "\\" + prefix.replace("/", "\\")
+
     def remote(path):
         return base + "\\" + path.replace("/", "\\")
+
     src = remote(source)
     dst = remote(target) if target else None
     if dst and smbclient.path.exists(dst):
@@ -255,7 +279,10 @@ def _mutate_smb(location, password, operation, source, target):
                 for entry in it:
                     copy(src_path + "\\" + entry.name, dst_path + "\\" + entry.name)
         else:
-            with smbclient.open_file(src_path, mode="rb") as reader, smbclient.open_file(dst_path, mode="xb") as writer:
+            with (
+                smbclient.open_file(src_path, mode="rb") as reader,
+                smbclient.open_file(dst_path, mode="xb") as writer,
+            ):
                 while block := reader.read(1024 * 1024):
                     writer.write(block)
 
@@ -293,9 +320,7 @@ def _mutate_mounted_nfs(location, mounts, operation, source, target):
         if src.is_dir():
             # copytree follows links by default. A nested symlink could copy
             # private data outside the configured share into the destination.
-            for folder, directories, files in os.walk(
-                src, topdown=True, followlinks=False
-            ):
+            for folder, directories, files in os.walk(src, topdown=True, followlinks=False):
                 for name in directories + files:
                     if (Path(folder) / name).is_symlink():
                         raise HTTPException(403, "Symbolic links cannot be copied.")
@@ -312,16 +337,19 @@ async def mutate_location(location, operation, path, destination, store, encrypt
     if kind == "nfs":
         if location["id"] not in mounts:
             raise HTTPException(501, "Native NFS modifications require a writable server mount.")
+
         def worker():
             return _mutate_mounted_nfs(location, mounts, operation, source, target)
     else:
         password = _credentials(store, encryption, location["id"])
+
         def worker():
             return {
                 "smb": _mutate_smb,
                 "sftp": _mutate_sftp,
                 "ftp": _mutate_ftp,
             }[kind](location, password, operation, source, target)
+
     try:
         await asyncio.to_thread(worker)
     except HTTPException:
