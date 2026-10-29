@@ -1412,7 +1412,8 @@ async function pollJob(job) {
 // SMB, NFS, FTP and cloud connectors. Only adapters that can stream expose Play.
 const networkExplorer={
   locations:[],selected:null,stack:[],entries:[],shown:0,
-  view:'grid',busy:false,revision:0
+  view:'grid',busy:false,revision:0,
+  sort:readStorage('network-browser-sort')||'name',descending:readStorage('network-browser-descending')==='true'
 };
 function networkPathLabel() {
   if(!networkExplorer.selected)return 'Sources enregistrées';
@@ -1516,6 +1517,21 @@ function networkThumbnail(entry){
 function networkCurrentPath(){
   return networkExplorer.stack.at(-1)?.path||'';
 }
+function sortedNetworkEntries(browser) {
+  const key=browser.sort, multiplier=browser.descending?-1:1;
+  return browser.entries.map((entry,index)=>({...entry,_originalIndex:index})).sort((a,b)=>{
+    if(Boolean(a.is_dir)!==Boolean(b.is_dir))return a.is_dir?-1:1;
+    let result=0;
+    if(key==='size')result=(Number(a.size)||0)-(Number(b.size)||0);
+    else if(key==='type')result=(a.name.split('.').pop()||'').localeCompare(b.name.split('.').pop()||'',displayLocale(),{numeric:true});
+    else if(key==='modified'||key==='created'){
+      const l=Date.parse(a[key]||'')||0,r=Date.parse(b[key]||'')||0;
+      result=l&&r?l-r:0;
+    }
+    if(!result)result=a.name.localeCompare(b.name,displayLocale(),{numeric:true,sensitivity:'base'});
+    return result*multiplier||a._originalIndex-b._originalIndex;
+  });
+}
 function renderNetworkBrowser() {
   const browser=networkExplorer;
   const box=$('network-browser-items');
@@ -1525,6 +1541,9 @@ function renderNetworkBrowser() {
   $('network-browser-back').disabled=!browser.selected;
   $('network-browser-grid').setAttribute('aria-pressed',String(browser.view==='grid'));
   $('network-browser-list').setAttribute('aria-pressed',String(browser.view==='list'));
+  $('network-browser-sort').value=browser.sort;
+  $('network-browser-sort-order').textContent=browser.descending?'↓':'↑';
+  $('network-browser-sort-order').setAttribute('aria-pressed',String(browser.descending));
   if(!browser.selected){
     box.innerHTML=browser.locations.filter(loc=>browsableLocationKinds.has(loc.kind)).map(loc=>
       '<button type="button" class="network-browser-tile" data-network-source="'+esc(loc.id)+'">'+
@@ -1534,7 +1553,7 @@ function renderNetworkBrowser() {
       '</small></button>'
     ).join('')||'<p class="hint">Aucune source enregistrée.</p>';
   }else{
-    box.innerHTML=browser.entries.slice(0,count).map((item,i)=>
+    box.innerHTML=sortedNetworkEntries(browser).slice(0,count).map((item,i)=>
       '<div class="network-browser-tile" data-entry="'+i+'">'+
       '<button class="network-browser-item-main" data-network-entry="'+i+'" type="button">'+
       '<span class="network-browser-tile-icon">'+(networkThumbnail(item)|| (item.is_dir?'📁':networkMedia(item.name)?'🎞':'📄'))+'</span>'+
@@ -1599,8 +1618,8 @@ function networkPlay(entry){
   const browser=networkExplorer;
   if(!browser.selected || !networkMedia(entry.name))return;
   const kind=browser.selected.kind;
-  if(!['smb','ftp','sftp','nfs'].includes(kind)) {
-    networkBrowseError('Navigation disponible, mais le streaming direct de ce fournisseur n’est pas encore pris en charge.');
+  if(!['smb','ftp','sftp','nfs','onedrive'].includes(kind)) {
+    networkBrowseError('La lecture de ce fournisseur n’est pas encore disponible.');
     return;
   }
   const query='?path='+encodeURIComponent(entry.path);
@@ -1611,9 +1630,11 @@ function networkPlay(entry){
     subtitle:browser.selected.name||'',
     extension:entry.name.split('.').pop(),
     directURL:url('api/v1/playback/stream/'+encodeURIComponent(browser.selected.id)+query),
-    probeURL:url(base+'/probe'+query),
-    subtitleURL:index=>url(`${base}/subtitles/${index}.vtt${query}`),
-    streamURL:params=>url(`${base}/stream.mp4${query}&${new URLSearchParams(params)}`),
+    ...(kind==='onedrive'?{}:{
+      probeURL:url(base+'/probe'+query),
+      subtitleURL:index=>url(`${base}/subtitles/${index}.vtt${query}`),
+      streamURL:params=>url(`${base}/stream.mp4${query}&${new URLSearchParams(params)}`)
+    }),
   });
 }
 async function openNetworkBrowser(id=null){
@@ -1633,6 +1654,23 @@ $('network-browser-grid').addEventListener('click',()=>{
 $('network-browser-list').addEventListener('click',()=>{
   networkExplorer.view='list';renderNetworkBrowser();
 });
+$('network-browser-sort').addEventListener('change',event=>{
+  networkExplorer.sort=event.target.value;
+  writeStorage('network-browser-sort',networkExplorer.sort);
+  renderNetworkBrowser();
+});
+$('network-browser-sort-order').addEventListener('click',()=>{
+  networkExplorer.descending=!networkExplorer.descending;
+  writeStorage('network-browser-descending',String(networkExplorer.descending));
+  renderNetworkBrowser();
+});
+$('network-browser-refresh').addEventListener('click',()=>{
+  if(networkExplorer.selected){
+    const current=networkExplorer.stack.at(-1);
+    networkExplorer.stack.pop();
+    void networkOpenFolder(current?.path||'',current?.name||networkExplorer.selected.name);
+  } else void refreshNetworkHome().then(()=>renderNetworkBrowser());
+});
 $('network-browser-more').addEventListener('click',()=>{
   networkExplorer.shown+=80;renderNetworkBrowser();
 });
@@ -1649,15 +1687,14 @@ $('network-browser-items').addEventListener('click',event=>{
   const button=event.target.closest('[data-network-entry],[data-network-menu]');
   if(!button)return;
   const index=Number(button.dataset.networkEntry??button.dataset.networkMenu);
-  const item=networkExplorer.entries[index];
+  const item=sortedNetworkEntries(networkExplorer)[index];
   if(!item)return;
   if(button.hasAttribute('data-network-menu')) {
-    const action=networkMedia(item.name)&&!item.is_dir?'Lire le média ou copier son chemin ?':'Copier le chemin de cet élément ?';
-    if(networkMedia(item.name)&&!item.is_dir&&localizedConfirm(action)){
-      networkPlay(item);
-    } else if(navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(item.path);
-    }
+    const options=networkMedia(item.name)&&!item.is_dir
+      ? 'Actions : OK = lire, Annuler = copier le chemin. Pour télécharger, utilisez le menu Télécharger.'
+      : 'Copier le chemin ?';
+    if(networkMedia(item.name)&&!item.is_dir&&localizedConfirm(options))networkPlay(item);
+    else if(navigator.clipboard?.writeText)void navigator.clipboard.writeText(item.path);
     return;
   }
   if(item.is_dir)void networkOpenFolder(item.path,item.name);
