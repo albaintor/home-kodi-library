@@ -230,7 +230,7 @@ def wake_on_lan(mac: str) -> None:
     clean = mac.replace(":", "").replace("-", "").strip()
     if len(clean) != 12 or any(c not in "0123456789abcdefABCDEF" for c in clean):
         raise HTTPException(422, "Configure a valid MAC address for this Kodi instance.")
-    payload = b"\\xff" * 6 + bytes.fromhex(clean) * 16
+    payload = bytes([255]) * 6 + bytes.fromhex(clean) * 16
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.settimeout(2)
