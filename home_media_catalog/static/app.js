@@ -1653,7 +1653,7 @@ async function networkSearch(append=false){
     renderNetworkBrowser();
     return;
   }
-  if(browser.searchBusy)return;
+  if(append && browser.searchBusy)return;
   browser.searchBusy=true;
   networkBrowseError('Recherche dans les sous-dossiers…');
   try{
