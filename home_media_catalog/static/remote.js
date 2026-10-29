@@ -19,6 +19,8 @@ class KodiRemote {
     this.state={active:false}; this.sockets=new Map(); this.timers=new Map(); this.states=new Map(); this.closed=false; this.manualSelection=false;
     this.page=0; this.received=new Map(); this.refreshInterval=null; this.clockInterval=null; this.userSeeking=false;
     this.httpConnected=new Map(); this.wsConnected=new Map(); this.socketRetryDelay=new Map();
+    this.volume=100;this.muted=false;this.volumeEditing=false;this.volumeInterval=null;
+    this.touchpadStart=null;this.touchpadDirection=null;this.touchpadTimer=null;
     this.storageKey='media_catalog.remote.player:'+new URL('.',location.href).pathname;
   }
   async start() {
@@ -35,6 +37,7 @@ class KodiRemote {
         <div class="remote-heading"><h2 id="remote-heading">Télécommande Kodi</h2><button id="remote-close" aria-label="Fermer">×</button></div>
         <label class="remote-player-label">Lecteur <select id="remote-player"></select></label><button id="remote-connection" class="remote-connection-button" type="button" title="Réessayer la connexion Kodi">Connexion en cours… ↻</button>
         <div id="remote-playing-options" class="remote-playing-options" hidden></div>
+        <button id="remote-wake" class="secondary" type="button" title="Wake-on-LAN" hidden>⏻ Réveiller Kodi</button>
         <div class="remote-tabs" role="tablist">
           <button id="remote-tab-now" type="button" aria-selected="true" role="tab">Lecture en cours</button>
           <button id="remote-tab-controls" type="button" aria-selected="false" role="tab">Contrôles</button>
@@ -52,9 +55,19 @@ class KodiRemote {
             <button data-remote-action="next" aria-label="Suivant">⏭</button>
             <button data-remote-action="stop" aria-label="Stop">⏹</button>
           </div>
+          <div class="remote-volume" role="group" aria-label="Volume Kodi">
+            <button id="remote-mute" type="button" aria-label="Couper le son">🔊</button>
+            <input id="remote-volume" type="range" min="0" max="100" value="100" step="1" aria-label="Volume Kodi">
+            <output id="remote-volume-value">100 %</output>
+          </div>
         </section>
         <section id="remote-controls" class="remote-panel" hidden>
-          <div class="remote-dpad">
+          <div class="remote-touchpad-tabs" role="group" aria-label="Type de contrôle">
+            <button id="remote-mode-dpad" type="button" aria-pressed="true">Commandes</button>
+            <button id="remote-mode-touchpad" type="button" aria-pressed="false">Pavé tactile</button>
+          </div>
+          <div class="remote-touchpad" id="remote-touchpad" hidden role="button" tabindex="0" aria-label="Touchpad Kodi : glisser pour naviguer, toucher pour sélectionner">Glisser pour naviguer · toucher pour OK</div>
+          <div class="remote-dpad" id="remote-dpad">
             <span></span><button data-remote-action="up" aria-label="Haut">▲</button><span></span>
             <button data-remote-action="left" aria-label="Gauche">◀</button><button data-remote-action="select" aria-label="OK">OK</button><button data-remote-action="right" aria-label="Droite">▶</button>
             <span></span><button data-remote-action="down" aria-label="Bas">▼</button><span></span>
@@ -99,6 +112,21 @@ class KodiRemote {
     this.indicator.addEventListener('click',this.open);
     document.getElementById('remote-close').addEventListener('click',()=>this.dialog.close());
     document.getElementById('remote-connection').addEventListener('click',()=>this.reconnect());
+    document.getElementById('remote-wake').addEventListener('click',()=>void this.wake());
+    document.getElementById('remote-mute').addEventListener('click',()=>void this.setAudioProperty('set_mute',{muted:!this.muted}));
+    const volumeSlider=document.getElementById('remote-volume');
+    volumeSlider.addEventListener('pointerdown',()=>{this.volumeEditing=true;});
+    volumeSlider.addEventListener('input',()=>{
+      this.volumeEditing=true;
+      document.getElementById('remote-volume-value').textContent=volumeSlider.value+' %';
+    });
+    volumeSlider.addEventListener('change',()=>{
+      this.volumeEditing=false;
+      void this.setAudioProperty('set_volume',{volume:Number(volumeSlider.value)});
+    });
+    document.getElementById('remote-mode-dpad').addEventListener('click',()=>this.setTouchpadMode(false));
+    document.getElementById('remote-mode-touchpad').addEventListener('click',()=>this.setTouchpadMode(true));
+    this.bindTouchpad();
     document.getElementById('remote-tab-now').addEventListener('click',()=>this.showPage(0));
     document.getElementById('remote-tab-controls').addEventListener('click',()=>this.showPage(1));
     this.dialog.addEventListener('click',e=>{
@@ -142,6 +170,8 @@ class KodiRemote {
     // The HTTP endpoint remains authoritative even when the browser's WS
     // upgrade is blocked by a reverse proxy or fails after device sleep.
     this.clockInterval=setInterval(()=>{if(!document.hidden)this.updateClock();},500);
+    this.volumeInterval=setInterval(()=>{if(!document.hidden&&!this.volumeEditing)void this.refreshVolume();},5000);
+    void this.refreshVolume();
     this.refreshInterval=setInterval(()=>{
       if(!document.hidden) this.players.forEach(p=>this.refreshPlayer(p));
     },5000);
@@ -164,6 +194,7 @@ class KodiRemote {
       void this.refreshPlayer(this.player);
     }
     this.showPage(0);
+    void this.refreshVolume();
     if(!this.dialog.open)this.dialog.showModal();
     return true;
   }
@@ -179,6 +210,7 @@ class KodiRemote {
       this.openSocket(player);
     }
     this.setConnection();
+    void this.refreshVolume();
   }
   async refreshPlayer(player) {
     if(this.closed || !player)return;
@@ -217,6 +249,7 @@ class KodiRemote {
   }
   switchPlayer() {
     this.render(this.states.get(this.player?.id)||{active:false});
+    void this.refreshVolume();
     this.refreshChoices();
     this.setConnection();
   }
@@ -309,6 +342,8 @@ class KodiRemote {
       ready===false?'Kodi indisponible par HTTP JSON-RPC':
                     'Vérification de la connexion Kodi';
     select.setAttribute('aria-label',`Instance Kodi : ${select.title}`);
+    const wake=document.getElementById('remote-wake');
+    if(wake){wake.hidden=!this.player?.mac;wake.disabled=this.role!=='admin'||!this.player?.mac;}
     const indicator=document.getElementById('remote-connection');
     if(indicator) {
       indicator.textContent=!id?'Aucun lecteur configuré':
@@ -362,6 +397,80 @@ class KodiRemote {
     if(s.subtitles_enabled&&s.current_subtitle?.index!=null)subtitleSelect.value=String(s.current_subtitle.index);
     else subtitleSelect.value='off';
   }
+  async refreshVolume() {
+    if(!this.player)return;
+    const id=this.player.id;
+    try {
+      const status=await this.api('players/'+encodeURIComponent(id)+'/volume');
+      if(this.closed||this.player?.id!==id)return;
+      this.volume=Number(status.volume)||0;
+      this.muted=status.muted===true;
+      const slider=document.getElementById('remote-volume');
+      if(!this.volumeEditing){slider.value=String(this.volume);document.getElementById('remote-volume-value').textContent=this.volume+' %';}
+      const mute=document.getElementById('remote-mute');
+      mute.textContent=this.muted?'🔇':'🔊';
+      mute.setAttribute('aria-label',this.muted?'Réactiver le son':'Couper le son');
+      mute.disabled=this.role!=='admin';slider.disabled=this.role!=='admin';
+    } catch { /* Volume remains independent of playback and websocket state. */ }
+  }
+  async setAudioProperty(action,payload) {
+    if(this.role!=='admin'||!this.player)return;
+    try {
+      await this.api('players/'+encodeURIComponent(this.player.id)+'/remote',{
+        method:'POST',body:JSON.stringify({action,...payload})
+      });
+      await this.refreshVolume();
+    } catch(e){document.getElementById('remote-error').textContent=e.message;}
+  }
+  async wake() {
+    if(this.role!=='admin'||!this.player?.mac)return;
+    const button=document.getElementById('remote-wake');button.disabled=true;
+    try {
+      await this.api('players/'+encodeURIComponent(this.player.id)+'/wake',{method:'POST'});
+      document.getElementById('remote-error').textContent='Signal Wake-on-LAN envoyé.';
+    }catch(e){document.getElementById('remote-error').textContent=e.message;}
+    finally{button.disabled=false;}
+  }
+  setTouchpadMode(enabled) {
+    document.getElementById('remote-touchpad').hidden=!enabled;
+    document.getElementById('remote-dpad').hidden=enabled;
+    document.getElementById('remote-mode-dpad').setAttribute('aria-pressed',String(!enabled));
+    document.getElementById('remote-mode-touchpad').setAttribute('aria-pressed',String(enabled));
+  }
+  bindTouchpad() {
+    const pad=document.getElementById('remote-touchpad');
+    const direction=(dx,dy)=>Math.abs(dx)>Math.abs(dy)?(dx>0?'right':'left'):(dy>0?'down':'up');
+    pad.addEventListener('pointerdown',event=>{
+      if(event.button!==0)return;
+      this.touchpadStart={x:event.clientX,y:event.clientY};
+      this.touchpadDirection=null;
+      pad.setPointerCapture(event.pointerId);
+      clearInterval(this.touchpadTimer);
+    });
+    pad.addEventListener('pointermove',event=>{
+      if(!this.touchpadStart)return;
+      const dx=event.clientX-this.touchpadStart.x,dy=event.clientY-this.touchpadStart.y;
+      if(Math.hypot(dx,dy)<32)return;
+      const next=direction(dx,dy);
+      if(next!==this.touchpadDirection){
+        this.touchpadDirection=next;
+        clearInterval(this.touchpadTimer);
+        void this.command(next);
+        this.touchpadTimer=setInterval(()=>void this.command(next),230);
+      }
+    });
+    const end=()=>{
+      clearInterval(this.touchpadTimer);this.touchpadTimer=null;
+      if(this.touchpadStart&&!this.touchpadDirection)void this.command('select');
+      this.touchpadStart=null;this.touchpadDirection=null;
+    };
+    pad.addEventListener('pointerup',end);
+    pad.addEventListener('pointercancel',()=>{this.touchpadStart=null;this.touchpadDirection=null;clearInterval(this.touchpadTimer);});
+    pad.addEventListener('keydown',event=>{
+      const action={Enter:'select',' ':'select',ArrowUp:'up',ArrowDown:'down',ArrowLeft:'left',ArrowRight:'right'}[event.key];
+      if(action){event.preventDefault();void this.command(action);}
+    });
+  }
   time(seconds){let n=Math.max(0,Math.floor(seconds||0));const h=Math.floor(n/3600);n%=3600;return h?`${h}:${String(Math.floor(n/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`:`${Math.floor(n/60)}:${String(n%60).padStart(2,'0')}`;}
   async command(action, percentage, index, seconds) {
     if(this.role!=='admin'||!this.player)return;
@@ -377,7 +486,8 @@ class KodiRemote {
   }
   stop() {
     this.closed=true;
-    clearInterval(this.clockInterval);clearInterval(this.refreshInterval);
+    clearInterval(this.clockInterval);clearInterval(this.refreshInterval);clearInterval(this.volumeInterval);
+    clearInterval(this.touchpadTimer);
     this.timers.forEach(timer=>clearTimeout(timer));this.timers.clear();
     this.sockets.forEach(socket=>{socket.onclose=null;socket.close();});this.sockets.clear();
     if(this.onVisibility)document.removeEventListener('visibilitychange',this.onVisibility);
