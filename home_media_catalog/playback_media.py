@@ -174,6 +174,56 @@ def network_source(location: dict, relative: str, password: str, mounts: dict) -
     return RangeSource(f"location:{location.get('id')}:{relative}", length, opener)
 
 
+
+def onedrive_source(signed_url: str, key: str) -> RangeSource:
+    """Range-backed signed OneDrive download without exposing the URL to the browser.
+
+    The URL must originate from an authenticated Microsoft Graph metadata
+    request, never from a user-supplied query parameter.
+    """
+    from urllib.parse import urlsplit
+
+    parsed = urlsplit(signed_url)
+    hostname = (parsed.hostname or "").lower()
+    allowed = ("1drv.com", "sharepoint.com", "onedrive.com")
+    if (
+        parsed.scheme != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+        or not any(hostname == root or hostname.endswith("." + root) for root in allowed)
+    ):
+        raise HTTPException(502, "Untrusted OneDrive media download endpoint.")
+
+    timeout = httpx.Timeout(connect=12, read=50, write=8, pool=8)
+    try:
+        with httpx.Client(timeout=timeout, follow_redirects=True, trust_env=False) as client:
+            with client.stream(
+                "GET", signed_url,
+                headers={"Range": "bytes=0-0", "Accept-Encoding": "identity"},
+            ) as response:
+                if response.status_code != 206:
+                    raise HTTPException(502, "OneDrive did not support HTTP byte ranges.")
+                content_range = response.headers.get("Content-Range", "")
+                total = content_range.rsplit("/", 1)
+    except httpx.HTTPError as exc:
+        raise HTTPException(502, "Could not open the OneDrive media stream.") from exc
+    if len(total) != 2 or not total[1].isdigit() or int(total[1]) <= 0:
+        raise HTTPException(502, "OneDrive did not provide the file size.")
+
+    def opener(start: int, end: int) -> Iterator[bytes]:
+        with httpx.Client(timeout=timeout, follow_redirects=True, trust_env=False) as client:
+            with client.stream(
+                "GET", signed_url,
+                headers={"Range": f"bytes={start}-{end}", "Accept-Encoding": "identity"},
+            ) as response:
+                if response.status_code != 206:
+                    raise OSError(f"OneDrive returned HTTP {response.status_code} for a Range request")
+                yield from response.iter_bytes(512 * 1024)
+
+    return RangeSource(key, int(total[1]), opener)
+
+
 def kodi_source(vfs_url: str, auth: tuple[str, str] | None, key: str) -> RangeSource:
     """Range reader for Kodi's /vfs HTTP endpoint (credentials stay server-side)."""
     timeout = httpx.Timeout(connect=8, read=40, write=8, pool=8)
