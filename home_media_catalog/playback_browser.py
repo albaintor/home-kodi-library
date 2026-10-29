@@ -136,6 +136,8 @@ def _sync_browse(
                 "name": child.name,
                 "is_dir": child.is_dir(),
                 "size": child.stat().st_size if child.is_file() else 0,
+                "modified": child.stat().st_mtime,
+                "created": child.stat().st_ctime,
             }
             for child in folder.iterdir()
             if not child.is_symlink() and not child.name.startswith(".")
@@ -156,6 +158,8 @@ def _sync_browse(
                         "name": item.filename,
                         "is_dir": directory,
                         "size": 0 if directory else int(item.st_size),
+                        "modified": item.st_mtime,
+                        "created": getattr(item, "st_ctime", None),
                     }
                 )
                 if len(rows) >= 2000:
@@ -211,6 +215,8 @@ def _sync_browse(
                         "name": entry.name,
                         "is_dir": is_dir,
                         "size": 0 if is_dir else entry.stat().st_size,
+                        "modified": entry.stat().st_mtime,
+                        "created": entry.stat().st_ctime,
                     }
                 )
                 if len(rows) >= 2000:
@@ -426,6 +432,8 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                         "path": x["id"],
                         "is_dir": x.get("mimeType") == "application/vnd.google-apps.folder",
                         "size": int(x.get("size") or 0),
+                        "modified": x.get("modifiedTime"),
+                        "created": x.get("createdTime"),
                     }
                     for x in nodes
                 ]
@@ -442,6 +450,8 @@ async def cloud_browse(location: dict, path: str, store, encryption) -> list[dic
                         "path": x["id"],
                         "is_dir": "folder" in x,
                         "size": int(x.get("size") or 0),
+                        "modified": x.get("lastModifiedDateTime"),
+                        "created": x.get("createdDateTime"),
                     }
                     for x in response.json().get("value", [])
                 ]
