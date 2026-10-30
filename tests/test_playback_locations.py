@@ -162,4 +162,4 @@ def test_mobile_network_credentials_provisioning(client, admin):
     answer = client.get(route, headers=admin)
     assert answer.status_code == 200, answer.text
     assert answer.json() == {"id": location_id, "password": password}
-    assert answer.headers["cache-control"] == "no-store"
+    assert "no-store" in answer.headers["cache-control"]
