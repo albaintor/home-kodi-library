@@ -40,6 +40,28 @@ Collection-only catalogs do not require Kodi.
 
 
 
+### Automatic HTTPS pairing (no certificate management)
+
+The Docker server automatically creates a persistent self-signed TLS identity at
+`./data/tls/server.crt` and `./data/tls/server.key`. The existing web UI
+continues to run over HTTP on `PORT=8099`, and the native API adds
+`https://NAS:8443/` (configurable using `TLS_PORT`).
+
+From **Settings → iOS Pairing**, generate a short-lived code and scan its QR
+with **Scan secure HTTPS pairing QR** on the iPhone. The QR transfers the exact
+server certificate SHA-256 fingerprint through the camera; iOS validates the
+encrypted pairing exchange and retains the fingerprint in its device-only
+Keychain. No publicly trusted certificate, DNS name or CA installation is
+required.
+
+**Backwards compatibility:** old eight-digit HTTP pairing and saved HTTP
+connections continue working, but they do not establish a TLS pin or securely
+synchronize SMB/SFTP passwords and OneDrive credentials. Scan the QR to enable
+secure credential synchronization. Keep `./data/tls/` backed up: deletion or
+regeneration changes the pinned identity and requires re-pairing. Never expose
+the legacy HTTP port on the public Internet. Private NAS addresses still need
+VPN/routing for off-LAN access.
+
 ## Native iOS/iPadOS experience and AI search
 
 **Home Media Catalog for iOS/iPadOS** provides ordinary catalogue search **inside the main poster/list view** on iPhone and iPad. An optional sparkles action in the top toolbar opens a separate conversational AI search page when a configured server supports it. Search results and follow-up context remain available when returning from media details.
