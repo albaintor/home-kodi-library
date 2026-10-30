@@ -107,7 +107,7 @@ unchanged synopses. Watched-state changes do not affect embedding text. A modifi
 or personal rating now does: only that work needs a new embedding. A personal
 rating edited via the API requests an asynchronous refresh.
 
-An administrator can set **Monthly OpenAI spending cap (USD)** in the Web or
+An administrator can set **Monthly AI spending cap (USD)** in the Web or
 iOS AI settings (default **$5.00/month**; **$0** blocks all paid calls).
 The cap is enforced before outbound OpenAI requests — including automatic
 indexing, natural-language interpretation, embedding queries, relevance
