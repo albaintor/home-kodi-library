@@ -1,56 +1,68 @@
-# AI catalogue search — structured filters, semantic retrieval and conversational refinement
+# AI catalogue search — OpenAI, Claude, Gemini and optional semantic retrieval
 
 Home Media Catalog works without an AI provider. Normal SQLite FTS5/title search
 is never disabled, and configuration and index files are not part of JSON backups.
 
-## Server setup
+## Choose one AI provider (server setup)
 
-An administrator opens **Settings → Recherche intelligente · IA** (web) or
-**Settings → AI search** (iOS), enters:
+The server supports **OpenAI**, **Anthropic Claude** and **Google Gemini**.
+Both web and iOS clients use a single configured **language model** at any
+given time. You do not need parallel language-model API calls. Normal
+catalogue search and media browsing work without an AI provider.
 
-- The OpenAI text model (default `gpt-4o-mini`), for extracting validated filters
-  and carrying out follow-up refinements.
-- The OpenAI embeddings model (default `text-embedding-3-small`), for semantic
-  similarity between prompts and media descriptions.
-- An OpenAI API key, only if AI search is wanted.
+In **Settings → Artificial Intelligence** (web/iOS), an administrator selects:
 
-Both clients use the same server settings. The key is saved in
-`DATA_DIR/ai-settings.json` (permissions 0600) and never returned to clients.
-The vector index is stored in `DATA_DIR/ai-vectors.db`. These files can contain
-sensitive data (including descriptions); back them up securely, separately from
-the catalogue JSON export. Remote access should use HTTPS.
+1. The provider (`openai`, `anthropic` or `gemini`).
+2. A supported provider-specific language model ID and that provider's API key.
+3. An optional monthly estimated USD budget, which is enforced by the server
+   against supported model rates.
 
-**Privacy**: A search transmits the user's prompt, context filters, and (when refining)
-metadata for the current candidate titles, together with the
-catalogue's available genre/format values to OpenAI. Vector indexing explicitly sends **titles, genres, film/series summaries,
-individual episode synopses, credited cast/director/composer/writer names, and
-available general/personal ratings** to the configured OpenAI embeddings API,
-in batches. Vectors are stored locally
-on the server. Do not enable this feature if transferring those descriptions
-to a third party is unacceptable. No Kodi database password or API token is
-sent as part of those requests.
+The server keeps provider keys in `DATA_DIR/ai-settings.json`
+(permissions 0600) and does not return them to clients. It retains previously
+configured provider keys when switching providers; clearing one selected
+provider's key does not delete the others. Provider availability, model
+access and pricing must be checked with the respective service.
 
-## Choosing the AI models
+### Retrieval depends on the selected provider
 
-The web and iOS settings use guided selectors, with a custom-model option to
-support future OpenAI releases and preserve existing configurations.
+| Selected language model | Local retrieval / optional remote calls | Embeddings |
+| --- | --- | --- |
+| **OpenAI** | Validated filter plan, SQLite FTS5 + OpenAI semantic vector ranking + language-model relevance verification | OpenAI `text-embedding-3-small` or other supported OpenAI embedding model; persistent index |
+| **Claude** | Model-generated filter plan and retrieval terms, local FTS5/metadata candidate lookup and selected Claude model relevance verification | No new remote embeddings required; existing OpenAI vectors preserved but **not used** for Claude results |
+| **Gemini** | Model-generated filter plan and retrieval terms, local FTS5/metadata candidate lookup and selected Gemini model relevance verification | No new remote embeddings required; existing OpenAI vectors preserved but **not used** for Gemini results |
 
-- **Language model**: translates the user's request into structured filters,
-  explains them and preserves previous constraints in multi-turn searches.
-  `gpt-6-luna` is the recommended economical option; `gpt-6.1-sol` is an
-  advanced, more expensive choice. Existing `gpt-4o-mini` configurations
-  remain selectable for compatibility.
-- **Embedding model**: encodes the titles and synopses of individual films,
-  series and episodes into vectors for similarity matching. Prefer
-  `text-embedding-3-small` (USD 0.02 per million input tokens at the time of
-  writing). `text-embedding-3-large` can improve similarity quality but costs
-  USD 0.13 per million input tokens. These are separate API calls from the
-  language model.
+The **OpenAI** semantic index is stored in `DATA_DIR/ai-vectors.db`.
+Changing the language provider does **not** delete or re-embed the index.
+When switching back to OpenAI with the same embedding model, stored vectors
+can be reused. Changing the embedding model requires indexing its distinct
+vector space. The application selects **one** language model; the separate
+embedding endpoint is an optional retrieval feature, not a second
+conversational language model.
 
-Changing **only** the language model needs no reindexing. Changing the embedding
-model uses a different vector space, so the semantic index must be built for
-that model. If an existing configuration uses a custom model ID, clients
-preserve it rather than silently substituting a preset.
+### Privacy and budget disclosures
+
+A provider-based search sends the current prompt and filter context to the
+selected API. Candidate validation can send metadata from the local catalogue
+(including title, genre, plot/synopsis, cast/director/composer/writer credits and
+ratings) to the selected provider. **Only OpenAI embedding mode** sends
+catalogue metadata and episode synopses to the embeddings endpoint for
+indexing; these vectors remain on the self-hosted server. Do not enable
+cloud AI if that data transfer is unacceptable.
+
+No Kodi/MariaDB password or server authentication token is intentionally
+sent to the language provider as part of a search. The OpenAI index and
+provider keys are outside the catalogue JSON backup; back up such files
+securely if needed. Use HTTPS or a trusted VPN for remote server access.
+
+The `/api/v1/ai/usage` dashboard estimates cost and reserves requests against
+the locally configured monthly cap for listed models. Unsupported custom
+model pricing is not treated as free; an unpriced model may be rejected.
+**This is not a provider billing cap**, and estimates exclude taxes, other
+usage, and pricing or billing-plan differences.
+
+The sections below describe **OpenAI hybrid semantic indexing** unless
+otherwise specified. Claude/Gemini users do not need to build the OpenAI
+embedding index to perform the model-assisted local search.
 
 ## Indexing
 
@@ -122,13 +134,15 @@ rather than bypassing the cap. The ledger is held locally in
 
 - `GET /api/v1/ai/status`: configured state, model IDs, index status.
 - `GET /api/v1/ai/settings`: same fields, administrator only.
-- `PUT /api/v1/ai/settings`: administrator only. Payload example
-  `{"model":"gpt-4o-mini","embedding_model":"text-embedding-3-small","api_key":"…"}`.
+- `PUT /api/v1/ai/settings`: administrator only. Example for OpenAI:
+  `{"provider":"openai","model":"gpt-4o-mini","embedding_model":"text-embedding-3-small","api_key":"…"}`.
+  For Claude or Gemini, select the provider and its language model; the
+  embedding model is not required for those modes.
   Omit the key to preserve it or use `clear_api_key:true` to disable AI.
-- `POST /api/v1/ai/connection/test`: administrator-only live test of the
-  saved OpenAI language model (Responses API structured JSON output) and the
-  embeddings model. Two small billable requests are made. Returns separate
-  `language` and `embedding` status objects with safe error codes such as
+- `POST /api/v1/ai/connection/test`: administrator-only live provider test of
+  the selected language model; OpenAI hybrid mode can separately test the
+  embeddings model. Tests can incur billable requests. Returns safe status
+  objects and error codes such as
   `invalid_key`, `model_unavailable`, or `quota_or_rate_limit`. Never returns
   the token or raw upstream error body.
 - `POST /api/v1/ai/index/refresh`: administrator-only incremental full scan.
@@ -247,9 +261,10 @@ A media detail now first retrieves the local server resource directly with
 delay the first display for seconds. Users can still explicitly refresh
 TMDB metadata from the detail view.
 
-To verify credentials on Web or iOS, save both model choices and the key,
-then select **Test OpenAI connection**. Each model is validated
-independently; a valid key alone does not guarantee quota or model access.
+To verify credentials on Web or iOS, save the selected provider,
+language model and API key, then run the available connection test.
+OpenAI semantic mode additionally checks its configured embeddings model.
+A valid key does not guarantee availability, quota or model access.
 
 ## Search precision and verified relevance
 
