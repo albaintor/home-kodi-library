@@ -16,15 +16,16 @@ Protocol-specific properties are stored in the server's SQLite database
 For SMB and NFS, `hostname` is an optional **Kodi path alias**; `host`
 remains the actual IP address/network target used for connections. Passwords, when provided,
 are encrypted server-side using Fernet. The API only returns `has_password`.
-The iOS app does **not** cache server secrets for offline use.
+Paired administrator iOS devices can now provision server-owned SMB, FTP and
+SFTP passwords through a dedicated endpoint over HTTPS. The app stores them
+only in its device-only Keychain, not in the cached location JSON or logs.
 Updating a source without a new password preserves the existing one.
 
-**Server-side SFTP authentication:** iOS credentials are stored separately in the
-phone's Keychain and are **not** transferred to the Docker server. A source
-added or synchronized from iOS may therefore work on the phone but fail when
-browsed in the web interface. In **Settings → Network and cloud**, edit that
-source and supply its SSH username and password. The server currently uses
-password authentication for SFTP, not SSH agent or private-key authentication.
+**Server-side SFTP authentication:** password changes submitted from iOS while
+the paired server is connected over HTTPS are also encrypted server-side.
+Existing iOS-only Keychain secrets are not exported silently until the source
+is saved or an offline edit is replayed. The server uses password authentication
+for SFTP, not SSH agent or private-key authentication.
 Missing/rejected server credentials return HTTP 409 with an actionable error.
 The server's SSH host-key pin is stored in `/data/ssh/known_hosts`.
 
@@ -64,8 +65,11 @@ From either the web interface or iOS, select
 **OneDrive → Connect without a domain**. The server requests a temporary
 code from Microsoft; the user enters it at
 `https://microsoft.com/devicelogin`, and the interface polls at the interval
-specified by Microsoft. Tokens are encrypted on the NAS and never sent
-to the browser or phone.
+specified by Microsoft. Tokens are encrypted on the NAS. For a paired administrator iPhone using
+HTTPS, a public-client OneDrive grant can additionally be provisioned to the
+iPhone Keychain for direct Microsoft Graph browsing and playback. Tokens never
+appear in ordinary location lists, web browser authorization responses or
+portable catalogue backups.
 
 The NAS needs **outbound Internet access**; no incoming port needs to be
 opened. An in-progress verification does not survive a server restart.
@@ -112,10 +116,12 @@ makes one available, and individual **Reconnect** / **Disconnect** controls.
 
 On **iOS**, open **Cloud services → provider → Add another account**.
 Server-managed accounts are available to the web client and iOS devices
-connected to that server. Accounts **authorized directly on the iPhone**
-are separate: their credentials are stored per account in the iOS Keychain
-and are not shared with the server. Existing native authorizations remain
-recognizable after upgrading the app.
+connected to that server. Public-client accounts authorized through the server can be copied per
+location to the iOS Keychain for direct access; standalone iOS-only OAuth
+accounts remain separate unless explicitly connected through the server.
+A confidential-client web authorization cannot be transferred without its
+client secret: reauthorize that account using the public device-code flow
+to enable direct iOS access.
 
 ## Hybrid architecture (iOS and web)
 
@@ -123,15 +129,17 @@ recognizable after upgrading the app.
   centralized on the server and cached on the device for standalone use.
   If the locations API is not yet deployed (HTTP 404), iOS stores new
   descriptors locally and queues them for later synchronization.
-- **Passwords entered on iOS** remain in the iPhone Keychain. They are
-  **not** sent as part of synchronized source descriptors. The server
-  may store a **different credential** in its encrypted database,
-  entered independently via its web settings.
-- **iOS OneDrive (recommended server-managed route):** the server uses
-  Microsoft's Device Code flow without a public domain or redirect.
-  The app displays the code, the user grants `Files.Read`, and iOS
-  polls the server at the specified interval. Browsing and streaming
-  then use authenticated API endpoints and temporary HTTP Range tickets.
+- **Network passwords** remain outside synchronized source descriptors.
+  When connected through HTTPS, an iOS edit sends the secret separately
+  for encrypted storage on the server; an administrator iPhone can provision
+  saved server credentials into the local device-only Keychain.
+  When the API is unavailable, the last cache and Keychain values survive.
+- **iOS OneDrive (recommended server-managed route):** Microsoft device-code
+  authorization is performed once. A paired administrator iPhone on HTTPS
+  can copy the same public-client OAuth authorization into its Keychain,
+  then browse Microsoft Graph and stream directly from OneDrive without
+  proxying bytes through the NAS. Token refreshes are serialized per iOS
+  account. Other clients may still use server proxy/ticket fallback.
 - **Optional OneDrive HTTPS OAuth:** the server can also use a registered
   HTTPS callback when one is configured; Device Code is recommended.
 - **Standalone iOS OneDrive:** direct Microsoft Graph connections require
@@ -144,7 +152,20 @@ recognizable after upgrading the app.
   `Files.Read` permission in Microsoft Entra. No client secret or public
   HTTPS redirect is required for Device Code sign-in.
 
-**Current limitation:** a saved descriptor does not guarantee the NAS
-grants read access. NFS and SMB require reachable servers and valid exports,
+**Current limitation:** a saved descriptor or a password does not guarantee
+that the destination is reachable from the iPhone. The exact same direct
+connector is used on and off the home network, so private IP/hostname
+destinations require suitable network routing (for example, VPN).
+Credentials are only provisioned from the server over HTTPS.
+
+A missing or temporarily unreachable server does not erase the previously
+cached server location list, server cloud account display state, or Keychain.
+The direct network and OneDrive connectors can work without a server API.
+The admin-only provisioning endpoints are
+`GET /api/v1/playback/locations/{id}/device-credentials` and
+`GET /api/v1/playback/cloud/{id}/device-credentials`. Both return
+`Cache-Control: no-store`, and regular source endpoints remain redacted.
+
+A saved descriptor does not guarantee that the NAS NFS and SMB require reachable servers and valid exports,
 shares and permissions. UPnP and unsupported cloud providers have no native
 browsing/streaming adapters.
