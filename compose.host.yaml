@@ -14,7 +14,7 @@ services:
       DATA_DIR: /data
       LIBRARY_BIND_ADDRESS: "${BIND_ADDRESS:-0.0.0.0}"
       LIBRARY_PORT: "${PORT:-8099}"
-      LIBRARY_PUBLIC_HTTP_PORT: "${PORT:-8099}"
+      LIBRARY_HTTP_PORT: "${PORT:-8099}"
       TLS_BIND_PORT: "${TLS_PORT:-8443}"
       TLS_PUBLIC_PORT: "${TLS_PORT:-8443}"
     volumes:
