@@ -2207,9 +2207,9 @@ async function renderPlaybackNetworkSettings(){
     '<label data-network-field="share">Partage / dossier<input name="share" placeholder="Films"></label>'+
     '<label data-network-field="username">Utilisateur<input name="username" autocomplete="off"></label>'+
     '<label data-network-field="workgroup">Domaine / WORKGROUP<input name="workgroup" placeholder="WORKGROUP"></label>'+
-    '<label data-network-field="password">Mot de passe web<input name="password" type="password" autocomplete="new-password" placeholder="Vide : conserver"></label>'+
+    '<label data-network-field="password">Mot de passe serveur<input name="password" type="password" autocomplete="new-password" placeholder="Vide : conserver"></label>'+
     '<label data-network-field="target" class="wide">URL<input name="target" placeholder="https://nas.local/video.mp4"></label>'+
-    '<p class="hint wide">Pour les identifiants, privilégiez l’accès HTTPS au serveur Home Media Catalog. L’application iOS conserve indépendamment son mot de passe SMB dans son trousseau.</p>'+
+    '<p class="hint wide">Pour SFTP, renseignez un utilisateur et un mot de passe sur ce serveur : les identifiants du trousseau iOS ne sont pas synchronisés. Utilisez HTTPS pour accéder aux réglages web. Laisser le mot de passe vide conserve la valeur déjà enregistrée.</p>'+
     '<div class="wide connection-actions"><button type="submit" class="primary">Enregistrer l’emplacement</button>'+
     '<button type="button" class="secondary" data-network-reset>Nouvel emplacement</button></div>'+
     '<p id="playback-network-web-result" class="wide" role="status" aria-live="polite"></p>'+
@@ -2249,7 +2249,7 @@ async function renderPlaybackNetworkSettings(){
       '<div class="connection-card"><div><strong>'+esc(loc.name)+'</strong>'+
       '<p class="hint">'+esc(loc.kind.toUpperCase())+' · '+esc(loc.target||loc.host||'')+
       (loc.hostname?' · Nom d’hôte Kodi : '+esc(loc.hostname):'')+
-      (loc.has_password?' · Mot de passe enregistré':'')+'</p></div>'+
+      (loc.has_password?' · Mot de passe serveur enregistré':loc.kind==='sftp'?' · Mot de passe serveur manquant':'')+'</p></div>'+
       '<div class="connection-actions">'+
       '<button type="button" data-network-edit="'+esc(loc.id)+'">Modifier</button>'+
       '<button type="button" class="secondary" data-network-delete="'+esc(loc.id)+'">Supprimer</button>'+
