@@ -1,6 +1,7 @@
 """Bearer clients, private browser sessions and a distinct trusted ingress credential."""
 
 import hashlib
+import os
 import secrets
 import time
 from collections import defaultdict, deque
@@ -53,6 +54,10 @@ class Auth:
         try:
             peer = address(request.client.host) if request.client else None
             if peer is None:
+                return False
+            # A TLS relay connects to FastAPI from loopback. Do not treat
+            # every remote HTTPS client as a locally trusted administrator.
+            if os.getenv("HMC_TLS_RELAY_ACTIVE") == "1" and peer.is_loopback:
                 return False
             if trusted(peer):
                 forwarded = request.headers.getlist("x-forwarded-for")
