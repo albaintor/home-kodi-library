@@ -57,7 +57,7 @@ class Auth:
                 return False
             # A TLS relay connects to FastAPI from loopback. Do not treat
             # every remote HTTPS client as a locally trusted administrator.
-            if os.getenv("HMC_TLS_RELAY_ACTIVE") == "1" and peer.is_loopback:
+            if os.getenv("HMC_TLS_RELAY_ACTIVE") == "1" and peer == ip_address("127.0.0.2"):
                 return False
             if trusted(peer):
                 forwarded = request.headers.getlist("x-forwarded-for")
