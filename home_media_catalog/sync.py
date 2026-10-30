@@ -32,7 +32,8 @@ class SyncManager:
         # Prefer the last player that delivered a complete snapshot for each source.
         self.last_reachable_kodi_players: dict[str, str] = {}
 
-    async def submit(self, source_id: str, xml: bytes | None = None) -> dict[str, Any]:
+    async def submit(self, source_id: str, xml: bytes | None = None, *,
+                     mariadb_only: bool = False) -> dict[str, Any]:
         if source_id in self.active:
             raise BusyError("An import or synchronization is already running for this source.")
         source = await asyncio.to_thread(self.store.source, source_id, private=True)
@@ -42,6 +43,12 @@ class SyncManager:
             raise ValueError("Collection sources are refreshed by uploading an XML export.")
         if xml is not None and source["type"] not in COLLECTION_TYPES:
             raise ValueError("XML imports require a collection source.")
+        if mariadb_only and (xml is not None or source["type"] != "kodi"):
+            raise ValueError("MariaDB-only refresh is available for Kodi sources only.")
+        if mariadb_only and not (
+            source["config"].get("host") and source["config"].get("username")
+        ):
+            raise ValueError("Configure a MariaDB host and username before refreshing without Kodi.")
         if not source["enabled"]:
             raise ValueError("Enable the source before synchronizing it.")
         # No await between checking again and claiming the source.
@@ -57,7 +64,7 @@ class SyncManager:
         except Exception:
             self.active.remove(source_id)
             raise
-        task = asyncio.create_task(self._run(job, source, xml))
+        task = asyncio.create_task(self._run(job, source, xml, mariadb_only=mariadb_only))
         self.tasks.add(task)
         task.add_done_callback(self.tasks.discard)
         return job
@@ -211,6 +218,7 @@ class SyncManager:
         scan_triggered: bool = False,
         scan_info: dict | None = None,
         offline_player_ids: set[str] | None = None,
+        mariadb_only: bool = False,
     ):
         try:
             await asyncio.to_thread(self.store.start_job, job["id"])
@@ -250,7 +258,9 @@ class SyncManager:
                         "leurs fichiers supplémentaires. Configurez le repli MariaDB "
                         "pour les préserver ; le catalogue reste inchangé."
                     )
-                prefer_sql = protected_versions and mariadb_available
+                # A catalog-only refresh requested by iOS can read the NAS
+                # database directly, even when no Kodi instance exists.
+                prefer_sql = mariadb_available and (protected_versions or mariadb_only)
                 preferred_player = self.last_reachable_kodi_players.get(source["id"])
                 ordered_candidates = sorted(
                     candidates, key=lambda player: player["id"] != preferred_player
@@ -330,7 +340,7 @@ class SyncManager:
                 result.update(scan_info)
             if xml is None:
                 result["import_method"] = transport
-                if prefer_sql:
+                if protected_versions and prefer_sql:
                     result["edition_protection"] = "mariadb"
             if database:
                 result["database"] = database
