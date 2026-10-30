@@ -1709,6 +1709,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, "Unknown playback location.") from None
 
     @app.get(
+        API + "/playback/locations/{location_id}/device-credentials",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def playback_device_credentials(location_id: str, response: Response):
+        """Admin-only provisioning for a paired native device's Keychain."""
+        location = store.playback_location(location_id)
+        if not location:
+            raise HTTPException(404, "Unknown playback location.")
+        if location["kind"] not in {"smb", "ftp", "sftp"}:
+            raise HTTPException(422, "This protocol has no network password.")
+        password = _credentials(store, cloud_auth, location_id)
+        response.headers["Cache-Control"] = "no-store"
+        return {"id": location_id, "password": password}
+
+    @app.get(
         API + "/playback/discovery",
         dependencies=[Depends(authenticated)],
         tags=["Playback"],
@@ -1816,6 +1832,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return item
 
         return await asyncio.gather(*(with_account_email(item) for item in locations))
+
+    @app.get(
+        API + "/playback/cloud/{location_id}/device-credentials",
+        dependencies=[Depends(writable)],
+        tags=["Playback"],
+    )
+    def playback_cloud_device_credentials(location_id: str, response: Response):
+        """Share only public-client OneDrive grants usable without a client secret."""
+        location = store.playback_location(location_id)
+        if not location or location["kind"] != "onedrive":
+            raise HTTPException(404, "Unknown OneDrive location.")
+        saved = store.playback_cloud_credentials(location_id)
+        if not saved or saved["provider"] != "onedrive":
+            raise HTTPException(409, "OneDrive account not connected.")
+        try:
+            token = json.loads(cloud_auth.decrypt_secret(saved["token_cipher"]))
+        except (ValueError, TypeError, KeyError, UnicodeError):
+            raise HTTPException(409, "OneDrive token is unavailable.") from None
+        client_id = token.get("_hkl_client_id")
+        if not client_id or not token.get("refresh_token") or not token.get("access_token"):
+            raise HTTPException(
+                409, "This OneDrive account uses confidential web authorization. "
+                "Connect the account on the iPhone or use public device authorization."
+            )
+        response.headers["Cache-Control"] = "no-store"
+        return {
+            "id": location_id,
+            "client_id": client_id,
+            "access_token": token["access_token"],
+            "refresh_token": token["refresh_token"],
+            "expires_at": float(token.get("expires_at") or 0),
+        }
 
     @app.post(
         API + "/playback/cloud/{location_id}/device/start",
