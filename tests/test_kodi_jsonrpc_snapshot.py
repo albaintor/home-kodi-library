@@ -270,7 +270,8 @@ def test_sync_uses_mariadb_when_all_jsonrpc_players_fail(store):
 
 
 
-def test_mariadb_only_catalogue_refresh_without_kodi_instance(store):
+@pytest.mark.parametrize("mariadb_only", [False, True])
+def test_mariadb_only_catalogue_refresh_without_kodi_instance(store, mariadb_only):
     """An iOS pull can update the SQL snapshot without any configured Kodi player."""
     from home_media_catalog.connectors.base import Record
     from home_media_catalog.sync import SyncManager
@@ -296,7 +297,7 @@ def test_mariadb_only_catalogue_refresh_without_kodi_instance(store):
     manager = SyncManager(store, settings=None)
 
     async def refresh():
-        job = await manager.submit(source_id, mariadb_only=True)
+        job = await manager.submit(source_id, mariadb_only=mariadb_only)
         await asyncio.gather(*manager.tasks)
         return store.job(job["id"])
 
