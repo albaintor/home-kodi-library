@@ -587,5 +587,5 @@ def test_one_drive_public_grant_is_available_to_paired_admin(client, admin):
     assert result.json()["refresh_token"] == "public-refresh"
     assert result.json()["client_id"] == "145e06bb-b35b-4d96-8cf8-4077cd5e5528"
     assert "public-refresh" not in client.get(
-        "/api/v1/playback/cloud/status", headers=admin
+        "/api/v1/playback/locations", headers=admin
     ).text
