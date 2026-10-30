@@ -135,3 +135,31 @@ def test_sftp_server_password_is_encrypted_and_kept_on_descriptor_updates(client
     assert updated.status_code == 200, updated.text
     assert updated.json()["has_password"] is True
     assert "private-test-password" not in updated.text
+
+
+def test_mobile_network_credentials_provisioning(client, admin):
+    """Ordinary source lists redact passwords; only admins can provision a device."""
+    from conftest import READ
+
+    endpoint = "/api/v1/playback/locations"
+    password = "ios-device-only-test"
+    created = client.post(
+        endpoint, headers=admin,
+        json={
+            "name": "Mobile SMB", "kind": "smb",
+            "target": "smb://nas/Movies", "username": "media",
+            "password": password,
+        },
+    )
+    assert created.status_code == 201, created.text
+    location_id = created.json()["id"]
+    route = f"{endpoint}/{location_id}/device-credentials"
+    assert password not in client.get(endpoint, headers=admin).text
+    assert client.get(route).status_code == 401
+    assert client.get(
+        route, headers={"Authorization": f"Bearer {READ}"}
+    ).status_code == 403
+    answer = client.get(route, headers=admin)
+    assert answer.status_code == 200, answer.text
+    assert answer.json() == {"id": location_id, "password": password}
+    assert answer.headers["cache-control"] == "no-store"
