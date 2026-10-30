@@ -2,6 +2,40 @@
 
 [← Overview](../README.md) · [Install the server](installation.md)
 
+## Current development features (October 2026)
+
+The native client and server/web application are developed separately. Availability
+depends on the checked-out branch, server compatibility, network source and device.
+
+- **AI:** choose OpenAI, Anthropic Claude or Google Gemini as the single language
+  model provider on a compatible server. OpenAI keeps its existing hybrid
+  embedding/FTS search; switching to Claude or Gemini uses local full-text
+  and metadata candidate retrieval with language-model relevance validation.
+  Switching providers does not delete the stored OpenAI vector index.
+  [Provider setup and data disclosure](ai-search.md).
+- **Native remote explorer:** SMB/NFS/FTP/SFTP and OneDrive where configured;
+  source-dependent streaming, recursive file search and context actions such
+  as rename, copy, move and delete. File-modification permissions depend on
+  standalone/server mode and the source. OneDrive remains read-oriented for
+  these operations. The browser does not inherit the iOS app's local credentials
+  or administrative capabilities automatically.
+- **Disc images and folders (native development branch):** Blu-ray ISO title
+  selection, DVD `VIDEO_TS.IFO` / `VTS_XX_0.IFO` exploration, and BDMV
+  `index.bdmv` or `BDMV` directory playlist inspection. Playlists can be
+  sorted by calculated duration. Simple, single-clip BDMV playlists may stream
+  directly; authored clip IN/OUT points, multi-clip playlists, seamless branching,
+  menus and angles need more complete `libbluray` navigation. The new paths
+  have **not** passed a device-level validation gate.
+- **Native MEMC (experimental):** 48/60 fps frame interpolation with
+  VideoToolbox and Metal/Vision alternatives; coarse-to-fine block motion,
+  occlusion rejection and conservative local panorama correction are under
+  active development. The prior crash-prone global panorama dispatch remains
+  disabled. This is not SVPflow or RIFE; successful performance and artefact
+  parity are **not** asserted.
+- **Licence transparency:** see [third-party software, LGPL obligations and
+  release checks](../THIRD_PARTY_NOTICES.md). An experimental dynamic-FFmpeg
+  dependency does not make every transitive library App Store compliant.
+
 ## Full feature list
 
 - Title and original-title search remains available. **Home Media Catalog iOS 1.2 build 8 enables advanced search by default** (with a one-time migration of older saved defaults), while users can still disable it in Filters and sorting. Advanced search covers synopses, genres, collections, cast and credits. Multiword person names such as **John Williams** are matched against the exact normalized credit-name index where available, avoiding false positives from independent tokens in unrelated metadata. If no credit is indexed, capitalized names fall back to adjacent FTS phrase matching; ordinary keyword searches still support flexible AND matching and prefix typing.
