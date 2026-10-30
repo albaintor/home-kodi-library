@@ -63,3 +63,53 @@ def test_first_use_pins_host_key_and_rejects_changed_key(tmp_path, monkeypatch):
     restored = paramiko.HostKeys()
     restored.load(str(pinned))
     assert restored.lookup(host)[original.get_name()] == original
+
+
+@pytest.mark.parametrize(
+    ("username", "password"),
+    [("", "secret"), ("user", "")],
+)
+def test_sftp_missing_server_credentials_returns_actionable_conflict(
+    tmp_path, monkeypatch, username, password
+):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+    def unexpected_connection():
+        raise AssertionError("SSH must not connect without server credentials")
+
+    monkeypatch.setattr(paramiko, "SSHClient", unexpected_connection)
+    location = {"host": "192.168.1.10", "username": username, "kind": "sftp"}
+    with pytest.raises(HTTPException) as error:
+        _sftp_connection(location, password)
+
+    assert error.value.status_code == 409
+    assert "server-side username and password" in error.value.detail
+    assert "iOS" in error.value.detail
+    assert "secret" not in error.value.detail
+
+
+def test_rejected_sftp_password_returns_actionable_error(tmp_path, monkeypatch):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("DATA_DIR", str(tmp_path))
+
+    class RejectingSSH(_SimulatedSSH):
+        closed = False
+
+        def connect(self, **kwargs):
+            raise paramiko.AuthenticationException("Authentication failed")
+
+        def close(self):
+            self.closed = True
+
+    session = RejectingSSH()
+    monkeypatch.setattr(paramiko, "SSHClient", lambda: session)
+    with pytest.raises(HTTPException) as error:
+        _sftp_connection({"host": "192.168.1.10", "username": "user"}, "secret")
+
+    assert error.value.status_code == 409
+    assert "server-side username" in error.value.detail
+    assert "secret" not in error.value.detail
+    assert session.closed
