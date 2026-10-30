@@ -221,18 +221,47 @@ def _sync_browse(
         try:
             folder = "/".join((prefix, relative)).strip("/")
             rows = []
-            for name, info in conn.mlsd(folder):
-                if name in (".", "..") or name.startswith("."):
-                    continue
-                rows.append(
-                    {
-                        "name": name,
-                        "is_dir": info.get("type") == "dir",
-                        "size": int(info.get("size") or 0),
-                    }
-                )
-                if len(rows) >= 2000:
-                    break
+            try:
+                # Materialize while the exception handler is active; MLSD is a
+                # lazy iterator and some NAS FTP servers return 500/502 here.
+                listing = conn.mlsd(folder)
+                for name, info in listing:
+                    if name in (".", "..") or name.startswith("."):
+                        continue
+                    if info.get("type", "").lower() in {"cdir", "pdir", "os.unix=slink"}:
+                        continue
+                    rows.append(
+                        {
+                            "name": name,
+                            "is_dir": info.get("type") == "dir",
+                            "size": int(info.get("size") or 0),
+                        }
+                    )
+                    if len(rows) >= 2000:
+                        break
+            except (ftplib.error_perm, ftplib.error_proto) as exc:
+                if not str(exc).startswith(("500", "501", "502", "504")):
+                    raise
+                # Many older FTP appliances expose LIST but not MLSD.
+                rows.clear()
+                lines = []
+                conn.retrlines("LIST " + folder, lines.append)
+                for line in lines:
+                    parts = line.split(maxsplit=8)
+                    if len(parts) != 9 or parts[0][:1] not in {"d", "-"}:
+                        continue
+                    name = parts[8]
+                    if not name or name in {".", ".."} or name.startswith("."):
+                        continue
+                    rows.append(
+                        {
+                            "name": name,
+                            "is_dir": parts[0].startswith("d"),
+                            "size": int(parts[4]) if parts[4].isdigit() else 0,
+                        }
+                    )
+                    if len(rows) >= 2000:
+                        break
             return rows
         finally:
             conn.quit()
