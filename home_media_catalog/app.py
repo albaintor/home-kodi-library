@@ -77,7 +77,6 @@ from .models import (
     MediaPage,
     PairingRedeem,
     PairingRequest,
-    PairingResult,
     PersonalInput,
     PlaybackLocationInput,
     PlaybackLocationView,
@@ -325,7 +324,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         import io
         import os
         from urllib.parse import urlencode
+
         import qrcode
+
         from .tls import fingerprint
 
         result = auth.start_pairing(request.role)
