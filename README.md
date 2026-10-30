@@ -4,7 +4,7 @@
 
 Home Media Catalog combines a responsive, self-hosted **web application** with a native **iOS/iPadOS app**. The iOS app can manage a catalogue **standalone, without installing a server**. A Docker server is optional for a shared catalogue, web access and AI features; it runs on Linux, macOS/Windows with Docker Desktop, a home server or a NAS.
 
-**Status (October 2026):** active development. Feature availability depends on the app version, media format and source configuration. See [iOS release preparation](#ios-release-preparation).
+**Status (30 October 2026):** active development. The server/web project and native iOS client have separate release schedules. Some iOS playback and disc-navigation features are being developed on a separate branch and have **not** passed device/Xcode Cloud validation. See [iOS release preparation](#ios-release-preparation).
 
 
 ## Highlights
@@ -15,7 +15,7 @@ Home Media Catalog combines a responsive, self-hosted **web application** with a
 - **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
 - **Play** supported Kodi video paths, locally saved files, network shares and OneDrive media on iPhone, subject to source connectivity, codecs and permissions.
 - **Access** your collection on iOS/iPadOS alone, or via a shared server and web interface.
-- **Search with AI (optional, server required)** using natural language, hybrid semantic/keyword matching over film, series and episode synopses, and conversational refinements.
+- **Search with AI (optional, server required)** using OpenAI, Anthropic Claude or Google Gemini. OpenAI retains its optional semantic/vector search; Claude and Gemini use the selected language model with local full-text/metadata retrieval and relevance checking. No parallel multi-model inference is required.
 - **Choose standalone or server mode:** in standalone mode the iOS app imports and synchronizes Kodi directly, without Docker. In server mode it synchronizes catalogue metadata with the server while Kodi remote commands are sent directly from the iPhone.
 
 Collection-only catalogs do not require Kodi.
@@ -44,32 +44,58 @@ Collection-only catalogs do not require Kodi.
 
 The current native Xcode project targets **iOS/iPadOS 18.0 or later**. Standalone catalogue import, browsing and direct Kodi remote control do not require the Docker server. AI search and shared web/iOS catalogue synchronization do require a compatible server.
 
-On the Web and iOS, user can select a language model (only OpenAI at this time) and embeddings
-model, securely save the AI key on the server. Indexed film, series and episode synopses and credited people power incremental
-semantic retrieval, including role-specific cast/director/composer searches,
-numeric rating filters, and matched episode season/number and plot excerpts.
-A cached in-memory HNSW index accelerates large vector collections.
-AI is entirely optional; no key or indexing is needed for ordinary browsing.
+The web and native iOS settings can select **one language-model provider at a time**:
+**OpenAI, Anthropic (Claude), or Google (Gemini)**. Credentials are configured
+on the self-hosted server. This does **not** require deploying multiple language
+models concurrently.
 
-AI receives the query and, during indexing, title/genre/plot metadata,
-credited actors/directors/composers/writers and available ratings to produce
-embeddings; the index and credentials remain on the self-hosted server.
+- **OpenAI:** optional hybrid search combines structured metadata filters,
+  SQLite full-text matches, OpenAI embeddings and the existing locally stored
+  HNSW vector index. Existing OpenAI vectors remain available after switching
+  providers; the provider change does not delete the index.
+- **Claude or Gemini:** the chosen language model interprets the query and
+  checks candidate relevance, using locally indexed titles, metadata, plots
+  and credits; this mode does **not** claim OpenAI-style vector embeddings
+  or semantic nearest-neighbour retrieval.
+- **All providers:** ordinary catalogue search works independently of AI.
+  Where AI is enabled, prompts and selected catalogue metadata are sent to
+  the selected provider, subject to its terms and rates. Review your provider's
+  privacy and billing settings. Model IDs and availability may change.
 
-To enable AI, open **Settings → Artificial Intelligence**. Configure the AI language
-model, embeddings model and API key, save, test both connections, and index
-your catalogue summaries. The monthly USD spending cap is configurable.
-The server stores the key; ordinary catalogue browsing does not require AI. See the
-[full setup, privacy and API guide](docs/ai-search.md).
+To configure AI, open **Settings → Artificial Intelligence**, choose a
+provider/model, save its credentials and test the connection. For OpenAI
+semantic search, build or refresh the optional embeddings index. Application
+budget settings are an estimate and do not replace provider-side spending
+limits. See the [AI setup and privacy guide](docs/ai-search.md).
+
+## What's new in the current development line
+
+| Area | Server / web | Native iOS / iPadOS |
+| --- | --- | --- |
+| **AI search** | OpenAI, Claude and Gemini; one selected language model; optional OpenAI embeddings retained | Configurable through compatible server settings; standard search remains local to the catalogue |
+| **Network explorer** | SMB, FTP, SFTP and mounted NFS sources, browser playback/remux/transcoding | SMB, NFS, FTP, SFTP, OneDrive; file browsing, search and source-dependent file operations |
+| **Playback** | Audio/subtitle/chapters, remux or FFmpeg conversion when needed | Native and PrismCore-assisted playback, offline files, media diagnostics, 48/60 fps experimental MEMC |
+| **Disc navigation** | Kodi library/catalogue entries | Blu-ray ISO title selection and DVD IFO title selection under development; **BDMV** playlist inspection and single-clip playback prototype on an unvalidated development branch |
+| **Access and synchronization** | Authenticated catalogue API, server backups, Kodi sync jobs | Standalone Kodi catalogue mode or optional paired server; source management and direct Kodi remote control |
+
+**Development caveat:** BDMV playlists with multiple M2TS clips, authored
+IN/OUT times, branching or angles are **not** yet supported by the direct-clip
+prototype. The intended solution is full `libbluray` directory navigation.
+The optical-flow MEMC uses a coarse-to-fine motion estimator and experimental
+local panorama compensation; it is **not SVPflow/RIFE**, and visual quality
+and stability have not been certified on an iPhone. These items are not
+guaranteed in a published App Store build.
+
+### Current server and client features
 
 
-## Recent playback and iOS features (October 2026)
 
 The project now includes **more than collection management**:
 
 - **Web video playback:** network location browser for SMB/FTP/SFTP and configured NFS mounts, HTTP Range streaming, thumbnails sampled from actual videos, and FFmpeg-powered progressive MP4 transcoding of selected non-browser-friendly formats. Browser formats, transcoding quality and seek behaviour depend on source, codec and server CPU.
 - **Cloud media:** OneDrive is currently the only supported integrated provider (including Device Code sign-in for private NAS deployments). Other cloud connectors are not exposed until supported. OneDrive OAuth tokens remain encrypted on the server. Apple's iCloud Drive remains accessible through **iOS Files**, not a server-side iCloud connector.
 - **Native iOS playback:** AVPlayer with an optional PrismCore/FFmpeg-assisted route, video technical information and offline video files. Importing from Files copies the selected file to app storage; it is not automatically a zero-copy third-party stream.
-- **Experimental iOS MEMC:** output targets of 48/60 fps using Apple VideoToolbox or Vision/Metal optical flow with artifact-protection settings. Not equivalent to SVPflow/RIFE; MEMC may produce artifacts, and **does not guarantee original Dolby Vision metadata preservation**. Native playback remains available with MEMC off.
+- **Experimental iOS MEMC:** 48/60 fps targets with Apple VideoToolbox and Vision/Metal optical-flow paths, coarse-to-fine block motion, local low-confidence panorama compensation and artifact-protection profiles in development. The formerly crash-prone global panorama GPU pass remains disabled. Not equivalent to SVPflow/RIFE; the MEMC path does **not guarantee original Dolby Vision dynamic metadata preservation**. Native playback remains available with MEMC off.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
 
@@ -86,7 +112,21 @@ The main collection context menu uses **Play on…** to choose a configured Kodi
 
 ### Technology credits
 
-Video playback uses third-party components, including [FFmpeg](https://ffmpeg.org/), [PrismCore](https://github.com/Wenzlik/PrismCore) and [MPVKit](https://github.com/Wenzlik/MPVKit). Their licences and documentation are available from the respective projects.
+Video playback uses third-party components including
+[FFmpeg](https://ffmpeg.org/),
+[PrismCore](https://github.com/Wenzlik/PrismCore),
+[MPVKit](https://github.com/Wenzlik/MPVKit),
+[AMSMB2](https://github.com/amosavian/AMSMB2),
+[NFSKit](https://github.com/alexiscn/NFSKit),
+[libnfs](https://github.com/sahlberg/libnfs) and
+[libbluray](https://www.videolan.org/developers/libbluray.html).
+Some components have **LGPL obligations**, including requirements relevant to
+linking, replacement, modification, attribution and corresponding source
+materials. The current iOS development configuration uses a
+[PrismCore adapter and dynamic FFmpeg builds](https://github.com/albaintor/ffmpeg-apple),
+but **dynamic FFmpeg alone does not establish application-wide compliance**.
+See [third-party licences, usage and release obligations](THIRD_PARTY_NOTICES.md)
+for component details and unresolved compliance checks.
 
 ## Get started
 
@@ -112,6 +152,7 @@ Video playback uses third-party components, including [FFmpeg](https://ffmpeg.or
 - [Home Assistant access](docs/home-assistant.md)
 - [REST API](docs/api.md) · [OpenAPI schema](docs/openapi-v1.json)
 - [Data model and backups](docs/model.md) · [Development and testing](docs/development.md)
+- [Third-party licences, component usage and distribution obligations](THIRD_PARTY_NOTICES.md)
 
 Home Media Catalog now includes an **optional network/cloud media browser and video playback workflow**. The browser can transcode some remote video formats with FFmpeg; this consumes server CPU and is not equivalent to direct/native playback. Native iOS playback uses AVPlayer and PrismCore. Use **HTTPS or a VPN** for remote access.
 
