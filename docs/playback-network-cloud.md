@@ -19,6 +19,16 @@ are encrypted server-side using Fernet. The API only returns `has_password`.
 The iOS app does **not** cache server secrets for offline use.
 Updating a source without a new password preserves the existing one.
 
+**Server-side SFTP authentication:** iOS credentials are stored separately in the
+phone's Keychain and are **not** transferred to the Docker server. A source
+added or synchronized from iOS may therefore work on the phone but fail when
+browsed in the web interface. In **Settings → Network and cloud**, edit that
+source and supply its SSH username and password. The server currently uses
+password authentication for SFTP, not SSH agent or private-key authentication.
+Missing/rejected server credentials return HTTP 409 with an actionable error.
+The server's SSH host-key pin is stored in `/data/ssh/known_hosts`.
+
+
 SMB, FTP, SFTP and NFS have separate read-only browsing adapters. Native
 NFS uses `libnfs14` in the server image and does **not** require an OS mount.
 Installations with an existing `PLAYBACK_NFS_MOUNTS` mapping keep their
