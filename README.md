@@ -1,6 +1,6 @@
 # <img src="home_media_catalog/static/cinema.svg" width="36" alt=""> Home Media Catalog
 
-**Bring your Kodi library and physical movie collection together.**
+**Your movie library, network videos and advanced playback — all in one place.**
 
 Home Media Catalog combines a responsive, self-hosted **web application** with a native **iOS/iPadOS app**. The iOS app can manage a catalogue **standalone, without installing a server**. A Docker server is optional for a shared catalogue, web access and AI features; it runs on Linux, macOS/Windows with Docker Desktop, a home server or a NAS.
 
@@ -13,7 +13,9 @@ Home Media Catalog combines a responsive, self-hosted **web application** with a
 - **Explore** movies, TV shows and episodes with posters, cast, formats, advanced filters and optional TMDB metadata.
 - **Organize** your collection using custom lists, personal ratings and watched status.
 - **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
-- **Play** supported Kodi video paths, locally saved files, network shares and OneDrive media on iPhone, subject to source connectivity, codecs and permissions.
+- **Stream across your network:** browse SMB, NFS, FTP and SFTP sources on iPhone/iPad, directly in standalone mode or with your own server; also access local files and OneDrive.
+- **Enjoy advanced video playback:** AVC/H.264, HEVC/H.265 and VC-1 where supported, selectable audio/subtitle tracks, multichannel audio including compatible Dolby Atmos, plus experimental 48/60 fps MEMC.
+- **Explore Blu-ray playback:** ISO images and BDMV folder structures are in development; complex disc navigation and playlists are not yet fully supported.
 - **Access** your collection on iOS/iPadOS alone, or via a shared server and web interface.
 - **Search with AI (optional, server required)** using OpenAI, Anthropic Claude or Google Gemini. OpenAI retains its optional semantic/vector search; Claude and Gemini use the selected language model with local full-text/metadata retrieval and relevance checking. No parallel multi-model inference is required.
 - **Choose standalone or server mode:** in standalone mode the iOS app imports and synchronizes Kodi directly, without Docker. In server mode it synchronizes catalogue metadata with the server while Kodi remote commands are sent directly from the iPhone.
@@ -73,8 +75,8 @@ limits. See the [AI setup and privacy guide](docs/ai-search.md).
 | Area | Server / web | Native iOS / iPadOS |
 | --- | --- | --- |
 | **AI search** | OpenAI, Claude and Gemini; one selected language model; optional OpenAI embeddings retained | Configurable through compatible server settings; standard search remains local to the catalogue |
-| **Network explorer** | SMB, FTP, SFTP and mounted NFS sources, browser playback/remux/transcoding | SMB, NFS, FTP, SFTP, OneDrive; file browsing, search and source-dependent file operations |
-| **Playback** | Audio/subtitle/chapters, remux or FFmpeg conversion when needed | Native and PrismCore-assisted playback, offline files, media diagnostics, 48/60 fps experimental MEMC |
+| **Network explorer** | SMB, FTP, SFTP and mounted NFS sources; browser playback/remux/transcoding | Direct SMB/NFS/FTP/SFTP connections in standalone or server-paired mode (reliability under validation), plus OneDrive; browsing and file operations |
+| **Playback** | Audio tracks, subtitles and chapters; remux or FFmpeg conversion | AVC/HEVC/VC-1 where supported, selectable tracks/subtitles, compatible Atmos audio, offline video and experimental 48/60 fps MEMC |
 | **Disc navigation** | Kodi library/catalogue entries | Blu-ray ISO title selection and DVD IFO title selection under development; **BDMV** playlist inspection and single-clip playback prototype on an unvalidated development branch |
 | **Access and synchronization** | Authenticated catalogue API, server backups, Kodi sync jobs | Standalone Kodi catalogue mode or optional paired server; source management and direct Kodi remote control |
 
@@ -94,7 +96,7 @@ The project now includes **more than collection management**:
 
 - **Web video playback:** network location browser for SMB/FTP/SFTP and configured NFS mounts, HTTP Range streaming, thumbnails sampled from actual videos, and FFmpeg-powered progressive MP4 transcoding of selected non-browser-friendly formats. Browser formats, transcoding quality and seek behaviour depend on source, codec and server CPU.
 - **Cloud media:** OneDrive is currently the only supported integrated provider (including Device Code sign-in for private NAS deployments). Other cloud connectors are not exposed until supported. OneDrive OAuth tokens remain encrypted on the server. Apple's iCloud Drive remains accessible through **iOS Files**, not a server-side iCloud connector.
-- **Native iOS playback:** AVPlayer with an optional PrismCore/FFmpeg-assisted route, video technical information and offline video files. Importing from Files copies the selected file to app storage; it is not automatically a zero-copy third-party stream.
+- **Native iOS playback:** AVPlayer plus an optional PrismCore/FFmpeg-assisted route for compatible AVC/H.264, HEVC/H.265 and VC-1 videos, track/subtitle selection, chapters, multichannel audio (including Dolby Atmos on compatible playback paths), technical diagnostics and offline files. Blu-ray ISO/BDMV support is experimental. Importing via Files copies the video to app storage; it is not a zero-copy third-party stream.
 - **Experimental iOS MEMC:** 48/60 fps targets with Apple VideoToolbox and Vision/Metal optical-flow paths, coarse-to-fine block motion, local low-confidence panorama compensation and artifact-protection profiles in development. The formerly crash-prone global panorama GPU pass remains disabled. Not equivalent to SVPflow/RIFE; the MEMC path does **not guarantee original Dolby Vision dynamic metadata preservation**. Native playback remains available with MEMC off.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
