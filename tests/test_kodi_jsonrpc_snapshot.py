@@ -267,3 +267,96 @@ def test_sync_uses_mariadb_when_all_jsonrpc_players_fail(store):
     assert completed["status"] == "completed", completed["error"]
     assert completed["result"]["import_method"] == "mariadb"
     assert probes == [("offline1", 3.0), ("offline2", 3.0)]
+
+
+
+def test_mariadb_only_catalogue_refresh_without_kodi_instance(store):
+    """An iOS pull can update the SQL snapshot without any configured Kodi player."""
+    from home_media_catalog.connectors.base import Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source(
+        {
+            "name": "NAS SQL library",
+            "type": "kodi",
+            "config": {"host": "nas", "username": "reader", "database": "MyVideos151"},
+        }
+    )["id"]
+    assert not [p for p in store.players() if p["source_id"] == source_id]
+
+    class FakeMariaDB:
+        def __init__(self, config, progress=None):
+            assert config["host"] == "nas"
+            self.database = "MyVideos151"
+            self.snapshot_report = {}
+
+        def fetch(self):
+            return [Record("movie:12", "movie", "SQL movie", identifiers={"tmdb": "12"})]
+
+    manager = SyncManager(store, settings=None)
+
+    async def refresh():
+        job = await manager.submit(source_id, mariadb_only=True)
+        await asyncio.gather(*manager.tasks)
+        return store.job(job["id"])
+
+    with (
+        patch("home_media_catalog.sync.KodiConnector", FakeMariaDB),
+        patch("home_media_catalog.sync.connection",
+              side_effect=AssertionError("No Kodi connection should be attempted")),
+        patch("home_media_catalog.sync.fetch_kodi_snapshot",
+              side_effect=AssertionError("No JSON-RPC snapshot should be fetched")),
+    ):
+        result = asyncio.run(refresh())
+
+    assert result["status"] == "completed", result["error"]
+    assert result["result"]["import_method"] == "mariadb"
+    assert store.source(source_id)["item_count"] == 1
+
+
+def test_failed_sql_only_refresh_keeps_existing_catalogue(store):
+    from home_media_catalog.connectors.base import ConnectorError, Record
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source({
+        "name": "NAS SQL library",
+        "type": "kodi",
+        "config": {"host": "nas", "username": "reader"},
+    })["id"]
+    store.apply_snapshot(source_id, [
+        Record("movie:12", "movie", "Existing film", identifiers={"tmdb": "12"})
+    ])
+
+    class FailingMariaDB:
+        def __init__(self, config, progress=None):
+            self.database = None
+
+        def fetch(self):
+            raise ConnectorError("MariaDB unavailable")
+
+    manager = SyncManager(store, settings=None)
+
+    async def refresh():
+        job = await manager.submit(source_id, mariadb_only=True)
+        await asyncio.gather(*manager.tasks)
+        return store.job(job["id"])
+
+    with patch("home_media_catalog.sync.KodiConnector", FailingMariaDB):
+        result = asyncio.run(refresh())
+
+    assert result["status"] == "failed"
+    assert "MariaDB unavailable" in result["error"]
+    assert store.source(source_id)["item_count"] == 1
+
+
+def test_mariadb_only_refresh_requires_sql_connection(store):
+    from home_media_catalog.sync import SyncManager
+
+    source_id = store.save_source({"name": "Kodi", "type": "kodi"})["id"]
+    manager = SyncManager(store, settings=None)
+
+    async def refresh():
+        await manager.submit(source_id, mariadb_only=True)
+
+    with pytest.raises(ValueError, match="MariaDB host and username"):
+        asyncio.run(refresh())
