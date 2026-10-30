@@ -128,3 +128,50 @@ def test_device_auth_survives_restart(client, admin, tmp_path):
         headers = {"Authorization": f"Bearer {token}"}
         assert restarted.get("/api/v1/auth/session", headers=headers).json()["role"] == "admin"
         assert restarted.get("/api/v1/status", headers=headers).status_code == 200
+
+
+def test_pinned_https_qr_keeps_legacy_eight_digit_pairing(client, admin, tmp_path):
+    """The secure QR is additive: historical HTTP redemption still works."""
+    import base64
+    from urllib.parse import parse_qs, urlsplit
+
+    from home_media_catalog.tls import ensure_certificate, fingerprint
+
+    start = client.post("/api/v1/pairing/start", headers=admin, json={"role": "admin"})
+    assert start.status_code == 200, start.text
+    data = start.json()
+    assert len(data["code"]) == 8 and data["code"].isdigit()
+    assert data["https_url"].startswith("https://")
+    assert len(data["fingerprint"]) == 64
+    assert base64.b64decode(data["qr_png"]).startswith(b"\\x89PNG\\r\\n\\x1a\\n")
+    saved = fingerprint(tmp_path)
+    assert saved == data["fingerprint"]
+    cert, key = ensure_certificate(tmp_path)
+    assert cert.is_file() and key.is_file()
+    assert fingerprint(tmp_path) == saved
+
+    # The existing eight-digit HTTP endpoint remains unchanged.
+    paired = client.post(
+        "/api/v1/pairing/redeem",
+        json={"code": data["code"], "device_name": "Old HTTP iPhone"},
+    )
+    assert paired.status_code == 200, paired.text
+    assert paired.json()["token"]
+    assert (
+        client.get(
+            "/api/v1/auth/session",
+            headers={"Authorization": "Bearer " + paired.json()["token"]},
+        ).json()["role"] == "admin"
+    )
+
+
+def test_incomplete_tls_identity_never_silently_changes_pin(tmp_path):
+    import pytest
+    from home_media_catalog.tls import ensure_certificate
+
+    certificate, private_key = ensure_certificate(tmp_path)
+    original = certificate.read_bytes()
+    private_key.unlink()
+    with pytest.raises(RuntimeError, match="Incomplete TLS identity"):
+        ensure_certificate(tmp_path)
+    assert certificate.read_bytes() == original
