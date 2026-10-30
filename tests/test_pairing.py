@@ -133,8 +133,6 @@ def test_device_auth_survives_restart(client, admin, tmp_path):
 def test_pinned_https_qr_keeps_legacy_eight_digit_pairing(client, admin, tmp_path):
     """The secure QR is additive: historical HTTP redemption still works."""
     import base64
-    from urllib.parse import parse_qs, urlsplit
-
     from home_media_catalog.tls import ensure_certificate, fingerprint
 
     start = client.post("/api/v1/pairing/start", headers=admin, json={"role": "admin"})
