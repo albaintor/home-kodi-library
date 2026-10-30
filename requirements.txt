@@ -88,6 +88,8 @@ typing-inspection==0.4.4
     #   pydantic
 uvicorn==0.54.0
     # via kodi-library (pyproject.toml)
+wsproto>=1.2,<2
+    # via kodi-library (pyproject.toml); Uvicorn WebSocket transport
 yarl==1.25.1
     # via aiohttp
 
