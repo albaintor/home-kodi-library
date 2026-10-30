@@ -59,7 +59,13 @@ async def pipe(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> No
 
 async def proxy(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     try:
-        upstream_reader, upstream_writer = await asyncio.open_connection("127.0.0.1", 8000)
+        # 127.0.0.2 marks TLS-relayed requests: FastAPI must never grant
+        # them implicit LAN administrator privileges. Ordinary HTTP keeps
+        # its original client IP because uvicorn serves that port directly.
+        upstream_reader, upstream_writer = await asyncio.open_connection(
+            "127.0.0.1", int(os.getenv("LIBRARY_HTTP_PORT", "8000")),
+            local_addr=("127.0.0.2", 0),
+        )
     except OSError:
         writer.close()
         return
@@ -88,21 +94,18 @@ async def main() -> None:
     host = os.getenv("LIBRARY_BIND_ADDRESS", "0.0.0.0")
     tls_port = int(os.getenv("TLS_BIND_PORT", "8443"))
     https = await asyncio.start_server(proxy, host=host, port=tls_port, ssl=context)
-    public_http = int(os.getenv("LIBRARY_PUBLIC_HTTP_PORT", "8000"))
-    http = None
-    if public_http != 8000:
-        http = await asyncio.start_server(proxy, host=host, port=public_http)
+    http_port = int(os.getenv("LIBRARY_HTTP_PORT", "8000"))
+    if http_port == tls_port:
+        raise ValueError("HTTP and HTTPS listeners must use distinct ports.")
     server = uvicorn.Server(uvicorn.Config(
         "home_media_catalog.app:create_app", factory=True,
-        host=host, port=8000, workers=1, proxy_headers=False,
+        host=host, port=http_port, workers=1, proxy_headers=False,
     ))
     try:
         await server.serve()
     finally:
-        for listener in (https, http):
-            if listener:
-                listener.close()
-                await listener.wait_closed()
+        https.close()
+        await https.wait_closed()
 
 
 if __name__ == "__main__":
