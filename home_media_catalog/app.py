@@ -316,12 +316,37 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post(
         API + "/pairing/start",
-        response_model=PairingResult,
         dependencies=[Depends(writable)],
         tags=["Authentication"],
     )
-    def start_pairing(request: PairingRequest):
-        return auth.start_pairing(request.role)
+    def start_pairing(request: PairingRequest, http_request: Request):
+        """Bootstrap an authenticated TLS pin through a physical QR scan."""
+        import base64
+        import io
+        import os
+        from urllib.parse import urlencode
+        import qrcode
+        from .tls import fingerprint
+
+        result = auth.start_pairing(request.role)
+        host = http_request.url.hostname or ""
+        if not host:
+            raise HTTPException(422, "Server hostname unavailable for pairing.")
+        # The QR transports the certificate fingerprint out-of-band.
+        # The iPhone must not fetch this fingerprint from an untrusted URL.
+        port = int(os.getenv("TLS_PUBLIC_PORT", "8443"))
+        hostname = "[" + host + "]" if ":" in host and not host.startswith("[") else host
+        address = f"https://{hostname}:{port}/"
+        payload = "home-media-catalog://pair?" + urlencode({
+            "url": address, "code": result["code"],
+            "pin": fingerprint(settings.data_dir),
+        })
+        image = qrcode.make(payload)
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return {**result, "https_url": address,
+                "fingerprint": fingerprint(settings.data_dir),
+                "qr_png": base64.b64encode(buffer.getvalue()).decode("ascii")}
 
     @app.post(API + "/pairing/redeem", tags=["Authentication"])
     def redeem_pairing(request: PairingRedeem, http_request: Request):

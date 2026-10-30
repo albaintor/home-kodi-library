@@ -24,6 +24,8 @@ cffi==2.1.1
     # via cryptography
 click==8.5.0
     # via uvicorn
+qrcode==8.2
+    # via pairing QR bootstrap
 cryptography==50.0.2
     # via pymysql
 defusedxml==0.7.1

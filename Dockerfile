@@ -16,6 +16,6 @@ RUN chmod 755 /app \
     && find /app/home_media_catalog -type d -exec chmod 755 {} + \
     && find /app/home_media_catalog -type f -exec chmod 644 {} +
 USER library
-EXPOSE 8000
+EXPOSE 8000 8443
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"
-CMD ["uvicorn", "home_media_catalog.app:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--no-proxy-headers"]
+CMD ["python", "-m", "home_media_catalog.tls"]

@@ -8,22 +8,16 @@ services:
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"
     network_mode: host
-    command:
-      - uvicorn
-      - home_media_catalog.app:create_app
-      - --factory
-      - --host
-      - "${BIND_ADDRESS:-0.0.0.0}"
-      - --port
-      - "${PORT:-8099}"
-      - --workers
-      - "1"
-      - --no-proxy-headers
+    command: ["python", "-m", "home_media_catalog.tls"]
     env_file: .env
     environment:
       DATA_DIR: /data
       LIBRARY_BIND_ADDRESS: "${BIND_ADDRESS:-0.0.0.0}"
       LIBRARY_PORT: "${PORT:-8099}"
+      LIBRARY_PUBLIC_HTTP_PORT: "${PORT:-8099}"
+      LIBRARY_BIND_ADDRESS: "${BIND_ADDRESS:-0.0.0.0}"
+      TLS_BIND_PORT: "${TLS_PORT:-8443}"
+      TLS_PUBLIC_PORT: "${TLS_PORT:-8443}"
     volumes:
       - ./data:/data
       # Copy any optional read-only artwork mounts from compose.yaml here.

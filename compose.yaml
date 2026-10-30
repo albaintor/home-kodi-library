@@ -7,9 +7,11 @@ services:
     user: "${PUID:-1000}:${PGID:-1000}"
     ports:
       - "${BIND_ADDRESS:-0.0.0.0}:${PORT:-8099}:8000"
+      - "${BIND_ADDRESS:-0.0.0.0}:${TLS_PORT:-8443}:8443"
     env_file: .env
     environment:
       DATA_DIR: /data
+      TLS_PUBLIC_PORT: ${TLS_PORT:-8443}
     volumes:
       - ./data:/data
       # Optional: adapt to your NAS, then configure ARTWORK_MOUNTS in .env.
