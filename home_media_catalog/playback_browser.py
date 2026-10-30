@@ -6,9 +6,13 @@ validated. Credentials never leave the server. No file modification API.
 
 from __future__ import annotations
 
+import base64
 import ftplib
+import hashlib
 import logging
 import mimetypes
+import os
+import threading
 from pathlib import Path, PurePosixPath
 from urllib.parse import quote
 
@@ -73,14 +77,58 @@ def _ftp_connection(location: dict, password: str) -> ftplib.FTP:
     return conn
 
 
+_SFTP_KNOWN_HOSTS_LOCK = threading.Lock()
+
+
+def _sftp_known_hosts_path() -> Path:
+    """Keep host-key pins in the persistent server data volume, not ephemeral ~/.ssh."""
+    path = Path(os.environ.get("DATA_DIR", "/data")) / "ssh" / "known_hosts"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not path.exists():
+        path.touch(mode=0o600)
+    return path
+
+
 def _sftp_connection(location: dict, password: str):
-    """SSH host keys must already be trusted by the server administrator."""
+    """Use persistent SSH host-key pinning (TOFU); reject changes to trusted keys."""
     import paramiko
+
+    class FirstUsePinPolicy(paramiko.MissingHostKeyPolicy):
+        def missing_host_key(self, client, hostname, key):
+            path = _sftp_known_hosts_path()
+            with _SFTP_KNOWN_HOSTS_LOCK:
+                # Another concurrent connection may already have pinned this host.
+                fresh = paramiko.HostKeys()
+                fresh.load(str(path))
+                known = fresh.lookup(hostname)
+                if known:
+                    expected = known.get(key.get_name())
+                    if expected is None or expected != key:
+                        raise paramiko.BadHostKeyException(
+                            hostname, key, next(iter(known.values()))
+                        )
+                else:
+                    fresh.add(hostname, key.get_name(), key)
+                    fresh.save(str(path))
+                    os.chmod(path, 0o600)
+                    fingerprint = base64.b64encode(
+                        hashlib.sha256(key.asbytes()).digest()
+                    ).decode("ascii").rstrip("=")
+                    LOG.warning(
+                        "SFTP first-use host key pinned for %s (SHA256:%s). "
+                        "Verify this fingerprint against the SSH server before "
+                        "relying on the connection.",
+                        hostname, fingerprint,
+                    )
+                client.get_host_keys().add(hostname, key.get_name(), key)
 
     host, _ = _root(location)
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
-    ssh.set_missing_host_key_policy(paramiko.RejectPolicy())
+    known_hosts = _sftp_known_hosts_path()
+    with _SFTP_KNOWN_HOSTS_LOCK:
+        ssh.load_host_keys(str(known_hosts))
+    ssh.set_missing_host_key_policy(FirstUsePinPolicy())
     ssh.connect(
         hostname=host,
         port=int(location.get("port") or 22),
