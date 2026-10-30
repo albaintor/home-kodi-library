@@ -166,6 +166,7 @@ def test_pinned_https_qr_keeps_legacy_eight_digit_pairing(client, admin, tmp_pat
 
 def test_incomplete_tls_identity_never_silently_changes_pin(tmp_path):
     import pytest
+
     from home_media_catalog.tls import ensure_certificate
 
     certificate, private_key = ensure_certificate(tmp_path)
