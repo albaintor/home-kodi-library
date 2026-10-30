@@ -546,3 +546,46 @@ def test_web_only_offers_onedrive_cloud_provider():
     assert "locations.filter(l=>browsableLocationKinds.has(l.kind))" in script
     assert "browser.locations.filter(loc=>browsableLocationKinds.has(loc.kind))" in script
     assert "networkExplorer.locations=(await api('playback/locations')).filter(" in script
+
+
+def test_one_drive_public_grant_is_available_to_paired_admin(client, admin):
+    """Transfer public-client grants, never confidential OAuth app secrets."""
+    import json
+
+    endpoint = "/api/v1/playback/locations"
+    place = client.post(
+        endpoint, headers=admin,
+        json={"name": "OneDrive Mobile", "kind": "onedrive", "target": ""},
+    )
+    assert place.status_code == 201, place.text
+    location_id = place.json()["id"]
+    route = f"/api/v1/playback/cloud/{location_id}/device-credentials"
+    assert client.get(route, headers=admin).status_code == 409
+    oauth = client.app.state.playback_oauth
+    store = client.app.state.store
+
+    def save(token):
+        store.set_playback_cloud_token(
+            location_id, "onedrive", oauth.encrypt_password(json.dumps(token))
+        )
+
+    save({"access_token": "web-access", "refresh_token": "web-refresh",
+          "expires_at": 12345.0})
+    assert client.get(route, headers=admin).status_code == 409
+
+    save({
+        "_hkl_client_id": "145e06bb-b35b-4d96-8cf8-4077cd5e5528",
+        "access_token": "public-access", "refresh_token": "public-refresh",
+        "expires_at": 9876543210.0,
+    })
+    viewer = {"Authorization": f"Bearer {READ}"}
+    assert client.get(route).status_code == 401
+    assert client.get(route, headers=viewer).status_code == 403
+    result = client.get(route, headers=admin)
+    assert result.status_code == 200, result.text
+    assert result.headers["cache-control"] == "no-store"
+    assert result.json()["refresh_token"] == "public-refresh"
+    assert result.json()["client_id"] == "145e06bb-b35b-4d96-8cf8-4077cd5e5528"
+    assert "public-refresh" not in client.get(
+        "/api/v1/playback/cloud/status", headers=admin
+    ).text
