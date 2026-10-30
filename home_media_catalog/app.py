@@ -2271,11 +2271,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         tags=["Sources"],
         dependencies=[Depends(writable)],
     )
-    async def synchronize(source_id: str):
+    async def synchronize(source_id: str, mariadb_only: bool = False):
+        """Refresh metadata; optionally use MariaDB without touching Kodi."""
         if not await asyncio.to_thread(store.source, source_id):
             raise HTTPException(404, "Unknown source.")
         try:
-            return await sync.submit(source_id)
+            return await sync.submit(source_id, mariadb_only=mariadb_only)
         except BusyError as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValueError as exc:
