@@ -79,6 +79,8 @@ async def proxy(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> N
 
 async def main() -> None:
     import uvicorn
+    # Prevent loopback relay peers from acquiring LOCAL_AUTH_NETWORKS privileges.
+    os.environ["HMC_TLS_RELAY_ACTIVE"] = "1"
     cert, key = ensure_certificate(Path(os.getenv("DATA_DIR", "/data")))
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
