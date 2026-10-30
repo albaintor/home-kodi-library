@@ -122,6 +122,16 @@ def _sftp_connection(location: dict, password: str):
                     )
                 client.get_host_keys().add(hostname, key.get_name(), key)
 
+    # Network locations synchronized from iOS contain descriptors only:
+    # the iOS Keychain password never reaches the server. Paramiko intentionally
+    # disables agent/private-key fallback, so password authentication is required.
+    if not (location.get("username") or "").strip() or not password:
+        raise HTTPException(
+            409,
+            "SFTP requires a server-side username and password. Set them in "
+            "Settings > Network and cloud; credentials stored on iOS are not shared.",
+        )
+
     host, _ = _root(location)
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
@@ -129,17 +139,28 @@ def _sftp_connection(location: dict, password: str):
     with _SFTP_KNOWN_HOSTS_LOCK:
         ssh.load_host_keys(str(known_hosts))
     ssh.set_missing_host_key_policy(FirstUsePinPolicy())
-    ssh.connect(
-        hostname=host,
-        port=int(location.get("port") or 22),
-        username=location.get("username") or None,
-        password=password or None,
-        timeout=8,
-        auth_timeout=8,
-        allow_agent=False,
-        look_for_keys=False,
-    )
-    return ssh, ssh.open_sftp()
+    try:
+        ssh.connect(
+            hostname=host,
+            port=int(location.get("port") or 22),
+            username=location["username"].strip(),
+            password=password,
+            timeout=8,
+            auth_timeout=8,
+            allow_agent=False,
+            look_for_keys=False,
+        )
+        return ssh, ssh.open_sftp()
+    except paramiko.AuthenticationException as exc:
+        ssh.close()
+        raise HTTPException(
+            409,
+            "SFTP authentication failed. Verify the server-side username and "
+            "password in Settings > Network and cloud.",
+        ) from exc
+    except Exception:
+        ssh.close()
+        raise
 
 
 def _local_root(location: dict, mounts: dict[str, str]) -> Path:
