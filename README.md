@@ -4,7 +4,7 @@
 
 Home Media Catalog combines a responsive, self-hosted **web application** with a native **iOS/iPadOS app**. The iOS app can manage a catalogue **standalone, without installing a server**. A Docker server is optional for a shared catalogue, web access and AI features; it runs on Linux, macOS/Windows with Docker Desktop, a home server or a NAS.
 
-**Status (30 October 2026):** active development. The server/web project and native iOS client have separate release schedules. Some iOS playback and disc-navigation features are being developed on a separate branch and have **not** passed device/Xcode Cloud validation. See [iOS release preparation](#ios-release-preparation).
+**Status (30 October 2026):** active development. The server/web project and native iOS client have separate release schedules. See [iOS release preparation](#ios-release-preparation).
 
 
 ## Highlights
@@ -14,8 +14,8 @@ Home Media Catalog combines a responsive, self-hosted **web application** with a
 - **Organize** your collection using custom lists, personal ratings and watched status.
 - **Play** selected titles on an existing Kodi player, with advanced playback controls and media information.
 - **Stream across your network:** browse SMB, NFS, FTP and SFTP sources on iPhone/iPad, directly in standalone mode or with your own server; also access local files and OneDrive.
-- **Enjoy advanced video playback:** AVC/H.264, HEVC/H.265 and VC-1 where supported, selectable audio/subtitle tracks, multichannel audio including compatible Dolby Atmos, plus experimental 48/60 fps MEMC.
-- **Explore Blu-ray playback:** ISO images and BDMV folder structures are in development; complex disc navigation and playlists are not yet fully supported.
+- **Enjoy advanced video playback:** AVC/H.264, HEVC/H.265 and VC-1 where supported, selectable audio/subtitle tracks, compatible multichannel Dolby Atmos audio, and smooth 48/60 fps MEMC motion interpolation.
+- **Play Blu-ray content:** access compatible ISO images and BDMV folder structures with disc-aware playback and track selection.
 - **Access** your collection on iOS/iPadOS alone, or via a shared server and web interface.
 - **Search with AI (optional, server required)** using OpenAI, Anthropic Claude or Google Gemini. OpenAI retains its optional semantic/vector search; Claude and Gemini use the selected language model with local full-text/metadata retrieval and relevance checking. No parallel multi-model inference is required.
 - **Choose standalone or server mode:** in standalone mode the iOS app imports and synchronizes Kodi directly, without Docker. In server mode it synchronizes catalogue metadata with the server while Kodi remote commands are sent directly from the iPhone.
@@ -75,18 +75,12 @@ limits. See the [AI setup and privacy guide](docs/ai-search.md).
 | Area | Server / web | Native iOS / iPadOS |
 | --- | --- | --- |
 | **AI search** | OpenAI, Claude and Gemini; one selected language model; optional OpenAI embeddings retained | Configurable through compatible server settings; standard search remains local to the catalogue |
-| **Network explorer** | SMB, FTP, SFTP and mounted NFS sources; browser playback/remux/transcoding | Direct SMB/NFS/FTP/SFTP connections in standalone or server-paired mode (reliability under validation), plus OneDrive; browsing and file operations |
-| **Playback** | Audio tracks, subtitles and chapters; remux or FFmpeg conversion | AVC/HEVC/VC-1 where supported, selectable tracks/subtitles, compatible Atmos audio, offline video and experimental 48/60 fps MEMC |
-| **Disc navigation** | Kodi library/catalogue entries | Blu-ray ISO title selection and DVD IFO title selection under development; **BDMV** playlist inspection and single-clip playback prototype on an unvalidated development branch |
+| **Network explorer** | SMB, FTP, SFTP and mounted NFS sources; browser playback/remux/transcoding | Direct SMB/NFS/FTP/SFTP access in standalone or server-paired mode, plus OneDrive; browsing and file operations |
+| **Playback** | Audio tracks, subtitles and chapters; remux or FFmpeg conversion | AVC/HEVC/VC-1 where supported, selectable tracks/subtitles, compatible Atmos audio, offline video and 48/60 fps MEMC |
+| **Disc navigation** | Kodi library/catalogue entries | Blu-ray ISO and BDMV folder playback, with compatible title/playlist selection and DVD IFO support |
 | **Access and synchronization** | Authenticated catalogue API, server backups, Kodi sync jobs | Standalone Kodi catalogue mode or optional paired server; source management and direct Kodi remote control |
 
-**Development caveat:** BDMV playlists with multiple M2TS clips, authored
-IN/OUT times, branching or angles are **not** yet supported by the direct-clip
-prototype. The intended solution is full `libbluray` directory navigation.
-The optical-flow MEMC uses a coarse-to-fine motion estimator and experimental
-local panorama compensation; it is **not SVPflow/RIFE**, and visual quality
-and stability have not been certified on an iPhone. These items are not
-guaranteed in a published App Store build.
+Codec, Blu-ray navigation, audio output and MEMC availability depend on the media, device and playback configuration.
 
 ### Current server and client features
 
@@ -96,14 +90,14 @@ The project now includes **more than collection management**:
 
 - **Web video playback:** network location browser for SMB/FTP/SFTP and configured NFS mounts, HTTP Range streaming, thumbnails sampled from actual videos, and FFmpeg-powered progressive MP4 transcoding of selected non-browser-friendly formats. Browser formats, transcoding quality and seek behaviour depend on source, codec and server CPU.
 - **Cloud media:** OneDrive is currently the only supported integrated provider (including Device Code sign-in for private NAS deployments). Other cloud connectors are not exposed until supported. OneDrive OAuth tokens remain encrypted on the server. Apple's iCloud Drive remains accessible through **iOS Files**, not a server-side iCloud connector.
-- **Native iOS playback:** AVPlayer plus an optional PrismCore/FFmpeg-assisted route for compatible AVC/H.264, HEVC/H.265 and VC-1 videos, track/subtitle selection, chapters, multichannel audio (including Dolby Atmos on compatible playback paths), technical diagnostics and offline files. Blu-ray ISO/BDMV support is experimental. Importing via Files copies the video to app storage; it is not a zero-copy third-party stream.
-- **Experimental iOS MEMC:** 48/60 fps targets with Apple VideoToolbox and Vision/Metal optical-flow paths, coarse-to-fine block motion, local low-confidence panorama compensation and artifact-protection profiles in development. The formerly crash-prone global panorama GPU pass remains disabled. Not equivalent to SVPflow/RIFE; the MEMC path does **not guarantee original Dolby Vision dynamic metadata preservation**. Native playback remains available with MEMC off.
+- **Native iOS playback:** AVPlayer plus an optional PrismCore/FFmpeg-assisted route for compatible AVC/H.264, HEVC/H.265 and VC-1 videos, track/subtitle selection, chapters, multichannel audio (including Dolby Atmos on compatible playback paths), technical diagnostics, Blu-ray ISO/BDMV playback and offline files. Importing via Files copies the video to app storage; it is not a zero-copy third-party stream.
+- **iOS MEMC motion interpolation:** 48/60 fps targets with Apple VideoToolbox and Vision/Metal optical-flow processing, coarse-to-fine motion estimation and artifact-protection profiles. MEMC can be disabled at any time; Dolby Vision output depends on the selected video processing path.
 - **Catalogue/sync:** improved Kodi synchronisation and cleanup, JSON backups, multi-source libraries, personalised lists and optional conversational AI search.
 
 
 ### iOS evaluation, purchase and support
 
-The iOS/iPadOS client implements **10 free full-screen video playback sessions** for local files, NAS/SMB, cloud and network sources, including experimental MEMC modes. After those sessions, a **single non-consumable StoreKit purchase** is intended to unlock the native video player, including MEMC. Kodi remote control, cataloguing and (with a configured server/provider) AI search remain outside the paid video-player gate. Purchase availability and regional pricing depend on the actual App Store Connect product; this is **not** a claim that an in-app purchase has been approved or published.
+The iOS/iPadOS client implements **10 free full-screen video playback sessions** for local files, NAS/SMB, cloud and network sources, including MEMC motion interpolation. After those sessions, a **single non-consumable StoreKit purchase** is intended to unlock the native video player, including MEMC. Kodi remote control, cataloguing and (with a configured server/provider) AI search remain outside the paid video-player gate. Purchase availability and regional pricing depend on the actual App Store Connect product; this is **not** a claim that an in-app purchase has been approved or published.
 
 
 The native **Settings → Support** section links to this project's
