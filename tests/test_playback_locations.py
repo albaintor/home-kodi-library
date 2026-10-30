@@ -85,3 +85,53 @@ def test_smb_hostname_alias_roundtrip_and_validation(client, admin):
         )
         assert response.status_code == 422, (invalid, response.text)
     assert client.get(endpoint, headers=admin).json()[0]["hostname"] == "Other-NAS"
+
+
+def test_sftp_source_without_server_password_has_actionable_browse_error(client, admin):
+    endpoint = "/api/v1/playback/locations"
+    created = client.post(
+        endpoint,
+        headers=admin,
+        json={
+            "name": "SFTP on iOS",
+            "kind": "sftp",
+            "target": "sftp://192.168.1.10/Movies",
+            "host": "192.168.1.10",
+            "share": "Movies",
+            "username": "media",
+        },
+    )
+    assert created.status_code == 201, created.text
+    location_id = created.json()["id"]
+    assert created.json()["has_password"] is False
+
+    response = client.get(f"/api/v1/playback/browse/{location_id}", headers=admin)
+    assert response.status_code == 409
+    assert "server-side username and password" in response.json()["detail"]
+
+
+def test_sftp_server_password_is_encrypted_and_kept_on_descriptor_updates(client, admin):
+    endpoint = "/api/v1/playback/locations"
+    location = {
+        "name": "SFTP",
+        "kind": "sftp",
+        "host": "192.168.1.10",
+        "target": "sftp://192.168.1.10/Movies",
+        "share": "Movies",
+        "username": "media",
+        "password": "private-test-password",
+    }
+    created = client.post(endpoint, headers=admin, json=location)
+    assert created.status_code == 201, created.text
+    assert created.json()["has_password"] is True
+    assert "private-test-password" not in created.text
+    location_id = created.json()["id"]
+
+    updated = client.put(
+        f"{endpoint}/{location_id}",
+        headers=admin,
+        json={key: value for key, value in location.items() if key != "password"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["has_password"] is True
+    assert "private-test-password" not in updated.text
