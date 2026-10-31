@@ -666,6 +666,103 @@ function playbackMarkup(item) {
   else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(playbackKodiOption(p))}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><p class="hint">Lecteur web : connexion réseau SMB/NFS/FTP/SFTP configurée privilégiée si son chemin correspond au fichier Kodi, sinon flux Kodi. Le serveur gère les pistes audio, sous-titres, chapitres et la conversion si nécessaire.</p><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
   return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Sur Kodi : lecture par Kodi. Dans le navigateur : accès réseau configuré sur le serveur en priorité, puis Kodi en repli.</p>`;
 }
+// A series has no single playable file: select an episode before offering
+// the same iPhone/browser or Kodi destinations as a film.
+function playbackSeriesMarkup(item) {
+  if(state.role!=='admin')return '<p class="hint">Un accès administrateur est nécessaire pour lancer la lecture.</p>';
+  return `<p class="play-media-title">${esc(item.title)} · Choisissez un épisode pour accéder aux destinations de lecture.</p>
+    <div class="playback-controls">
+      <label>Saison<select id="play-season" aria-label="Saison à lire" disabled></select></label>
+      <label>Épisode<select id="play-episode" aria-label="Épisode à lire" disabled></select></label>
+      <button id="play-choose-episode" class="primary" type="button" disabled>Continuer vers les destinations</button>
+      <p id="play-series-status" class="hint play-status" role="status" aria-live="polite">Chargement des saisons…</p>
+    </div>`;
+}
+async function loadPlaybackSeriesSeasons(seriesID) {
+  if(state.role!=='admin')return;
+  try {
+    const seasons=await api('media/'+encodeURIComponent(seriesID)+'/seasons');
+    if(state.playbackSeriesId!==seriesID||!$('play-dialog').open||!$('play-season'))return;
+    const picker=$('play-season');
+    const previous=state.playbackSeriesSeason;
+    picker.innerHTML=seasons.map(s=>`<option value="${s.season}">${s.season===0?'Spéciaux':'Saison '+s.season} · ${s.episode_count} épisodes</option>`).join('');
+    const preferred=seasons.find(s=>String(s.season)===String(previous))
+      ||seasons.find(s=>s.season!==0)||seasons[0];
+    if(!preferred){
+      $('play-series-status').textContent='Aucune saison disponible pour cette série.';
+      return;
+    }
+    picker.value=String(preferred.season);
+    picker.disabled=false;
+    await loadPlaybackSeriesEpisodes(seriesID);
+  }catch(error){
+    if(state.playbackSeriesId===seriesID&&$('play-series-status'))
+      $('play-series-status').textContent=error.message;
+  }
+}
+async function loadPlaybackSeriesEpisodes(seriesID) {
+  const picker=$('play-season'),episodes=$('play-episode'),status=$('play-series-status');
+  if(!picker||!episodes||!status||state.playbackSeriesId!==seriesID)return;
+  const season=Number(picker.value);
+  state.playbackSeriesSeason=season;
+  episodes.disabled=true;
+  $('play-choose-episode').disabled=true;
+  episodes.innerHTML='';
+  status.textContent='Chargement des épisodes…';
+  try {
+    const choices=[];
+    let offset=0;
+    let more=true;
+    // The server returns paginated episodes; never silently omit later pages.
+    while(more&&offset<5000){
+      const page=await api(`media/${encodeURIComponent(seriesID)}/seasons/${season}/episodes?limit=100&offset=${offset}`);
+      if(state.playbackSeriesId!==seriesID||!$('play-dialog').open
+        ||$('play-season')?.value!==String(season))return;
+      choices.push(...page.items);
+      if(!page.has_more||!page.items.length)more=false;
+      else offset+=page.items.length;
+    }
+    if(more)throw new Error('Cette saison dépasse la limite de 5 000 épisodes.');
+    episodes.innerHTML=choices.map(e=>`<option value="${esc(e.id)}">E${String(e.episode??0).padStart(2,'0')} · ${esc(e.title)}</option>`).join('');
+    episodes.disabled=!choices.length;
+    $('play-choose-episode').disabled=!choices.length;
+    status.textContent=choices.length?`${choices.length} épisodes disponibles.`:'Aucun épisode dans cette saison.';
+  }catch(error){
+    if(state.playbackSeriesId===seriesID&&$('play-season')?.value===String(season))
+      status.textContent=error.message;
+  }
+}
+async function choosePlaybackSeriesEpisode() {
+  const button=$('play-choose-episode');
+  const id=$('play-episode')?.value;
+  const seriesID=state.playbackSeriesId;
+  if(!button||!id||!seriesID)return;
+  button.disabled=true;
+  try {
+    const episode=await api('media/'+encodeURIComponent(id));
+    if(state.playbackSeriesId!==seriesID||!$('play-dialog').open)return;
+    if(episode.kind!=='episode'||!episode.editions?.some(e=>e.source_type==='kodi'))
+      throw new Error('Cet épisode ne possède aucun fichier Kodi lisible.');
+    state.playbackItem=episode;
+    state.playbackMediaId=episode.id;
+    $('play-content').innerHTML=`<button type="button" id="play-back-series" class="text-button">← Choisir un autre épisode</button>${playbackMarkup(episode)}`;
+    updatePlayEdition();
+    const players=state.players.filter(p=>episode.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
+    if(players.length)startPlaybackKodiStatus(players);
+  }catch(error){
+    if($('play-series-status'))$('play-series-status').textContent=error.message;
+  }finally {
+    if(button.isConnected)button.disabled=false;
+  }
+}
+function returnToPlaybackSeries() {
+  const seriesID=state.playbackSeriesId;
+  if(!seriesID||state.detail?.id!==seriesID)return;
+  stopPlaybackKodiStatus();
+  state.playbackItem=null;
+  $('play-content').innerHTML=playbackSeriesMarkup(state.detail);
+  void loadPlaybackSeriesSeasons(seriesID);
+}
 function savePlaybackDraft() {
   if(!$('play-target'))return;
   state.playbackDraft={mediaId:state.playbackMediaId,target:$('play-target').value,edition:$('play-edition').value,resume:$('play-resume').checked};
@@ -673,8 +770,16 @@ function savePlaybackDraft() {
 function openPlayback() {
   hideRatingPopover();
   const item=state.detail;if(!item)return;
-  const draft=state.playbackDraft?.mediaId===item.id?state.playbackDraft:null;
+  state.playbackSeriesId=item.kind==='tvshow'?item.id:null;
+  state.playbackItem=item.kind==='tvshow'?null:item;
   state.playbackMediaId=item.id;
+  if(item.kind==='tvshow'){
+    $('play-content').innerHTML=playbackSeriesMarkup(item);
+    showDialog('play-dialog');
+    void loadPlaybackSeriesSeasons(item.id);
+    return;
+  }
+  const draft=state.playbackDraft?.mediaId===item.id?state.playbackDraft:null;
   $('play-content').innerHTML=playbackMarkup(item);
   if(draft&&$('play-target')&&[...$('play-target').options].some(o=>o.value===draft.target))$('play-target').value=draft.target;
   updatePlayEdition();
@@ -1192,7 +1297,8 @@ function updatePlayEdition() {
   const target=$('play-target'); const selector=$('play-edition');if(!target||!selector)return;
   const previous=selector.value;
   const player=state.players.find(p=>p.id===target.value);if(!player)return;
-  const editions=state.detail.editions.filter(e=>e.source_type==='kodi'&&e.source_id===player.source_id).sort((a,b)=>Number(!a.metadata.is_default)-Number(!b.metadata.is_default));
+  const item=state.playbackItem||state.detail;
+  const editions=item.editions.filter(e=>e.source_type==='kodi'&&e.source_id===player.source_id).sort((a,b)=>Number(!a.metadata.is_default)-Number(!b.metadata.is_default));
   selector.innerHTML=editions.map(e=>`<option value="${esc(e.id)}">${esc(e.metadata.version||e.metadata.file?.split('/').pop()||'Fichier Kodi')}${e.metadata.is_default?' · Par défaut':''}</option>`).join('');
   if([...selector.options].some(option=>option.value===previous))selector.value=previous;
 }
@@ -2674,6 +2780,8 @@ document.addEventListener('submit',async event=>{
 });
 document.addEventListener('click',async event=>{
   const button=event.target.closest('button'); if(!button) return;
+  if(button.id==='play-choose-episode'){await choosePlaybackSeriesEpisode();return;}
+  if(button.id==='play-back-series'){returnToPlaybackSeries();return;}
   if(button.id==='copy-media-title'){await copyMediaTitle();return;}
   if(button.id==='open-artwork-gallery'){openArtworkGallery();return;}
   if(button.hasAttribute('data-artwork-step')){stepArtworkGallery(Number(button.dataset.artworkStep));return;}
@@ -2826,6 +2934,7 @@ document.addEventListener('click',async event=>{
       result.textContent=tested.message;result.className='success-text play-status';
     }
     if(button.id==='play-browser') {
+      const playbackItem=state.playbackItem||state.detail;
       savePlaybackDraft();
       button.disabled=true;
       const startingAt=performance.now();
@@ -2833,7 +2942,7 @@ document.addEventListener('click',async event=>{
       const ticket=await api(`players/${encodeURIComponent(playerId)}/local-play`,{
         method:'POST',
         body:JSON.stringify({
-          media_id:state.detail.id,
+          media_id:playbackItem.id,
           edition_id:$('play-edition').value||null,
           resume:$('play-resume').checked
         })
@@ -2845,7 +2954,7 @@ document.addEventListener('click',async event=>{
       const streamURL=url(ticket.path);
       if(new URL(streamURL).origin!==location.origin)throw new Error('URL de streaming non autorisée.');
       const mediaBase=ticket.path.replace(/\/local-stream\/([^/]+)\/[^/]+$/,'/local-media/$1');
-      const item=state.detail;
+      const item=playbackItem;
       const resumeAt=$('play-resume')?.checked?Number(ticket.resume_seconds)||0:0;
       console.info('Browser playback ticket ms',Math.round(performance.now()-startingAt),
         'catalogue ms',Number(ticket.resolution_ms)||0,
@@ -2868,12 +2977,13 @@ document.addEventListener('click',async event=>{
       return;
     }
     if(button.id==='play-button') {
+      const playbackItem=state.playbackItem||state.detail;
       savePlaybackDraft();
       button.disabled=true;
       const target=$('play-target').value;
       await api(`players/${target}/play`,{
         method:'POST',
-        body:JSON.stringify({media_id:state.detail.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})
+        body:JSON.stringify({media_id:playbackItem.id,edition_id:$('play-edition').value,resume:$('play-resume').checked})
       });
       toast('Lecture envoyée à Kodi.');
       // Player.Open was acknowledged: close both media dialogs before opening
@@ -3129,7 +3239,11 @@ document.addEventListener('click',event=>{
   if(button.id==='open-trailers')openTrailers();
 });
 document.addEventListener('input',event=>{if(event.target.id==='rating-slider')previewRating(Number(event.target.value));});
-document.addEventListener('change',event=>{if(event.target.id==='rating-slider')savePersonal({user_rating:Number(event.target.value)});});
+document.addEventListener('change',event=>{
+  if(event.target.id==='rating-slider')savePersonal({user_rating:Number(event.target.value)});
+  if(event.target.id==='play-season'&&state.playbackSeriesId)
+    void loadPlaybackSeriesEpisodes(state.playbackSeriesId);
+});
 $('detail-dialog').addEventListener('scroll',hideRatingPopover);
 $('detail-dialog').addEventListener('close',()=>{hideRatingPopover();if($('play-dialog').open)$('play-dialog').close();if($('trailers-dialog').open)$('trailers-dialog').close();if($('artwork-gallery-dialog').open)$('artwork-gallery-dialog').close();});
 // Mobile swipes and desktop drags. Vertical scrolling does not change images.
