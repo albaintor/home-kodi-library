@@ -614,13 +614,54 @@ function detailDatesMarkup(item) {
   if(!dates.length&&!metadata)return '';
   return `<p class="hint detail-timestamps">${dates.map(esc).join(' · ')}${dates.length&&metadata?' · ':''}${metadata}</p>`;
 }
+// The browser cannot contact Kodi's private JSON-RPC directly. Probe each
+// instance through the server's existing read-only remote snapshot endpoint.
+// An idle but reachable instance is online (active:false is not offline).
+const playbackKodiConnectivity=new Map();
+let playbackKodiStatusTimer=null;
+function playbackKodiOption(player) {
+  const status=playbackKodiConnectivity.get(player.id);
+  const icon=status===true?'🔵':status===false?'🔴':'⚪';
+  const detail=status===true?'connectée':status===false?'hors ligne':'vérification…';
+  return icon+' '+player.name+' · '+detail;
+}
+async function refreshPlaybackKodiConnectivity(players) {
+  await Promise.allSettled(players.map(async player=>{
+    let online=false;
+    try {
+      await api('players/'+encodeURIComponent(player.id)+'/remote',{cache:'no-store'});
+      online=true;
+    } catch { /* Reachability is independent of a currently playing media. */ }
+    playbackKodiConnectivity.set(player.id,online);
+    const select=$('play-target');
+    if(!select || !$('play-dialog')?.open) return;
+    const option=[...select.options].find(o=>o.value===player.id);
+    if(option) {
+      option.textContent=playbackKodiOption(player);
+      option.title=online?'Kodi connecté':'Kodi hors ligne';
+    }
+  }));
+}
+function stopPlaybackKodiStatus() {
+  if(playbackKodiStatusTimer!==null)clearInterval(playbackKodiStatusTimer);
+  playbackKodiStatusTimer=null;
+}
+function startPlaybackKodiStatus(players) {
+  stopPlaybackKodiStatus();
+  void refreshPlaybackKodiConnectivity(players);
+  // While the picker is open, reflect power-off/power-on transitions.
+  playbackKodiStatusTimer=setInterval(()=>{
+    if($('play-dialog')?.open && !document.hidden)
+      void refreshPlaybackKodiConnectivity(players);
+  },15000);
+}
 function playbackMarkup(item) {
   const players=state.players.filter(p=>item.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
   let controls;
   if(state.role!=='admin')controls='<p class="hint">Un accès administrateur est nécessaire pour lancer la lecture.</p>';
   else if(!players.length)controls='<p class="hint">Ajoutez une instance Kodi associée à la source de ce fichier.</p><button class="secondary" data-action="connections">Configurer une instance Kodi</button>';
-  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><p class="hint">Lecteur web : pistes audio, sous-titres et chapitres. Les fichiers MKV ou les pistes audio non lisibles par le navigateur sont remuxés ou convertis à la volée par le serveur.</p><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
-  return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Kodi lit le fichier avec ses propres accès au NAS.</p>`;
+  else controls=`<label>Instance Kodi<select id="play-target">${players.map(p=>`<option value="${esc(p.id)}">${esc(playbackKodiOption(p))}</option>`).join('')}</select></label><label>Fichier ou version<select id="play-edition" aria-label="Fichier ou version Kodi"></select></label><label class="play-options"><input id="play-resume" type="checkbox" checked>Reprendre au point de lecture</label><button id="play-button" class="primary">▶ Lire sur Kodi</button><button id="play-browser" class="secondary">▶ Lire dans le navigateur</button><p class="hint">Lecteur web : connexion réseau SMB/NFS/FTP/SFTP configurée privilégiée si son chemin correspond au fichier Kodi, sinon flux Kodi. Le serveur gère les pistes audio, sous-titres, chapitres et la conversion si nécessaire.</p><p id="play-status" class="hint play-status" role="status" aria-live="polite"></p>`;
+  return `<p class="play-media-title">${esc(item.title)}</p><div class="playback-controls">${controls}</div><p class="hint">Sur Kodi : lecture par Kodi. Dans le navigateur : accès réseau configuré sur le serveur en priorité, puis Kodi en repli.</p>`;
 }
 function savePlaybackDraft() {
   if(!$('play-target'))return;
@@ -639,7 +680,10 @@ function openPlayback() {
     $('play-resume').checked=draft.resume;
   }
   showDialog('play-dialog');
+  const players=state.players.filter(p=>item.editions.some(e=>e.source_type==='kodi'&&e.source_id===p.source_id));
+  if(players.length)startPlaybackKodiStatus(players);
 }
+$('play-dialog').addEventListener('close',stopPlaybackKodiStatus);
 function card(item) {
   const meta=[item.year,kindLabels[item.kind]].filter(Boolean);
   const roles=state.personSearch&&(item.matched_roles||[]).filter(role=>typeof role==='string'&&role.trim());
@@ -2785,8 +2829,12 @@ document.addEventListener('click',async event=>{
       const mediaBase=ticket.path.replace(/\/local-stream\/([^/]+)\/[^/]+$/,'/local-media/$1');
       const item=state.detail;
       const resumeAt=$('play-resume')?.checked?Number(ticket.resume_seconds)||0:0;
-      console.info('Kodi browser playback ticket ms',Math.round(performance.now()-startingAt),'catalogue ms',Number(ticket.resolution_ms)||0);
-      result.textContent='';
+      console.info('Browser playback ticket ms',Math.round(performance.now()-startingAt),
+        'catalogue ms',Number(ticket.resolution_ms)||0,
+        'preferred transport',ticket.preferred_transport||'kodi');
+      result.textContent=ticket.preferred_transport&&ticket.preferred_transport!=='kodi'
+        ? 'Connexion réseau '+ticket.preferred_transport.toUpperCase()+' privilégiée ; repli sur Kodi si indisponible.'
+        : 'Lecture via Kodi (aucune connexion réseau configurée correspondante).';
       if($('play-dialog').open)$('play-dialog').close();
       void openPlayer({
         title:item.title,
