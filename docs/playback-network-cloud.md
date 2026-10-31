@@ -44,6 +44,25 @@ with IP `192.168.1.20`, optional hostname `NAS`, and export
 The configured export must be available to the NFS client; server-side
 export permissions (NFSv3/v4, UID/GID and firewall) still apply.
 
+## Network-first playback of Kodi editions in the web player
+
+For `Read in browser` on a Kodi film/episode, the server first compares the
+canonical Kodi file URL with its saved SMB, NFS, FTP or SFTP locations.
+The protocol, host (including the optional Kodi hostname alias), port and
+configured root must agree. When several roots match, the most specific wins.
+The server opens the file with **its own saved network credentials**, not Kodi's,
+and keeps HTTP Range seeking, track analysis, subtitles and remux/transcoding on
+that same source. If the network connection is inaccessible, the server tries
+Kodi's HTTP VFS as a fallback. For nonmatching paths, Kodi VFS is used directly.
+
+A powered-off Kodi instance does not prevent browser playback through an
+already matched network location when the catalogue includes its file path.
+Choosing `Read on Kodi` still sends Player.Open to the selected Kodi instance,
+so that action requires Kodi online. The web playback selector shows blue
+(online), red (offline) or white (checking) status icons based on a server-side
+Kodi JSON-RPC reachability check; an idle instance counts as online.
+
+
 ## OAuth connections
 
 Only **OneDrive** is currently enabled as an integrated cloud provider in the web and iOS interfaces. Other connector code is retained for future work but its providers are not selectable. iCloud Drive remains available through the separate **Apple Files integration**, without third-party OAuth in Home Media Catalog.
