@@ -332,7 +332,9 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
                 "Configured %s connection failed (HTTP %d); trying Kodi VFS",
                 location["kind"], exc.status_code,
             )
-        except (OSError, StopAsyncIteration) as exc:
+        except Exception as exc:
+            # FTP/SSH libraries may throw protocol-specific exceptions rather
+            # than OSError during the first file read.
             LOG.info(
                 "Configured %s network read failed (%s); trying Kodi VFS",
                 location["kind"], type(exc).__name__,
