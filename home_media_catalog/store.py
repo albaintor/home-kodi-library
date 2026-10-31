@@ -1580,6 +1580,7 @@ class Store:
             partial = series_resumes.get(row["id"])
             if partial and item["watch_status"] != "watched":
                 item["watch_status"] = "in_progress"
+                item["playback_updated_at"] = partial["updated_at"]
                 count = item.get("episode_count") or 0
                 if count:
                     fraction = partial["position_seconds"] / partial["total_seconds"]
@@ -1933,6 +1934,19 @@ class Store:
                     params.append(
                         " AND ".join('"' + word.replace('"', '""') + '"*' for word in words)
                     )
+        # A resume bookmark lives separately from imported Kodi snapshots.
+        # Apply that effective state to watched filters, not just the poster UI.
+        active_playback = (
+            "(EXISTS(SELECT 1 FROM playback_resume p WHERE p.work_id=w.id"
+            " AND p.updated_at=(SELECT MAX(p2.updated_at) FROM playback_resume p2"
+            " WHERE p2.work_id=w.id)"
+            " AND p.position_seconds>0 AND p.position_seconds<p.total_seconds)"
+            " OR (w.kind='tvshow' AND EXISTS("
+            " SELECT 1 FROM playback_resume p JOIN works e ON e.id=p.work_id"
+            " WHERE e.parent_id=w.id AND e.kind='episode'"
+            " AND e.watch_status!='watched' AND p.position_seconds>0"
+            " AND p.position_seconds<p.total_seconds)))"
+        )
         for name, value in (
             ("kind", kind),
             ("watch_status", watch_status),
@@ -1940,7 +1954,18 @@ class Store:
             ("season", season),
             ("year", year),
         ):
-            if value is not None:
+            if value is None:
+                continue
+            if name == "watch_status" and value == "in_progress":
+                clauses.append(
+                    "(w.watch_status='in_progress' OR "
+                    "(w.watch_status!='watched' AND " + active_playback + "))"
+                )
+            elif name == "watch_status" and value == "unwatched":
+                clauses.append(
+                    "(w.watch_status='unwatched' AND NOT " + active_playback + ")"
+                )
+            else:
                 clauses.append(f"w.{name}=?")
                 params.append(value)
         for name, value in (

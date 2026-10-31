@@ -108,3 +108,16 @@ def test_series_poster_shows_partially_played_first_episode(tmp_path):
     assert show["watch_status"] == "in_progress"
     assert show["series_resume_progress"] == 0.25
     assert store.detail("show1")["series_resume_progress"] == 0.25
+
+
+def test_in_progress_filter_includes_local_resume_without_kodi_scan(tmp_path):
+    store = _catalogue(tmp_path)
+    with store.connect() as conn:
+        conn.execute("UPDATE works SET watch_status='unwatched' WHERE id='media1'")
+    store.save_playback_resume(
+        "media1", "edition1", 150, 1000, "2026-10-31T09:00:00.000+00:00"
+    )
+    assert [item["id"] for item in store.media(
+        kind="episode", watch_status="in_progress"
+    )["items"]] == ["media1"]
+    assert not store.media(kind="episode", watch_status="unwatched")["items"]
