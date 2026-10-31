@@ -2814,7 +2814,7 @@ document.addEventListener('click',async event=>{
   if(button.dataset.returnToSeries){
     const seriesId=button.dataset.returnToSeries,season=Number(button.dataset.returnSeason)||0;
     await openDetail(seriesId);
-    if(state.detail?.id===seriesId)loadSeasonEpisodes(season);
+    if(state.detail?.id===seriesId)loadSeasonEpisodes(season,0,true);
     return;
   }
   if(button.dataset.genre) {$('genre').value=button.dataset.genre; $('detail-dialog').close();  loadMedia();}
