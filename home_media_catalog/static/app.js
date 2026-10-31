@@ -439,7 +439,8 @@ function actionIcon(name) {
     youtube:'<rect x="1" y="4" width="22" height="16" rx="5" fill="#ff3838"/><path d="m10 8 6 4-6 4z" fill="white"/>',
     watch:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>',
     watched:'<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/><path d="m16 20 2 2 4-5"/>',
-    refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/>'
+    refresh:'<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1A8 8 0 0 1 20 12M4 12a8 8 0 0 0 13.9 5.9"/>',
+    playtarget:'<rect x="2.5" y="4" width="19" height="14" rx="2"/><path d="M9.5 8v6l5-3z"/><path d="M9 21h6"/>'
   };
   const filled=['star','youtube'].includes(name);
   return `<svg aria-hidden="true" viewBox="0 0 24 24" fill="${filled?'currentColor':'none'}" ${filled?'':'stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'}>${icons[name]||''}</svg>`;
@@ -469,8 +470,10 @@ function detailActions(item) {
   const label=multiple?`Choisir une bande-annonce parmi ${trailers.length}`:trailers.length?'Voir la bande-annonce sur YouTube':'Rechercher une bande-annonce sur YouTube';
   const attributes=multiple?'id="open-trailers" aria-haspopup="dialog" aria-controls="trailers-dialog"':`id="trailer-link" href="${esc(link)}" target="_blank" rel="noopener noreferrer"`;
   const trailerButton=`<${multiple?'button':'a'} ${attributes} class="action-button trailer-button" aria-label="${label}" title="${label}">${actionIcon('youtube')}<span>Bande-annonce${multiple?` · ${trailers.length}`:''}</span></${multiple?'button':'a'}>`;
-  const playable=item.kind!=='tvshow'&&item.editions.some(e=>e.source_type==='kodi');
-  return `<div class="detail-actions compact-actions">${trailerButton}${personalActions(item)}${playable?`<button id="open-playback" class="action-button kodi-button" title="Lire sur Kodi" data-tooltip="Lire sur Kodi" aria-label="Lire sur Kodi" aria-haspopup="dialog" aria-controls="play-dialog"><img src="${esc(url('static/kodi-logo.svg'))}" alt="" width="27" height="27"></button>`:''}<span id="writeback-indicators" class="writeback-indicators-container">${writebackIndicatorMarkup(item)}</span><span id="personal-status" class="visually-hidden" role="status" aria-live="polite"></span></div>`;
+  const playable=item.kind==='tvshow'
+    ? (item.source_types||[]).includes('kodi')&&Number(item.episode_count)>0
+    : item.editions.some(e=>e.source_type==='kodi');
+  return `<div class="detail-actions compact-actions">${trailerButton}${personalActions(item)}${playable?`<button id="open-playback" class="action-button play-target-button" title="Lire sur…" aria-label="Lire sur…" aria-haspopup="dialog" aria-controls="play-dialog">${actionIcon('playtarget')}<span>Lire sur…</span></button>`:''}<span id="writeback-indicators" class="writeback-indicators-container">${writebackIndicatorMarkup(item)}</span><span id="personal-status" class="visually-hidden" role="status" aria-live="polite"></span></div>`;
 }
 function openTrailers() {
   hideRatingPopover();
@@ -728,11 +731,11 @@ async function openMediaActions(trigger) {
   mediaActionsTrigger=trigger;
   menu.dataset.mediaId=id;
   const admin=state.role==='admin';
-  const canPlay=admin&&item.kind!=='tvshow'&&(item.source_types||[]).includes('kodi');
+  const canPlay=admin&&(item.source_types||[]).includes('kodi')&&(item.kind!=='tvshow'||Number(item.episode_count)>0);
   menu.innerHTML=`<div class="media-actions-title" title="${esc(item.title)}">${esc(item.title)}</div>
     <button type="button" data-quick-action="details">▣ Ouvrir la fiche</button>
     ${admin?mediaWatchActions(item):''}
-    ${canPlay?'<button type="button" data-quick-action="play">▶ Lire sur Kodi</button>':''}
+    ${canPlay?`<button type="button" data-quick-action="play">${actionIcon('playtarget')} Lire sur…</button>`:''}
     <button type="button" data-quick-action="trailer">▷ Bande-annonce YouTube</button>
     ${admin?'<details class="media-actions-lists"><summary>＋ Ajouter à une liste <span aria-hidden="true">›</span></summary><div class="media-actions-list-choices"><button type="button" data-quick-action="new-list">＋ Nouvelle liste</button><p class="hint">Chargement des listes…</p></div></details>':''}`;
   menu.showPopover();
@@ -1297,7 +1300,7 @@ async function loadSeasons(id,selectedSeason=null) {
   attachImageFallbacks($('season-list'));
   if(selectedSeason!==null)loadSeasonEpisodes(selectedSeason);
 }
-async function loadSeasonEpisodes(season,offset=0) {
+async function loadSeasonEpisodes(season,offset=0,scrollToEpisodes=false) {
   const detail=state.detail;
   if(!detail||detail.kind!=='tvshow'||!$('episode-list'))return;
   const parent=detail.id;
@@ -1327,12 +1330,23 @@ async function loadSeasonEpisodes(season,offset=0) {
     }
     else {node.querySelector('[data-load-season]')?.remove();node.insertAdjacentHTML('beforeend',markup);}
     if(page.has_more)node.insertAdjacentHTML('beforeend',`<button class="secondary" data-load-season="${season}" data-offset="${offset+page.items.length}">Afficher plus d’épisodes</button>`);
+    // Only a user-initiated season choice scrolls; refreshes/pagination keep
+    // the current reading position in the detail modal.
+    if(scrollToEpisodes&&!offset&&$('detail-dialog').open) {
+      requestAnimationFrame(()=>{
+        if(node.isConnected&&state.detail?.id===parent&&node.dataset.season===String(season))
+          node.scrollIntoView({behavior:'smooth',block:'start'});
+      });
+    }
   }catch(e){if(state.detail?.id===parent&&node.dataset.season===String(season))node.textContent='Chargement des épisodes impossible : '+e.message;}
 }
 // An explicit episode action button retains the inclusive "mark through"
 // command without intercepting the browser's native right-click menu.
 function closeEpisodeContextMenu() {
-  document.getElementById('episode-context-menu')?.remove();
+  const menu=document.getElementById('episode-context-menu');
+  if(!menu)return;
+  if(menu.matches(':popover-open'))menu.hidePopover();
+  menu.remove();
 }
 function openEpisodeContextMenu(button,x,y) {
   if(state.role!=='admin'||!button||state.personalPending.has(state.detail?.id))return;
@@ -1344,8 +1358,12 @@ function openEpisodeContextMenu(button,x,y) {
   menu.id='episode-context-menu';
   menu.className='episode-context-menu';
   menu.setAttribute('role','menu');
+  // A fixed z-index alone cannot overtake a modal <dialog> in the top
+  // layer. The menu must be a popover owned by that dialog.
+  menu.setAttribute('popover','manual');
   menu.innerHTML=`<button role="menuitem" type="button" data-watch-through-season="${season}" data-watch-through-episode="${number}">✓ Marquer comme vus jusqu'à l'épisode ${number} inclus</button>`;
-  document.body.append(menu);
+  $('detail-dialog').append(menu);
+  menu.showPopover();
   menu.style.left=Math.max(8,Math.min(x,window.innerWidth-menu.offsetWidth-8))+'px';
   menu.style.top=Math.max(8,Math.min(y,window.innerHeight-menu.offsetHeight-8))+'px';
   menu.querySelector('button')?.focus({preventScroll:true});
@@ -2678,7 +2696,7 @@ document.addEventListener('click',async event=>{
   if(button.dataset.media) openDetail(button.dataset.media);
   if(button.hasAttribute('data-season')) {
     document.querySelectorAll('.season-button').forEach(b=>b.setAttribute('aria-expanded',String(b===button)));
-    loadSeasonEpisodes(Number(button.dataset.season));
+    loadSeasonEpisodes(Number(button.dataset.season),0,true);
     return;
   }
   if(button.hasAttribute('data-load-season')) {
