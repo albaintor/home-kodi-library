@@ -78,6 +78,7 @@ from .models import (
     PairingRedeem,
     PairingRequest,
     PersonalInput,
+    PlaybackResumeInput,
     PlaybackLocationInput,
     PlaybackLocationView,
     PlayerInput,
@@ -1088,6 +1089,40 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             updated["writeback"] = writeback
             updated["writeback_state"] = await asyncio.to_thread(store.writeback_state, media_id)
             return updated
+
+    @app.patch(
+        API + "/media/{media_id}/playback",
+        tags=["Personal"],
+        dependencies=[Depends(writable)],
+    )
+    async def save_media_playback(media_id: str, data: PlaybackResumeInput):
+        """Persist per-edition resume without mutating imported Kodi records.
+
+        Older offline retries cannot overwrite a newer position already held
+        by this server. Kodi JSON-RPC writeback is performed by the iPhone
+        after receiving the persisted server acknowledgement.
+        """
+        try:
+            stamp = datetime.fromisoformat(data.updated_at.replace("Z", "+00:00"))
+            if stamp.tzinfo is None:
+                raise ValueError("Missing timezone")
+            stamp = stamp.astimezone(UTC)
+            if stamp > datetime.now(UTC) + timedelta(minutes=10):
+                raise ValueError("Playback timestamp is too far in the future")
+            if data.total_seconds > 0 and data.position_seconds > data.total_seconds:
+                raise ValueError("Playback position exceeds the video duration")
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        async with personal_edit_lock:
+            saved = await asyncio.to_thread(
+                store.save_playback_resume,
+                media_id, data.edition_id,
+                data.position_seconds, data.total_seconds,
+                stamp.isoformat(timespec="milliseconds"),
+            )
+            if saved is None:
+                raise HTTPException(404, "Unknown media edition.")
+            return saved
 
     @app.get(
         API + "/media/{media_id}/writeback",
