@@ -42,6 +42,17 @@ CREATE TABLE IF NOT EXISTS records (
 );
 CREATE INDEX IF NOT EXISTS records_work ON records(work_id);
 CREATE INDEX IF NOT EXISTS records_source ON records(source_id);
+-- Playback resumes belong to an edition, not a movie title or Kodi player.
+-- The user position survives catalogue rescans and never edits source imports.
+CREATE TABLE IF NOT EXISTS playback_resume (
+ work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+ edition_id TEXT NOT NULL REFERENCES records(id) ON DELETE CASCADE,
+ position_seconds REAL NOT NULL,
+ total_seconds REAL NOT NULL,
+ updated_at TEXT NOT NULL,
+ PRIMARY KEY(work_id,edition_id)
+);
+CREATE INDEX IF NOT EXISTS playback_resume_updated ON playback_resume(updated_at);
 CREATE TABLE IF NOT EXISTS identifiers (
  work_id TEXT NOT NULL REFERENCES works(id) ON DELETE CASCADE,
  kind TEXT NOT NULL, namespace TEXT NOT NULL, value TEXT NOT NULL,
@@ -2062,6 +2073,38 @@ class Store:
                 return [candidate]
             return []
 
+    def save_playback_resume(
+        self, work_id: str, edition_id: str, position: float,
+        total: float, updated_at: str
+    ) -> dict[str, Any] | None:
+        """Monotonic last-write-wins by client UTC timestamp, per edition.
+
+        A delayed offline retry cannot overwrite a more recently recorded
+        resume on this server. Never mutate the imported Kodi record payload.
+        """
+        with self.connect() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            match = conn.execute(
+                "SELECT 1 FROM records WHERE id=? AND work_id=?",
+                (edition_id, work_id),
+            ).fetchone()
+            if not match:
+                return None
+            conn.execute(
+                "INSERT INTO playback_resume(work_id,edition_id,position_seconds,total_seconds,updated_at)"
+                " VALUES(?,?,?,?,?) ON CONFLICT(work_id,edition_id) DO UPDATE SET"
+                " position_seconds=excluded.position_seconds,"
+                " total_seconds=excluded.total_seconds,updated_at=excluded.updated_at"
+                " WHERE excluded.updated_at >= playback_resume.updated_at",
+                (work_id, edition_id, position, total, updated_at),
+            )
+            row = conn.execute(
+                "SELECT edition_id,position_seconds,total_seconds,updated_at"
+                " FROM playback_resume WHERE work_id=? AND edition_id=?",
+                (work_id, edition_id),
+            ).fetchone()
+            return dict(row) if row else None
+
     def detail(self, work_id: str) -> dict[str, Any] | None:
         with self.connect() as conn:
             conn.execute("BEGIN")
@@ -2098,6 +2141,13 @@ class Store:
             (work_id,),
         ):
             ids[identity[0]].append(identity[1])
+        saved_resumes = {
+            row["edition_id"]: dict(row)
+            for row in conn.execute(
+                "SELECT edition_id,position_seconds,total_seconds,updated_at"
+                " FROM playback_resume WHERE work_id=?", (work_id,),
+            )
+        }
         editions = []
         for record in conn.execute(
             "SELECT r.*,s.name,s.type FROM records r JOIN sources s ON s.id=r.source_id WHERE work_id=? ORDER BY s.type DESC,r.external_key",
@@ -2128,8 +2178,19 @@ class Store:
                             "last_played",
                         )
                     },
+                    **({
+                        "resume_seconds": saved_resumes[record["id"]]["position_seconds"],
+                        "total_seconds": saved_resumes[record["id"]]["total_seconds"],
+                        "playback_updated_at": saved_resumes[record["id"]]["updated_at"],
+                    } if record["id"] in saved_resumes else {}),
                 }
             )
+        # The most recently updated edition determines the summary resume.
+        # Never merge positions from different files/versions.
+        if saved_resumes:
+            newest = max(saved_resumes.values(), key=lambda item: item["updated_at"])
+            value["resume_seconds"] = newest["position_seconds"]
+            value["total_seconds"] = newest["total_seconds"]
         source_people = []
         for edition in editions:
             metadata = edition["metadata"]
