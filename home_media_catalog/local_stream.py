@@ -309,6 +309,21 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
                     status_code=response.status_code,
                     headers=dict(response.headers), media_type=response.media_type,
                 )
+            # Opening SMB/FTP/SFTP may be lazy: metadata/stat succeeds while
+            # the actual read fails. Read one chunk *before* HTTP headers are
+            # sent so those errors can still fall back to Kodi, and replay it
+            # into the same response without losing its byte-range offset.
+            source_iterator = response.body_iterator
+            first_chunk = await anext(source_iterator)
+            if not first_chunk:
+                raise OSError("Configured network source returned an empty media range.")
+
+            async def with_first_chunk():
+                yield first_chunk
+                async for chunk in source_iterator:
+                    yield chunk
+
+            response.body_iterator = with_first_chunk()
             return response
         except HTTPException as exc:
             if exc.status_code not in (404, 409, 501, 502, 503, 504):
@@ -316,6 +331,11 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
             LOG.info(
                 "Configured %s connection failed (HTTP %d); trying Kodi VFS",
                 location["kind"], exc.status_code,
+            )
+        except (OSError, StopAsyncIteration) as exc:
+            LOG.info(
+                "Configured %s network read failed (%s); trying Kodi VFS",
+                location["kind"], type(exc).__name__,
             )
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
