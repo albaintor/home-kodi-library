@@ -51,14 +51,25 @@ def _lookup(request, player_id):
 
 
 def _registered_media_location(request: Request, kodi_path: str):
-    """Match a server-owned SMB/NFS share using its IP or optional Kodi hostname alias.
+    """Prefer a server-configured network connection matching the Kodi file.
 
-    Only canonical paths imported from Kodi are eligible, and all resulting
-    paths remain confined to the administrator-configured share root.
+    SMB/NFS/FTP/SFTP access uses the credentials stored on the server, not
+    Kodi's VFS. Match by protocol, host (or Kodi hostname alias), port and
+    share-root boundary. Choose the most specific configured root. Unknown or
+    malformed paths are never interpreted as filesystem paths.
     """
-    url = urlsplit(kodi_path)
-    kind = url.scheme.lower()
-    if kind not in {"smb", "nfs"} or not url.hostname or url.username or url.password:
+    try:
+        url = urlsplit(kodi_path)
+        kind = url.scheme.lower()
+        if (
+            kind not in {"smb", "nfs", "ftp", "sftp"}
+            or not url.hostname or url.username or url.password
+            or url.query or url.fragment
+        ):
+            return None
+        defaults = {"smb": 445, "nfs": 2049, "ftp": 21, "sftp": 22}
+        requested_port = url.port or defaults[kind]
+    except (ValueError, TypeError):
         return None
     requested_host = url.hostname.lower().rstrip(".")
     try:
@@ -67,8 +78,10 @@ def _registered_media_location(request: Request, kodi_path: str):
         return None
     if not media_path:
         return None
+
+    matches = []
     for location in request.app.state.store.playback_locations():
-        if location["kind"] != kind:
+        if location.get("kind") != kind:
             continue
         known_hosts = {
             str(location.get("host") or "").lower().rstrip("."),
@@ -76,14 +89,34 @@ def _registered_media_location(request: Request, kodi_path: str):
         }
         if requested_host not in known_hosts:
             continue
-        root = str(location.get("share") or "").strip("/")
-        if not root or not media_path.startswith(root + "/"):
-            continue
-        relative = safe_path(media_path[len(root) + 1 :])
-        if relative:
-            return location, relative
-    return None
+        try:
+            if int(location.get("port") or defaults[kind]) != requested_port:
+                continue
+            from .playback_browser import _root
 
+            _, root = _root(location)
+            root = safe_path(unquote(root))
+        except (ValueError, TypeError, HTTPException):
+            continue
+        # A protocol root is valid for FTP/SFTP; SMB always needs a share
+        # and NFS always needs a configured export.
+        if not root and kind in {"smb", "nfs"}:
+            continue
+        compare_path = media_path.lower() if kind == "smb" else media_path
+        compare_root = root.lower() if kind == "smb" else root
+        if compare_root and not compare_path.startswith(compare_root + "/"):
+            continue
+        relative = media_path[len(root) + 1 :] if root else media_path
+        try:
+            relative = safe_path(relative)
+        except HTTPException:
+            continue
+        if relative:
+            matches.append((len(root), location, relative))
+    if not matches:
+        return None
+    _, location, relative = max(matches, key=lambda match: match[0])
+    return location, relative
 
 async def _resolve_video(request, player, data):
     detail = await asyncio.to_thread(request.app.state.store.detail, data.media_id)
@@ -210,7 +243,11 @@ async def create_local_stream(
     started = time.monotonic()
     file_path, edition = await _resolve_video(request, player, data)
     resolved_ms = round((time.monotonic() - started) * 1000, 1)
-    LOG.info("Kodi stream ticket resolved player=%s resolve_ms=%.1f", player_id, resolved_ms)
+    matched = _registered_media_location(request, file_path)
+    LOG.info(
+        "Video ticket resolved player=%s preferred=%s resolve_ms=%.1f",
+        player_id, matched[0]["kind"] if matched else "kodi", resolved_ms,
+    )
     current = time.monotonic()
     for old, value in list(_TICKETS.items()):
         if value["expires"] <= current:
@@ -237,6 +274,8 @@ async def create_local_stream(
         "resume_seconds": edition.get("resume_seconds") or 0,
         "expires_in": _TICKET_TTL,
         "resolution_ms": resolved_ms,
+        "preferred_transport": matched[0]["kind"] if matched else "kodi",
+        "preferred_location": matched[0].get("name") if matched else None,
     }
 
 
@@ -272,9 +311,12 @@ async def stream_local_video(player_id: str, ticket: str, filename: str, request
                 )
             return response
         except HTTPException as exc:
-            if exc.status_code not in (502, 503, 504):
+            if exc.status_code not in (404, 409, 501, 502, 503, 504):
                 raise
-            LOG.info("Configured %s share not reachable; trying Kodi VFS", location["kind"])
+            LOG.info(
+                "Configured %s connection failed (HTTP %d); trying Kodi VFS",
+                location["kind"], exc.status_code,
+            )
     base = endpoint(player["config"]).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
     config = player["config"]
@@ -391,8 +433,11 @@ async def _ticket_source(request: Request, player_id: str, ticket: str):
                 request.app.state.playback_nfs_mounts,
             )
             return source, await probe(source)
-        except (OSError, HTTPException):
-            LOG.info("Configured network source unavailable; trying Kodi VFS")
+        except (OSError, HTTPException) as exc:
+            LOG.info(
+                "Configured %s media source unavailable (%s); trying Kodi VFS",
+                location["kind"], type(exc).__name__,
+            )
     config = player["config"]
     base = endpoint(config).removesuffix("/jsonrpc")
     url = f"{base}/vfs/{quote(item['file'], safe='')}"
