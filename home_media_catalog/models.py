@@ -179,6 +179,14 @@ class EditionView(BaseModel):
     date_added: str | None = None
 
     last_played: str | None = None
+    playback_updated_at: str | None = None
+
+
+class PlaybackResumeInput(StrictModel):
+    edition_id: str = Field(min_length=1, max_length=128)
+    position_seconds: float = Field(ge=0, le=10000000, allow_inf_nan=False)
+    total_seconds: float = Field(ge=0, le=10000000, allow_inf_nan=False)
+    updated_at: str = Field(min_length=20, max_length=40)
 
 
 class CastMember(BaseModel):
