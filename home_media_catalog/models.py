@@ -150,6 +150,8 @@ class MediaSummary(BaseModel):
     play_count: int | None = None
     resume_seconds: float = 0
     total_seconds: float = 0
+    playback_updated_at: str | None = None
+    series_resume_progress: float | None = None
     parent_id: str | None = None
     season: int | None = None
     episode: int | None = None

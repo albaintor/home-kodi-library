@@ -66,3 +66,45 @@ def test_resume_survives_reinitialization(tmp_path):
     reopened = Store(store.path)
     reopened.initialize()
     assert reopened.detail("media1")["editions"][0]["resume_seconds"] == 75.5
+
+
+def test_catalogue_page_uses_newest_resume_and_keeps_it_after_restart(tmp_path):
+    store = _catalogue(tmp_path)
+    store.save_playback_resume(
+        "media1", "edition1", 120, 1000, "2026-10-31T09:00:00.000+00:00"
+    )
+    store.save_playback_resume(
+        "media1", "edition2", 400, 1000, "2026-10-31T09:01:00.000+00:00"
+    )
+    item = store.media(kind="episode")["items"][0]
+    assert item["resume_seconds"] == 400
+    assert item["total_seconds"] == 1000
+    assert item["watch_status"] == "in_progress"
+    assert item["playback_updated_at"] == "2026-10-31T09:01:00.000+00:00"
+    store.save_playback_resume(
+        "media1", "edition2", 1, 1000, "2026-10-31T08:00:00.000+00:00"
+    )
+    assert store.media(kind="episode")["items"][0]["resume_seconds"] == 400
+    reopened = Store(store.path)
+    reopened.initialize()
+    assert reopened.media(kind="episode")["items"][0]["resume_seconds"] == 400
+
+
+def test_series_poster_shows_partially_played_first_episode(tmp_path):
+    store = _catalogue(tmp_path)
+    with store.connect() as conn:
+        conn.execute(
+            "INSERT INTO works(id,kind,title) VALUES(?,?,?)",
+            ("show1", "tvshow", "Show"),
+        )
+        conn.execute(
+            "UPDATE works SET parent_id=? WHERE id=?",
+            ("show1", "media1"),
+        )
+    store.save_playback_resume(
+        "media1", "edition1", 250, 1000, "2026-10-31T09:00:00.000+00:00"
+    )
+    show = store.media(kind="tvshow")["items"][0]
+    assert show["watch_status"] == "in_progress"
+    assert show["series_resume_progress"] == 0.25
+    assert store.detail("show1")["series_resume_progress"] == 0.25

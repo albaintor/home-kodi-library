@@ -1510,22 +1510,84 @@ class Store:
             for row in rows
         }
 
+    @staticmethod
+    def _latest_playback_resumes(
+        conn: sqlite3.Connection, work_ids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Load newest resume per work in one query for a catalogue page."""
+        if not work_ids:
+            return {}
+        placeholders = ",".join("?" for _ in work_ids)
+        rows = conn.execute(
+            "SELECT work_id,position_seconds,total_seconds,updated_at"
+            " FROM playback_resume WHERE work_id IN (" + placeholders + ")"
+            " ORDER BY updated_at DESC,edition_id",
+            work_ids,
+        )
+        latest: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            latest.setdefault(row["work_id"], dict(row))
+        return latest
+
+    @staticmethod
+    def _apply_resume_to_summary(
+        item: dict[str, Any], resume: dict[str, Any] | None
+    ) -> dict[str, Any]:
+        if resume is None:
+            return item
+        item["resume_seconds"] = resume["position_seconds"]
+        item["total_seconds"] = resume["total_seconds"]
+        item["playback_updated_at"] = resume["updated_at"]
+        if (
+            item["watch_status"] != "watched"
+            and 0 < resume["position_seconds"] < resume["total_seconds"]
+        ):
+            item["watch_status"] = "in_progress"
+        return item
+
     @classmethod
     def _summaries_with_sources(
         cls, conn: sqlite3.Connection, rows: list[sqlite3.Row]
     ) -> list[dict[str, Any]]:
-        by_work = cls._sources_for_works(conn, [row["id"] for row in rows])
-        progress = cls._series_episode_progress(
-            conn, [row["id"] for row in rows if row["kind"] == "tvshow"]
-        )
-        return [
-            {
-                **cls._summary(row),
-                **progress.get(row["id"], {}),
-                "media_sources": by_work.get(row["id"], []),
-            }
-            for row in rows
-        ]
+        ids = [row["id"] for row in rows]
+        by_work = cls._sources_for_works(conn, ids)
+        series_ids = [row["id"] for row in rows if row["kind"] == "tvshow"]
+        progress = cls._series_episode_progress(conn, series_ids)
+        resumes = cls._latest_playback_resumes(conn, ids)
+        # Series posters must also reflect a partially played, still-unwatched
+        # episode, even before Kodi increments its watched-episode counter.
+        series_resumes: dict[str, dict[str, Any]] = {}
+        if series_ids:
+            placeholders = ",".join("?" for _ in series_ids)
+            episodes = conn.execute(
+                "SELECT e.parent_id,p.position_seconds,p.total_seconds,p.updated_at"
+                " FROM playback_resume p JOIN works e ON e.id=p.work_id"
+                " WHERE e.kind='episode' AND e.watch_status!='watched'"
+                " AND e.parent_id IN (" + placeholders + ")"
+                " AND p.position_seconds>0 AND p.total_seconds>p.position_seconds"
+                " ORDER BY p.updated_at DESC,p.edition_id",
+                series_ids,
+            )
+            for episode in episodes:
+                series_resumes.setdefault(episode["parent_id"], dict(episode))
+        items = []
+        for row in rows:
+            item = cls._apply_resume_to_summary(
+                cls._summary(row), resumes.get(row["id"])
+            )
+            item.update(progress.get(row["id"], {}))
+            item["media_sources"] = by_work.get(row["id"], [])
+            partial = series_resumes.get(row["id"])
+            if partial and item["watch_status"] != "watched":
+                item["watch_status"] = "in_progress"
+                count = item.get("episode_count") or 0
+                if count:
+                    fraction = partial["position_seconds"] / partial["total_seconds"]
+                    item["series_resume_progress"] = min(
+                        1.0, ((item.get("watched_episode_count") or 0) + fraction) / count
+                    )
+            items.append(item)
+        return items
 
     @staticmethod
     def _matched_person_roles(
@@ -2131,9 +2193,7 @@ class Store:
         row = conn.execute("SELECT * FROM works WHERE id=?", (work_id,)).fetchone()
         if row is None:
             return None
-        value = self._summary(row)
-        if row["kind"] == "tvshow":
-            value.update(self._series_episode_progress(conn, [work_id]).get(work_id, {}))
+        value = self._summaries_with_sources(conn, [row])[0]
         value["media_sources"] = self._sources_for_works(conn, [work_id]).get(work_id, [])
         ids: dict[str, list[str]] = defaultdict(list)
         for identity in conn.execute(
@@ -2189,8 +2249,7 @@ class Store:
         # Never merge positions from different files/versions.
         if saved_resumes:
             newest = max(saved_resumes.values(), key=lambda item: item["updated_at"])
-            value["resume_seconds"] = newest["position_seconds"]
-            value["total_seconds"] = newest["total_seconds"]
+            self._apply_resume_to_summary(value, newest)
         source_people = []
         for edition in editions:
             metadata = edition["metadata"]
